@@ -84,9 +84,8 @@
     // the site shows only what the backend lists (Snapshot::LISTED); counts come listed already
     ix.listed = D.benchmarks.filter((b) => b.listed);
     ix.home = D.meta.home;   // the home page's benchmark (Snapshot::home)
-    ix.benchesByCap = D.capabilities
-      .map((c) => ({ cap: c, benches: ix.listed.filter((b) => b.capability === c.id) }))
-      .filter(({ benches }) => benches.length);
+    ix.byCap = groupBy(ix.listed, (b) => b.capability);
+    ix.benchesByCap = D.capabilities.filter((c) => ix.byCap.has(c.id)).map((c) => ({ cap: c, benches: ix.byCap.get(c.id) }));
   }
   // keeps loaded scores for the tooltips; a full score is never replaced by a matrix cell's partial one
   function remember(scores) {
@@ -418,7 +417,7 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMore(); });
   // phones: the open benchmark's capability as a swipeable row of the same chips as the picker
   function railHTML(b) {
-    const benches = capChips(b.capability, (ix.benchesByCap.find(({ cap }) => cap.id === b.capability) || { benches: [] }).benches, b);
+    const benches = capChips(b.capability, ix.byCap.get(b.capability) || [], b);
     if (benches.length < 2) return "";
     return `<p class="rail-cap">Also in <b>${esc(capLabel(b.capability))}</b></p><nav class="rail chip-row" aria-label="${esc(capLabel(b.capability))} benchmarks">${benches
       .map((x) => benchChip(x, b))
@@ -577,12 +576,12 @@
           <div class="val">${est ? "≈" : ""}${pct(s.v)}%${est ? `<span class="pm">±${pct(s.sd)}</span>` : ""}</div>
         </div>`;
     };
-    const fold = tailCut(rows);
+    const tail = tailCut(rows);
     const open = tailOpen === b.id;
     let body;
-    if (!fold) body = rows.map(rowHTML).join("");
+    if (!tail) body = rows.map(rowHTML).join("");
     else {
-      const [cut, byScore] = fold;
+      const [cut, byScore] = tail;
       const more = `Show ${rows.length - cut} more${byScore ? ` · scoring below ${Math.round(TAIL.below * 100)}%` : ""}`;
       body = rows.slice(0, cut).map(rowHTML).join("")
         + `<div class="board-tail${open ? "" : " folded"}" id="board-tail">${rows.slice(cut).map((s, i) => rowHTML(s, cut + i)).join("")}</div>
@@ -801,7 +800,7 @@
     if (!m || !data) return renderNotFound(`No model “${esc(slug)}”.`);
     setMeta(`${m.name} benchmark scores`, `${m.name} benchmark scores: measured on ${m.n_measured} benchmark${m.n_measured === 1 ? "" : "s"}`
       + (m.n_estimated ? `, estimated on ${m.n_estimated} more, with the error and confidence of each estimate.` : "."));
-    const scores = remember(data.scores).filter((s) => ix.bench.get(s.b).listed);
+    const scores = remember(data.scores);   // on the listed benchmarks
     const byB = new Map(scores.map((s) => [s.b, s]));
     const est = scores.filter((s) => s.s === "e");
     const nTier = (t) => est.filter((s) => s.tier === t).length;

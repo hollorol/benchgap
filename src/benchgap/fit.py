@@ -122,61 +122,42 @@ def fit_mappings(
                 tasks.append((src, dst, pairs))
     cache = cache or FitCache(None, "fit")
     keys = [fit_key(*_xy(t[2])) for t in tasks]
-    todo = {k: t[2] for k, t in zip(keys, tasks) if k not in cache.earlier}
+    # the pairs not in the cache are fitted in parallel first
+    todo = {k: t[2] for k, t in zip(keys, tasks) if k not in cache}
     fresh = dict(zip(todo, pmap(_fit_pair, todo.values(), jobs)))
-    fitted = [fresh[k] if k in fresh else [FitResult(**r) for r in cache.earlier[k]] for k in keys]
-    for k, results in zip(keys, fitted):
-        cache.used[k] = [asdict(r) for r in results]
+    fitted = [[FitResult(**r) for r in cache.get(k, lambda k=k: [asdict(r) for r in fresh[k]])] for k in keys]
 
     summary = []
     for (src, dst, pairs), results in zip(tasks, fitted):
         best = select_best(results)
         if best is None:  # no candidate converged
             continue
+        row = {
+            "from": f"{src['benchmark']}/{src['version']}@{src['harness']}",
+            "to": f"{dst['benchmark']}/{dst['version']}@{dst['harness']}",
+            "capability": src["capability"],
+            "n_pairs": len(pairs),
+            "best_LOO_RMSE": best.metrics["LOO_RMSE"],
+            "candidates": {
+                r.method: {"R2": r.metrics["R2"], "LOO_RMSE": r.metrics["LOO_RMSE"]}
+                for r in results
+            },
+        }
         if best.metrics["R2"] < MIN_R2 or (
             best.metrics["LOO_RMSE"] == best.metrics["LOO_RMSE"]
             and best.metrics["LOO_RMSE"] > MAX_LOO_RMSE
         ):
-            summary.append(
-                {
-                    "from": f"{src['benchmark']}/{src['version']}@{src['harness']}",
-                    "to": f"{dst['benchmark']}/{dst['version']}@{dst['harness']}",
-                    "capability": src["capability"],
-                    "n_pairs": len(pairs),
-                    "best_method": None,
-                    "best_LOO_RMSE": best.metrics["LOO_RMSE"],
-                    "rejected": f"R2={best.metrics['R2']:.2f},"
-                    f" LOO RMSE={best.metrics['LOO_RMSE'] * 100:.1f}pp"
-                    " below quality gate",
-                    "candidates": {
-                        r.method: {
-                            "R2": r.metrics["R2"],
-                            "LOO_RMSE": r.metrics["LOO_RMSE"],
-                        }
-                        for r in results
-                    },
-                }
-            )
+            summary.append({
+                **row,
+                "best_method": None,
+                "rejected": f"R2={best.metrics['R2']:.2f},"
+                f" LOO RMSE={best.metrics['LOO_RMSE'] * 100:.1f}pp"
+                " below quality gate",
+            })
             continue
         stored = results if keep == "all" else [best]
         for r in stored:
             _store_mapping(conn, src["id"], dst["id"], r, pairs)
-        summary.append(
-            {
-                "from": f"{src['benchmark']}/{src['version']}@{src['harness']}",
-                "to": f"{dst['benchmark']}/{dst['version']}@{dst['harness']}",
-                "capability": src["capability"],
-                "n_pairs": len(pairs),
-                "best_method": best.method,
-                "best_LOO_RMSE": best.metrics["LOO_RMSE"],
-                "candidates": {
-                    r.method: {
-                        "R2": r.metrics["R2"],
-                        "LOO_RMSE": r.metrics["LOO_RMSE"],
-                    }
-                    for r in results
-                },
-            }
-        )
+        summary.append({**row, "best_method": best.method})
     conn.commit()
     return summary

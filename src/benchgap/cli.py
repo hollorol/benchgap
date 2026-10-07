@@ -36,6 +36,11 @@ JOBS_HELP = "processes to fit on (default 0: every core; 1: no parallelism)"
 CACHE_HELP = "directory to keep fit results in between runs; unchanged fits are reused"
 
 
+def _print_kept(done: str, what: str, summary: list[dict], cache) -> None:
+    kept = sum(1 for s in summary if not s.get("rejected"))
+    print(f"{done}, kept {kept} {what}{cache.stats()}")
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     init_db(conn)
@@ -75,8 +80,7 @@ def cmd_fit(args: argparse.Namespace) -> None:
                     f"    {method:<10} R2={m['R2']:.3f}"
                     f" LOO RMSE={m['LOO_RMSE'] * 100:.2f} pp"
                 )
-    kept = sum(1 for s in summary if not s.get("rejected"))
-    print(f"fitted {len(summary)} version pairs, kept {kept} mappings" + (f" ({cache.stats()})" if args.cache else ""))
+    _print_kept(f"fitted {len(summary)} version pairs", "mappings", summary, cache)
 
 
 def cmd_gapfill(args: argparse.Namespace) -> None:
@@ -111,8 +115,7 @@ def cmd_multifit(args: argparse.Namespace) -> None:
             f"{s['target']} <- {s['features']}: {s['method']}"
             f" (n={s['n']}, R2={s['R2']:.3f}, LOO RMSE {s['LOO_RMSE'] * 100:.2f} pp)"
         )
-    kept = sum(1 for s in summary if not s.get("rejected"))
-    print(f"searched {len(summary)} targets, kept {kept} multivariate mappings" + (f" ({cache.stats()})" if args.cache else ""))
+    _print_kept(f"searched {len(summary)} targets", "multivariate mappings", summary, cache)
 
 
 def cmd_report(args: argparse.Namespace) -> None:

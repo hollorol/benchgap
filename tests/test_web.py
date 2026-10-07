@@ -177,7 +177,9 @@ def test_page_data_slices_the_site_data(server):
     assert board == {"benchmark": bench["id"], "scores": [s for s in scores if s["b"] == bench["id"]]}
     assert get_json(server, "/data/home.json") == board
     model = whole["models"][0]
-    assert get_json(server, f"/data/model/{model['slug']}.json")["scores"] == [s for s in scores if s["m"] == model["id"]]
+    assert get_json(server, f"/data/model/{model['slug']}.json")["scores"] == [
+        s for s in scores if s["m"] == model["id"] and s["b"] in listed
+    ]
 
     kinds = {"high": 1, "medium": 2, "low": 3}
     cells = get_json(server, "/data/matrix.json")["cells"]

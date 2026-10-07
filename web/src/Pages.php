@@ -35,6 +35,8 @@ final class Pages
     private array $benchmarks;      // by key
     private array $models;          // by slug
     private array $listed;          // the listed benchmarks (Snapshot::LISTED) by key: the ones the site shows
+    private array $listedModels;    // the models with a score on a listed benchmark, by slug
+    private string $home;           // the home page's benchmark key (Snapshot::home)
     private array $capabilities;    // label by id
     private string $date;           // when the measured scores were retrieved
 
@@ -43,7 +45,9 @@ final class Pages
         $this->index = $api->index();
         $this->benchmarks = array_column($api->benchmarks()['benchmarks'], null, 'key');
         $this->listed = array_filter($this->benchmarks, fn ($b) => $b['listed']);
+        $this->home = Snapshot::home($this->benchmarks);
         $this->models = array_column($api->models()['models'], null, 'slug');
+        $this->listedModels = array_filter($this->models, fn ($m) => $m['listed']);
         $this->capabilities = array_column($this->index['capabilities'], 'label', 'id');
         $this->date = $this->index['data_retrieved_at'] ?? '';
     }
@@ -122,7 +126,7 @@ final class Pages
         $pages = [
             ...array_map(fn ($path) => Api::SITE_URL . $path, array_keys(self::PAGES)),
             ...array_column($this->listed, 'page'),
-            ...array_column(array_filter($this->models, fn ($m) => $m['listed']), 'page'),
+            ...array_column($this->listedModels, 'page'),
             ...array_column($this->api->mappings()['mappings'], 'page'),
         ];
         $lastmod = substr($this->index['generated_at'] ?? '', 0, 10);
@@ -142,10 +146,9 @@ final class Pages
         return $xml->outputMemory();
     }
 
-    /** The home page's benchmark (Snapshot::home). */
     public function home(): string
     {
-        return Snapshot::home($this->benchmarks);
+        return $this->home;
     }
 
     // -- pages: title, description, canonical path (null: not to index) and <main>;
@@ -157,7 +160,7 @@ final class Pages
         if ($b === null) {
             return null;
         }
-        $home = $key === $this->home();
+        $home = $key === $this->home;
         $scores = $this->api->benchmark($key)['scores'];
         $rows = [];
         foreach ($scores as $i => $s) {
@@ -201,7 +204,7 @@ final class Pages
     public function matrix(): array
     {
         $models = array_map(fn ($m) => '<li>' . $this->link($m) . " ({$m['n_measured']} measured, {$m['n_estimated']} estimated)</li>",
-            array_filter($this->models, fn ($m) => $m['listed']));
+            $this->listedModels);
         return $this->result('LLM benchmark score matrix',
             'Every model on every benchmark: measured LLM scores and calibrated estimates for the missing ones, side by side.', '/matrix',
             $this->header('Score matrix', 'Every model × every benchmark',

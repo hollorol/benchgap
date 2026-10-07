@@ -48,12 +48,16 @@ jobs:
         run: .venv/bin/python scripts/build_seed.py --fetch
 
       # the fit cache holds as long as the fitting code is unchanged
+      - name: Name the fit cache
+        id: fit-cache
+        run: echo "key=fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}" >> "$GITHUB_OUTPUT"
+
       - name: Restore the fit cache
         uses: actions/cache/restore@v4
         with:
           path: .fit-cache
-          key: fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}-${{ github.run_id }}
-          restore-keys: fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}-
+          key: ${{ steps.fit-cache.outputs.key }}-${{ github.run_id }}
+          restore-keys: ${{ steps.fit-cache.outputs.key }}-
 
       - name: Compute every calibration and estimate
         run: |
@@ -71,7 +75,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .fit-cache
-          key: fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}-${{ github.run_id }}
+          key: ${{ steps.fit-cache.outputs.key }}-${{ github.run_id }}
 
       - name: Load it on the server
         env:

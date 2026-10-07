@@ -41,11 +41,28 @@ class FitCache:
                 pass
         self.used: dict = {}
 
+    def __contains__(self, key: str) -> bool:
+        return key in self.used or key in self.earlier
+
+    def get(self, key: str, compute):
+        """The result under key: this run's, an earlier run's, or compute()'s; kept for the next run."""
+        if key not in self.used:
+            self.used[key] = self.earlier[key] if key in self.earlier else compute()
+        return self.used[key]
+
+    @classmethod
+    def of(cls, earlier: dict) -> "FitCache":
+        """A cache over earlier results (in a worker process: the parent saves what it used)."""
+        cache = cls(None, "")
+        cache.earlier = earlier
+        return cache
+
     def save(self) -> None:
         if self.file:
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.write_text(json.dumps(self.used))
 
     def stats(self) -> str:
+        """How many fits were reused, as " (N of M fits reused)"; "" without a cache directory."""
         reused = sum(k in self.earlier for k in self.used)
-        return f"{reused} of {len(self.used)} fits reused" if self.file else ""
+        return f" ({reused} of {len(self.used)} fits reused)" if self.file else ""

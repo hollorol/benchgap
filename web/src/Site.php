@@ -11,7 +11,7 @@ namespace Benchgap;
  * - site.json: what every page needs (build metadata, capabilities, every
  *   benchmark and model with its counts, the home page's benchmark)
  * - home.json, b/{name}/{version}.json: a leaderboard's scores
- * - model/{slug}.json: a model's scores
+ * - model/{slug}.json: a model's scores on the listed benchmarks
  * - matrix.json: every listed benchmark's cells, as [model, benchmark, value, kind]
  *   (kind: CELL_KINDS); an estimate's details come from score/{m}/{b}.json
  * - calibration.json: the calibrations between listed benchmarks, without
@@ -25,17 +25,35 @@ final class Site
     // a matrix cell's kind: measured, or the confidence of an estimate
     public const CELL_KINDS = ['m' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
 
-    private array $listed;   // listed benchmark ids => true
+    private array $listed;        // listed benchmark ids => true
+    private array $benchByKey;
+    private array $modelBySlug;
+    private array $mapping;       // by id
+    private array $byBench = [];  // score indexes by benchmark id, model id, univariate mapping id and "m:b"
+    private array $byModel = [];
+    private array $byMapping = [];
+    private array $score = [];
 
     public function __construct(private readonly array $data)
     {
         $this->listed = array_fill_keys(array_column(array_filter($data['benchmarks'], fn ($b) => $b['listed']), 'id'), true);
+        $this->benchByKey = array_column($data['benchmarks'], null, 'key');
+        $this->modelBySlug = array_column($data['models'], null, 'slug');
+        $this->mapping = array_column($data['mappings'], null, 'id');
+        foreach ($data['scores'] as $s) {
+            $this->byBench[$s['b']][] = $s;
+            $this->byModel[$s['m']][] = $s;
+            $this->score["{$s['m']}:{$s['b']}"] = $s;
+            if ($s['s'] === 'e' && $s['via']['kind'] === 'uni') {
+                $this->byMapping[$s['via']['mapping']][] = $s;
+            }
+        }
     }
 
     public function site(): array
     {
         return [
-            'meta' => $this->data['meta'] + ['home' => Snapshot::home($this->data['benchmarks'])],
+            'meta' => $this->data['meta'],
             'capabilities' => $this->data['capabilities'],
             'benchmarks' => $this->data['benchmarks'],
             'models' => $this->data['models'],
@@ -45,20 +63,23 @@ final class Site
     /** A leaderboard: the benchmark's id and all its scores; null if there is no such benchmark. */
     public function board(string $key): ?array
     {
-        $b = $this->find($this->data['benchmarks'], 'key', $key);
-        return $b === null ? null : ['benchmark' => $b['id'], 'scores' => $this->scores(fn ($s) => $s['b'] === $b['id'])];
+        $b = $this->benchByKey[$key] ?? null;
+        return $b === null ? null : ['benchmark' => $b['id'], 'scores' => $this->byBench[$b['id']] ?? []];
     }
 
     public function home(): array
     {
-        return $this->board(Snapshot::home($this->data['benchmarks']));
+        return $this->board($this->data['meta']['home']);
     }
 
-    /** A model's id and all its scores; null if there is no such model. */
+    /** A model's id and its scores on the listed benchmarks; null if there is no such model. */
     public function model(string $slug): ?array
     {
-        $m = $this->find($this->data['models'], 'slug', $slug);
-        return $m === null ? null : ['model' => $m['id'], 'scores' => $this->scores(fn ($s) => $s['m'] === $m['id'])];
+        $m = $this->modelBySlug[$slug] ?? null;
+        return $m === null ? null : [
+            'model' => $m['id'],
+            'scores' => array_values(array_filter($this->byModel[$m['id']] ?? [], fn ($s) => isset($this->listed[$s['b']]))),
+        ];
     }
 
     public function matrix(): array
@@ -76,7 +97,7 @@ final class Site
     /** One score in full (an estimate with where it came from); null if there is none. */
     public function score(int $model, int $benchmark): ?array
     {
-        return $this->scores(fn ($s) => $s['m'] === $model && $s['b'] === $benchmark)[0] ?? null;
+        return $this->score["$model:$benchmark"] ?? null;
     }
 
     public function calibration(): array
@@ -93,7 +114,7 @@ final class Site
     /** One calibration with its points and curve, the estimates it made and its reverse; null if there is none. */
     public function mapping(int $id): ?array
     {
-        $m = $this->find($this->data['mappings'], 'id', $id);
+        $m = $this->mapping[$id] ?? null;
         if ($m === null) {
             return null;
         }
@@ -103,25 +124,6 @@ final class Site
                 $reverse = ['id' => $r['id'], 'loo' => $r['loo']];
             }
         }
-        return [
-            'mapping' => $m,
-            'estimates' => $this->scores(fn ($s) => $s['s'] === 'e' && $s['via']['kind'] === 'uni' && $s['via']['mapping'] === $id),
-            'reverse' => $reverse,
-        ];
-    }
-
-    private function scores(callable $keep): array
-    {
-        return array_values(array_filter($this->data['scores'], $keep));
-    }
-
-    private function find(array $rows, string $field, mixed $value): ?array
-    {
-        foreach ($rows as $row) {
-            if ($row[$field] === $value) {
-                return $row;
-            }
-        }
-        return null;
+        return ['mapping' => $m, 'estimates' => $this->byMapping[$id] ?? [], 'reverse' => $reverse];
     }
 }

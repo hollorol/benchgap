@@ -269,6 +269,8 @@ final class Snapshot
                 'dense' => self::DENSE,
                 'methods' => self::METHOD_LABELS,
                 'providers' => array_column([...array_values(self::PROVIDERS), self::OTHER_PROVIDER], 1, 0),
+                // the home page's benchmark
+                'home' => self::home($benchmarks),
             ],
             'capabilities' => $capabilities,
             'benchmarks' => $benchmarks,

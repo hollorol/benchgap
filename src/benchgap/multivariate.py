@@ -198,8 +198,8 @@ def _training_set(
 
 
 # what each worker's searches read: its own connection to the database (sqlite3 connections
-# can't be shared across processes), the benchmark versions, the minimum overlap and the
-# earlier runs' fits (FitCache); "used" collects the fits of the target being searched
+# can't be shared across processes), the benchmark versions, the minimum overlap and a
+# FitCache over the earlier runs' fits, whose "used" collects the fits of the target being searched
 _worker: dict = {}
 
 
@@ -209,30 +209,27 @@ def _init(db: str | sqlite3.Connection, versions: list[dict], min_pairs: int, ea
 
     _worker.update(
         conn=connect(db, readonly=True) if isinstance(db, str) else db,
-        versions=versions, min_pairs=min_pairs, earlier=earlier,
+        versions=versions, min_pairs=min_pairs, cache=FitCache.of(earlier),
     )
 
 
 def _fit_scored(method: str, X: np.ndarray, y: np.ndarray) -> list | None:
     """[params, metrics] of ``method`` on (X, y), or None if it does not fit; from the cache if it has them."""
-    key = fit_key(method, X, y)
-    used = _worker["used"]
-    if key not in used:
-        if key in _worker["earlier"]:
-            used[key] = _worker["earlier"][key]
-        else:
-            try:
-                params = fit_mv(method, X, y)
-                used[key] = [params, mv_metrics(method, params, X, y)]
-            except (RuntimeError, np.linalg.LinAlgError, ValueError):
-                used[key] = None
-    return used[key]
+    def fit():
+        try:
+            params = fit_mv(method, X, y)
+            return [params, mv_metrics(method, params, X, y)]
+        except (RuntimeError, np.linalg.LinAlgError, ValueError):
+            return None
+
+    return _worker["cache"].get(fit_key(method, X, y), fit)
 
 
 def _search_cached(target: dict) -> tuple[dict | None, dict]:
     """_search's result and the fits it used (for the cache)."""
-    _worker["used"] = {}
-    return _search(target), _worker["used"]
+    cache = _worker["cache"]
+    cache.used = {}
+    return _search(target), cache.used
 
 
 def _search(target: dict) -> dict | None:
