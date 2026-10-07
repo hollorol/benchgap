@@ -16,7 +16,6 @@ namespace Benchgap;
  */
 final class Pages
 {
-    public const DEFAULT_BENCH = 'terminal-bench-4/current';  // the leaderboard on the home page (app.js DEFAULT_BENCH; see home())
     private const ABOUT = 'benchgap is an LLM benchmark leaderboard that fills in the missing scores. Most models are only '
         . 'ever run on a handful of benchmarks, so benchgap calibrates benchmarks against each other on the models '
         . 'measured on both, then estimates each missing score with its cross-validated error and a confidence level. '
@@ -143,14 +142,10 @@ final class Pages
         return $xml->outputMemory();
     }
 
-    /** The home page's benchmark: DEFAULT_BENCH, or if the data has no such listed benchmark, the most measured one (as app.js ix.home). */
+    /** The home page's benchmark (Snapshot::home). */
     public function home(): string
     {
-        if (isset($this->listed[self::DEFAULT_BENCH]) || !$this->listed) {
-            return self::DEFAULT_BENCH;
-        }
-        $measured = array_column($this->listed, 'n_measured', 'key');
-        return (string) array_search(max($measured), $measured, true);
+        return Snapshot::home($this->benchmarks);
     }
 
     // -- pages: title, description, canonical path (null: not to index) and <main>;

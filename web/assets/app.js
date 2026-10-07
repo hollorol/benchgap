@@ -1,5 +1,7 @@
-/* benchgap.net front-end: renders data/benchgap.json (computed by serve.php).
+/* benchgap.net front-end: renders the site data that serve.php computes.
  *
+ * Every page loads data/site.json (benchmarks, models, counts) and its own
+ * slice of the scores (data/..., src/Site.php), never the whole database.
  * No framework (CI only minifies it): each page has its own path (serve.php
  * serves it with a plain-HTML summary in <main>, which this replaces); old #/
  * links are forwarded.
@@ -15,10 +17,7 @@
 (function () {
   "use strict";
 
-  const DATA_URL = "/data/benchgap.json";
   const REPO_URL = "https://github.com/hollorol/benchgap";
-  // the home page's leaderboard (src/Pages.php DEFAULT_BENCH); ix.home falls back if the data has no such listed benchmark
-  const DEFAULT_BENCH = "terminal-bench-4/current";
   // the ledes below are also on the pages serve.php renders (src/Pages.php): keep the two in step
   const ABOUT = "benchgap is an LLM benchmark leaderboard that fills in the missing scores. Most models are only "
     + "ever run on a handful of benchmarks, so benchgap calibrates benchmarks against each other on the models "
@@ -35,7 +34,7 @@
     sortCol: null,
   };
 
-  let D = null;           // raw data
+  let D = null;           // what every page uses (data/site.json): metadata, capabilities, benchmarks, models
   const ix = {};          // indexes
 
   const $ = (sel, el) => (el || document).querySelector(sel);
@@ -46,6 +45,24 @@
   const pct = (v, d = 1) => (v * 100).toFixed(d);
 
   // --- data loading & indexing ----------------------------------------------
+  // the documents loaded so far by URL, each a promise of its JSON; a failed one is dropped, to retry
+  const docs = new Map();
+  function load(url) {
+    if (!docs.has(url)) {
+      const doc = fetch(url).then((r) => {
+        if (!r.ok) throw Object.assign(new Error(`${r.status} ${r.statusText}`), { status: r.status });
+        return r.json();
+      });
+      doc.catch(() => docs.delete(url));
+      docs.set(url, doc);
+    }
+    return docs.get(url);
+  }
+  // each page's data (src/Site.php)
+  const boardUrl = (key) => `/data/b/${key.split("/").map(encodeURIComponent).join("/")}.json`;
+  const modelUrl = (slug) => `/data/model/${encodeURIComponent(slug)}.json`;
+  const scoreUrl = (s) => `/data/score/${s.m}/${s.b}.json`;
+
   // list -> Map of key -> [items]
   function groupBy(list, key) {
     const out = new Map();
@@ -62,25 +79,22 @@
     ix.benchByKey = new Map(D.benchmarks.map((b) => [b.key, b]));
     ix.model = new Map(D.models.map((m) => [m.id, m]));
     ix.modelBySlug = new Map(D.models.map((m) => [m.slug, m]));
-    ix.mapping = new Map(D.mappings.map((m) => [m.id, m]));
     ix.cap = new Map(D.capabilities.map((c) => [c.id, c]));
-    ix.cell = new Map(D.scores.map((s) => [s.m + ":" + s.b, s]));
-    ix.byBench = groupBy(D.scores, (s) => s.b);
-    ix.byModel = groupBy(D.scores, (s) => s.m);
+    ix.cell = new Map();   // the scores loaded so far, by "model:benchmark", for the tooltips
     // the site shows only what the backend lists (Snapshot::LISTED); counts come listed already
     ix.listed = D.benchmarks.filter((b) => b.listed);
-    ix.home = ix.listed.some((b) => b.key === DEFAULT_BENCH) || !ix.listed.length
-      ? DEFAULT_BENCH : ix.listed.reduce((x, y) => (y.n_measured > x.n_measured ? y : x)).key;
+    ix.home = D.meta.home;   // the home page's benchmark (Snapshot::home)
     ix.benchesByCap = D.capabilities
       .map((c) => ({ cap: c, benches: ix.listed.filter((b) => b.capability === c.id) }))
       .filter(({ benches }) => benches.length);
-    ix.estByMapping = groupBy(D.scores.filter((s) => s.s === "e" && s.via.kind === "uni"), (s) => s.via.mapping);
-    ix.mappingByPair = new Map(D.mappings.map((m) => [m.from + ":" + m.to, m]));
-    // per-benchmark range of measured scores, for the matrix tint
-    ix.measuredRange = new Map(D.benchmarks.map((b) => {
-      const vals = (ix.byBench.get(b.id) || []).filter((s) => s.s === "m").map((s) => s.v);
-      return [b.id, [Math.min(...vals), Math.max(...vals)]];
-    }));
+  }
+  // keeps loaded scores for the tooltips; a full score is never replaced by a matrix cell's partial one
+  function remember(scores) {
+    for (const s of scores) {
+      const key = s.m + ":" + s.b, old = ix.cell.get(key);
+      if (!old || old.partial || !s.partial) ix.cell.set(key, s);
+    }
+    return scores;
   }
 
   const methodLabel = (k) => D.meta.methods[k] || k;
@@ -104,13 +118,17 @@
   // the model's name, heading the sheet (the hover tooltip sits next to it)
   const modelLine = (s) => `<div class="h3">${esc(ix.model.get(s.m).name)}</div>`;
   // the calibration an estimate came from, if it came from a single one
-  const fitHref = (s) => (s.s === "e" && s.via.kind === "uni" ? mappingHref(s.via.mapping) : "");
+  const fitHref = (s) => (s.s === "e" && s.via && s.via.kind === "uni" ? mappingHref(s.via.mapping) : "");
 
   function describeEstimate(s, link) {
     const b = ix.bench.get(s.b);
     const lines = [];
     lines.push(`<div class="t-h">${esc(b.label)}<span class="t-tier ${s.tier}">${s.tier} confidence</span></div>`);
     if (link) lines.push(modelLine(s));
+    if (s.partial) {   // a matrix cell: the details are loading (details())
+      lines.push(`<div class="t-v"><i>≈ ${pct(s.v)}%</i></div><div class="t-note">Loading where it came from…</div>`);
+      return lines.join("");
+    }
     lines.push(`<div class="t-v"><i>≈ ${pct(s.v)}%</i> <span class="t-note">± ${pct(s.sd)} pp</span></div>`);
     lines.push(`<div>Estimated from ${sourceList(s, link)} via ${esc(methodLabel(s.method))}, fitted on ${s.via.n} models measured on both.</div>`);
     if (s.why && s.why.length) lines.push(`<ul>${s.why.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`);
@@ -128,6 +146,7 @@
   }
   let tipEl = null;        // element the tooltip currently describes
   let tipSize = null;      // its measured size, so moves don't re-measure
+  let tipAt = [0, 0];      // where it points
   function showTip(el, html, x, y) {
     if (el !== tipEl) {
       tip.innerHTML = html;
@@ -139,6 +158,7 @@
     moveTip(x, y);
   }
   function moveTip(x, y) {
+    tipAt = [x, y];
     const [w, h] = tipSize;
     let left = x + 14, top = y + 14;
     if (left + w > window.innerWidth - 8) left = Math.max(8, x - w - 14);
@@ -160,10 +180,20 @@
     const key = el.getAttribute("data-tip");
     if (key) {
       const s = ix.cell.get(key);
+      if (s && s.partial) details(s, el);
       if (s) return s.s === "e" ? describeEstimate(s, link) : describeMeasured(s, link);
     }
     const raw = el.getAttribute("data-tiptext");
     return raw ? esc(raw) : null;
+  }
+  // a matrix cell's estimate loads where it came from when its tooltip opens, then redraws the tooltip
+  function details(s, el) {
+    load(scoreUrl(s)).then((full) => {
+      remember([full]);
+      if (tipEl !== el || tip.hidden) return;
+      if (tip.classList.contains("sheet")) openSheet(el);
+      else { tipEl = null; showTip(el, tipFor(el, false), ...tipAt); }
+    }, () => {});
   }
   // touch screens cannot hover: a tap opens the details as a sheet instead
   const touch = matchMedia("(pointer: coarse)");   // as the CSS
@@ -402,10 +432,12 @@
     if (chip) rail.scrollLeft += chip.getBoundingClientRect().left - rail.getBoundingClientRect().left - (rail.clientWidth - chip.offsetWidth) / 2;
   }
 
-  // Returns true when only the chart was swapped (already on the leaderboard).
-  function renderBoard(key) {
+  // A leaderboard; data: its scores (data/b/...). Returns true when only the chart was swapped (already on the leaderboard).
+  function renderBoard(key, data) {
     const b = ix.benchByKey.get(key);
-    if (!b) return renderNotFound(`No benchmark “${esc(key)}”.`);
+    if (!b || !data) return renderNotFound(`No benchmark “${esc(key)}”.`);
+    if (!docs.has(boardUrl(key))) docs.set(boardUrl(key), Promise.resolve(data));   // the home page's, under its own name too
+    const scores = remember(data.scores);
     if (key === ix.home) setMeta("LLM Benchmark Leaderboard with Estimated Scores",
       "LLM benchmark scores: measured where available, estimated where missing, with every estimate's error and confidence.", "/");
     else setMeta(`${b.label} leaderboard`, `${b.label} leaderboard: ${b.n_measured} measured and ${b.n_estimated} estimated LLM scores, each estimate with its error and confidence.`);
@@ -419,7 +451,7 @@
       }
       $("#bench-select").value = b.key;
       $("#bench-rail").innerHTML = railHTML(b);
-      renderBoardBody(b);
+      renderBoardBody(b, scores);
       centerRail();
       return true;
     }
@@ -458,7 +490,7 @@
 
     main.innerHTML = `<div class="page">${hero}${picker}${pickerMobile}<section id="board-sec"></section></div>`;
     $("#bench-select").addEventListener("change", (e) => go(benchHref({ key: e.target.value })));
-    renderBoardBody(b);
+    renderBoardBody(b, scores);
     centerRail();
     return false;
   }
@@ -479,10 +511,9 @@
       + (m.n_estimated ? ` and estimated scores on ${m.n_estimated} more` : "") + ".";
   }
 
-  // header, controls and legend for one benchmark; the rows live in #board-rows
-  function renderBoardBody(b) {
+  // header, controls and legend for one benchmark and its scores; the rows live in #board-rows
+  function renderBoardBody(b, all) {
     const sec = $("#board-sec");
-    const all = ix.byBench.get(b.id) || [];
     const nEst = b.n_estimated;
     const nLow = all.filter((s) => s.s === "e" && s.tier === "low").length;
     sec.innerHTML = `
@@ -499,8 +530,8 @@
       ${legendHTML()}
       <div id="board-rows"></div>
       ${nEst === 0 ? `<p class="muted" style="margin-top:1rem">No estimates for this benchmark: no same-capability benchmark calibrates it well enough (see <a href="/calibration">Calibration</a>).</p>` : ""}`;
-    bindShowSeg(sec, () => renderBoardRows(b));
-    renderBoardRows(b);
+    bindShowSeg(sec, () => renderBoardRows(b, all));
+    renderBoardRows(b, all);
   }
 
   // a 0..max axis for values up to hi, max rounded up to a tenth, with its ticks
@@ -529,8 +560,8 @@
     return cut < rows.length ? [cut, byScore] : null;
   }
 
-  function renderBoardRows(b) {
-    const rows = (ix.byBench.get(b.id) || []).filter(visible).sort((p, q) => q.v - p.v);
+  function renderBoardRows(b, scores) {
+    const rows = scores.filter(visible).sort((p, q) => q.v - p.v);
     const hi = Math.max(0.1, ...rows.map((s) => s.v + (s.s === "e" ? s.sd : 0)));
     const { max: axisMax, ticks } = axis(hi);
     const X = (v) => Math.max(0, Math.min(100, (v / axisMax) * 100));
@@ -585,8 +616,23 @@
 
   // --- page: matrix -----------------------------------------------------------
 
-  function renderMatrix() {
+  // a matrix cell's kind (src/Site.php CELL_KINDS): measured, or an estimate's confidence
+  const CELL_TIERS = [null, "high", "medium", "low"];
+  let mxd = null;   // the matrix's cells by model, and each benchmark's range of measured scores (for the tint)
+
+  // data: every listed benchmark's cells (data/matrix.json), as [model, benchmark, value, kind]; an
+  // estimate's cell is partial: where it came from loads when its tooltip opens (details())
+  function renderMatrix(_, data) {
     setMeta("LLM benchmark score matrix", "Every model on every benchmark: measured LLM scores and calibrated estimates for the missing ones, side by side.");
+    const cells = remember(data.cells.map(([m, b, v, k]) => (k ? { m, b, v, s: "e", tier: CELL_TIERS[k], partial: true } : { m, b, v, s: "m" })));
+    const range = new Map();
+    for (const c of cells) {
+      if (c.s !== "m") continue;
+      const r = range.get(c.b);
+      if (!r) range.set(c.b, [c.v, c.v]);
+      else { r[0] = Math.min(r[0], c.v); r[1] = Math.max(r[1], c.v); }
+    }
+    mxd = { byModel: groupBy(cells, (c) => c.m), range };
     mx = null;
     main.innerHTML = `<div class="page">
       ${pageHead("Score matrix", "Every model × every benchmark", `Measured cells are tinted by score within each column. Hatched italic cells are estimates;
@@ -644,7 +690,7 @@
     let shown = 0, est = 0, low = 0;
     models = models.filter((m) => {
       let any = false;
-      for (const s of ix.byModel.get(m.id) || []) {
+      for (const s of mxd.byModel.get(m.id) || []) {
         if (!drawn.has(s.b) || !visible(s)) continue;
         any = true; shown++;
         if (s.s === "e") { est++; if (s.tier === "low") low++; }
@@ -701,7 +747,7 @@
       if (!s) tds += `<td class="gap${brk}">·</td>`;
       else if (s.s === "e") tds += `<td class="e ${s.tier}${brk}" data-tip="${m.id}:${b.id}" tabindex="0">${pct(s.v, 0)}</td>`;
       else {
-        const [lo, hi] = ix.measuredRange.get(b.id);
+        const [lo, hi] = mxd.range.get(b.id);
         const h = hi > lo ? (s.v - lo) / (hi - lo) : 0.5;
         tds += `<td class="m${brk}" style="--h:${(0.15 + h * 0.85).toFixed(2)}" data-tip="${m.id}:${b.id}">${pct(s.v, 0)}</td>`;
       }
@@ -749,12 +795,13 @@
   }
 
   // --- page: model ------------------------------------------------------------
-  function renderModel(slug) {
+  // data: the model's scores (data/model/...)
+  function renderModel(slug, data) {
     const m = ix.modelBySlug.get(slug);
-    if (!m) return renderNotFound(`No model “${esc(slug)}”.`);
+    if (!m || !data) return renderNotFound(`No model “${esc(slug)}”.`);
     setMeta(`${m.name} benchmark scores`, `${m.name} benchmark scores: measured on ${m.n_measured} benchmark${m.n_measured === 1 ? "" : "s"}`
       + (m.n_estimated ? `, estimated on ${m.n_estimated} more, with the error and confidence of each estimate.` : "."));
-    const scores = (ix.byModel.get(m.id) || []).filter((s) => ix.bench.get(s.b).listed);
+    const scores = remember(data.scores).filter((s) => ix.bench.get(s.b).listed);
     const byB = new Map(scores.map((s) => [s.b, s]));
     const est = scores.filter((s) => s.s === "e");
     const nTier = (t) => est.filter((s) => s.tier === t).length;
@@ -813,12 +860,13 @@
     return `rgb(${c0.map((a, k) => Math.round(a + (c1[k] - a) * u)).join(",")})`;
   }
 
-  function renderCalibration() {
+  // data: the calibrations between listed benchmarks (data/calibration.json)
+  function renderCalibration(_, data) {
     setMeta("LLM benchmark calibrations", "Which LLM benchmarks predict which: the fitted cross-benchmark calibrations behind every estimate, with their errors.");
     const gate = D.meta.quality_gate.max_loo_pp;
-    // one capability at a time (the one with the most mappings first), over the listed benchmarks only
-    const listed = (m) => ix.bench.get(m.from).listed && ix.bench.get(m.to).listed;
-    const maps = D.mappings.filter(listed);
+    // one capability at a time (the one with the most mappings first)
+    const maps = data.mappings;
+    const byPair = new Map(maps.map((m) => [m.from + ":" + m.to, m]));
     const nByCap = groupBy(maps, (m) => ix.bench.get(m.from).capability);
     const caps = D.capabilities.filter((c) => nByCap.has(c.id)).map((c) => ({ id: c.id, label: c.label, n: nByCap.get(c.id).length }));
     const LIST_ROWS = 20;  // mappings listed before "Show all"
@@ -832,7 +880,7 @@
         .map((src, i) => `<tr><th scope="row">${esc(src.label)}</th>${vs
           .map((dst, j) => {
             if (i === j) return `<td class="diag"></td>`;
-            const m = ix.mappingByPair.get(src.id + ":" + dst.id);
+            const m = byPair.get(src.id + ":" + dst.id);
             if (!m) return `<td class="none" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
             return `<td class="cell" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
           })
@@ -887,13 +935,13 @@
     });
   }
 
-  function renderMapping(id) {
-    const m = ix.mapping.get(Number(id));
-    if (!m) return renderNotFound("No such mapping.");
+  // data: the calibration with its points and curve, the estimates it made and its reverse (data/calibration/{id}.json)
+  function renderMapping(id, data) {
+    if (!data) return renderNotFound("No such mapping.");
+    const m = data.mapping, reverse = data.reverse;
     const f = ix.bench.get(m.from), t = ix.bench.get(m.to);
     setMeta(`${f.label} → ${t.label} calibration`, `How ${f.label} scores predict ${t.label}: the fitted ${methodLabel(m.method)} curve, the models it was fitted on and its cross-validated error.`);
-    const ests = ix.estByMapping.get(m.id) || [];
-    const reverse = ix.mappingByPair.get(m.to + ":" + m.from);
+    const ests = remember(data.estimates);
 
     // plot geometry
     const W = 720, H = 460, L = 56, R = 18, T = 18, B = 50;
@@ -1146,7 +1194,8 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     };
   }
 
-  function renderApi() {
+  // data: the calibrations (data/calibration.json), for the "Try it" picker
+  function renderApi(_, data) {
     setMeta("Public API", "Free JSON and CSV API for LLM benchmark scores, measured and estimated, with an OpenAPI 3.1 description.");
     const base = API_BASE;
     const samples = codeSamples(base);
@@ -1155,7 +1204,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
       ["Lists", API_ENDPOINTS.map(([p]) => p).filter((p) => !p.includes("{"))],
       ["Benchmarks", D.benchmarks.map((b) => `benchmarks/${b.key}.json`)],
       ["Models", D.models.map((m) => `models/${m.slug}.json`)],
-      ["Calibrations", D.mappings.slice().sort((a, b) => a.id - b.id).map((m) => `mappings/${m.id}.json`)],
+      ["Calibrations", data.mappings.map((m) => m.id).sort((a, b) => a - b).map((id) => `mappings/${id}.json`)],
     ];
     const tryDefault = `benchmarks/${ix.home}.json`;
     const fieldTable = (name) => `<div class="card api-obj"><h3 class="h3">${name}</h3><table class="list"><tbody>${API_FIELDS[name]
@@ -1276,18 +1325,21 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
 
   // --- router -----------------------------------------------------------------
   // the site's pages (keep in step with serve.php): path, nav item, renderer of the path's
-  // argument; a renderer sets the page's meta and returns true if it updated the page in place
+  // argument and the page's data, and the URL of that data (none: the page needs only D).
+  // A renderer sets the page's meta and returns true if it updated the page in place; its data
+  // is null if the server has none for the argument (404)
   const PAGES = [
-    [/^\/$/, "board", () => renderBoard(ix.home)],
-    [/^\/b\/(.+)$/, "board", renderBoard],
-    [/^\/model\/(.+)$/, "", renderModel],
-    [/^\/matrix$/, "matrix", renderMatrix],
-    [/^\/calibration$/, "calibration", renderCalibration],
-    [/^\/calibration\/(\d+)$/, "calibration", renderMapping],
+    [/^\/$/, "board", (_, data) => renderBoard(ix.home, data), () => "/data/home.json"],
+    [/^\/b\/(.+)$/, "board", renderBoard, boardUrl],
+    [/^\/model\/(.+)$/, "", renderModel, modelUrl],
+    [/^\/matrix$/, "matrix", renderMatrix, () => "/data/matrix.json"],
+    [/^\/calibration$/, "calibration", renderCalibration, () => "/data/calibration.json"],
+    [/^\/calibration\/(\d+)$/, "calibration", renderMapping, (id) => `/data/calibration/${id}.json`],
     [/^\/method$/, "method", renderMethod],
-    [/^\/api$/, "api", renderApi],
+    [/^\/api$/, "api", renderApi, () => "/data/calibration.json"],
   ];
   const pageOf = (path) => PAGES.find(([re]) => re.test(path));
+  const argOf = (page, path) => decodeURIComponent(path.match(page[0])[1] || "");
 
   function go(path) {
     if (path === location.pathname) return;
@@ -1304,16 +1356,33 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     $('meta[name="robots"]').content = path === null ? "noindex" : "index, follow";
   }
 
-  let shownPath = null;   // the path the page was last rendered for
+  let shownPath = null;   // the path the page was last rendered (or is being loaded) for
   const scrollToHash = () => { const el = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1))); if (el) el.scrollIntoView(); return !!el; };
-  function route() {
+  async function route() {
     hideTip();
     const path = location.pathname;
     if (path === shownPath) return scrollToHash();   // only the #fragment changed: same page, no re-render
     shownPath = path;
     const page = pageOf(path);
+    const arg = page ? argOf(page, path) : "";
+    let data = null;
+    // the current page stays (dimmed if it takes a moment) until the new one's data is in
+    main.toggleAttribute("aria-busy", !!(page && page[3]));
+    if (page && page[3]) {
+      try {
+        data = await load(page[3](arg));
+      } catch (err) {
+        if (err.status !== 404) {
+          if (shownPath === path) { shownPath = null; renderError(err); }
+          return;
+        }
+      } finally {
+        if (shownPath === path || shownPath === null) main.removeAttribute("aria-busy");
+      }
+      if (shownPath !== path) return;   // another page was opened meanwhile
+    }
     const nav = page ? page[1] : "";
-    const inPlace = page ? page[2](decodeURIComponent(path.match(page[0])[1] || "")) : renderNotFound("Page not found.");
+    const inPlace = page ? page[2](arg, data) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
     if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }
@@ -1481,10 +1550,16 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     initSearch(openSearch);
   }
 
+  function renderError(err) {
+    main.innerHTML = `<div class="page">${pageHead("Error", "The score database could not be loaded.", `${esc(err.message)}. Please try again in a moment.`)}</div>`;
+  }
+
   // links from before pages had their own paths: #/model/x -> /model/x
   if (location.hash.startsWith("#/")) history.replaceState(null, "", "/" + location.hash.slice(2));
-  fetch(DATA_URL, { cache: "no-cache" })
-    .then((r) => { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.json(); })
+  // the first page's data loads alongside the site's (route() then finds it loading)
+  const first = pageOf(location.pathname);
+  if (first && first[3]) load(first[3](argOf(first, location.pathname))).catch(() => {});
+  load("/data/site.json")
     .then((data) => {
       D = data;
       buildIndex();
@@ -1492,7 +1567,5 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
       window.addEventListener("popstate", route);
       route();
     })
-    .catch((err) => {
-      main.innerHTML = `<div class="page">${pageHead("Error", "The score database could not be loaded.", `${esc(err.message)}. Please try again in a moment.`)}</div>`;
-    });
+    .catch(renderError);
 })();

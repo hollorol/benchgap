@@ -67,7 +67,7 @@ benchgap/
 ├── web/                     # benchgap.net (see "Website")
 │   ├── index.html, assets/  # vanilla JS front-end
 │   ├── serve.php            # Slim 4 backend: pages, site data, public API, llms.txt
-│   ├── src/                 # Snapshot.php (site data, confidence levels), Api.php, Pages.php, Curves.php
+│   ├── src/                 # Snapshot.php (site data, confidence levels), Site.php (each page's data), Api.php, Pages.php, Curves.php
 │   └── api/v1/openapi.json  # OpenAPI 3.1 description of the API
 ├── .github/workflows/       # deploy web/ on every push to main; refresh the data daily
 └── tests/                   # pytest; data/seed.csv is a fixed BenchLM subset
@@ -127,6 +127,13 @@ Every push to `main` deploys `web/`
 downloads BenchLM's newest results, recomputes every calibration and estimate,
 and publishes them; pages, the API and llms.txt show the new data and its
 dates right away. Run it by hand with `gh workflow run update-data.yml`.
+
+The front-end never loads the whole data set: every page loads the shared
+benchmark and model lists (`/data/site.json`) and only its own slice of the
+scores (a leaderboard, a model, the matrix cells, one calibration; see
+`web/src/Site.php`), and an estimate's details in the matrix load when its
+tooltip opens. The server builds the site data once per data update and
+keeps it until the next one.
 
 Pages: per-benchmark leaderboards, the full score matrix, a page per
 model, the calibration (predictability) matrix with a scatter + fitted

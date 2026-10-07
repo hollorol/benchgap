@@ -35,6 +35,8 @@ final class Snapshot
     // The counts, the dense core and the models listed are all of listed benchmarks; an unlisted one
     // keeps its page and its API entry.
     public const LISTED = ['min_estimated' => 1, 'min_models' => 10];
+    // the leaderboard on the home page; see home()
+    public const DEFAULT_BENCH = 'terminal-bench-4/current';
 
     private const RELIABILITY = [
         'high_max_pp' => 5.0, 'medium_max_pp' => 10.0, 'min_reliable_n' => 8, 'min_informative_r2' => 0.5,
@@ -274,6 +276,25 @@ final class Snapshot
             'scores' => $scores,
             'mappings' => $mappingDocs,
         ];
+    }
+
+    /**
+     * The home page's benchmark key: DEFAULT_BENCH, or if the data has no such listed benchmark,
+     * the listed one with the most measured scores. $benchmarks: arrays with key, listed, n_measured.
+     */
+    public static function home(array $benchmarks): string
+    {
+        $measured = array_column(array_filter($benchmarks, fn ($b) => $b['listed']), 'n_measured', 'key');
+        if (!$measured || isset($measured[self::DEFAULT_BENCH])) {
+            return self::DEFAULT_BENCH;
+        }
+        return (string) array_search(max($measured), $measured, true);
+    }
+
+    /** Identifies the database's current build cheaply, without building the document. */
+    public static function version(PDO $db): string
+    {
+        return self::generatedAt($db) . ' ' . $db->query('SELECT COUNT(*) FROM scores')->fetchColumn();
     }
 
     /** Confidence level of a gapfilled score and the reasons for it. */

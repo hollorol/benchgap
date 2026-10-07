@@ -161,6 +161,43 @@ def test_site_data_matches_database(server, gapfilled_db, writable_db):
         assert len(m["curve"]) >= 51 and m["equation"].startswith("y = ")
 
 
+def test_page_data_slices_the_site_data(server):
+    """Each page's data (data/..., Site.php) is its slice of the whole site data."""
+    whole = get_json(server, "/data/benchgap.json")
+    site = get_json(server, "/data/site.json")
+    for k in ("capabilities", "benchmarks", "models"):
+        assert site[k] == whole[k]
+    listed = {b["id"] for b in whole["benchmarks"] if b["listed"]}
+    home = site["meta"]["home"]
+    assert home in {b["key"] for b in whole["benchmarks"] if b["listed"]}
+    scores = whole["scores"]
+
+    bench = next(b for b in whole["benchmarks"] if b["key"] == home)
+    board = get_json(server, f"/data/b/{home}.json")
+    assert board == {"benchmark": bench["id"], "scores": [s for s in scores if s["b"] == bench["id"]]}
+    assert get_json(server, "/data/home.json") == board
+    model = whole["models"][0]
+    assert get_json(server, f"/data/model/{model['slug']}.json")["scores"] == [s for s in scores if s["m"] == model["id"]]
+
+    kinds = {"high": 1, "medium": 2, "low": 3}
+    cells = get_json(server, "/data/matrix.json")["cells"]
+    assert cells == [[s["m"], s["b"], round(s["v"], 4), 0 if s["s"] == "m" else kinds[s["tier"]]] for s in scores if s["b"] in listed]
+    est = next(s for s in scores if s["s"] == "e")
+    assert get_json(server, f"/data/score/{est['m']}/{est['b']}.json") == est
+
+    maps = get_json(server, "/data/calibration.json")["mappings"]
+    assert [m["id"] for m in maps] == [m["id"] for m in whole["mappings"] if m["from"] in listed and m["to"] in listed]
+    assert "points" not in maps[0] and "curve" not in maps[0]
+    one = get_json(server, f"/data/calibration/{maps[0]['id']}.json")
+    assert one["mapping"] == next(m for m in whole["mappings"] if m["id"] == maps[0]["id"])
+    assert one["estimates"] == [s for s in scores if s["s"] == "e" and s["via"]["kind"] == "uni" and s["via"]["mapping"] == maps[0]["id"]]
+
+    for path in ["/data/b/no-such/bench.json", "/data/model/no-such-model.json", "/data/calibration/999999.json", "/data/score/0/0.json"]:
+        with pytest.raises(urllib.error.HTTPError) as err:
+            get(server, path)
+        assert err.value.code == 404 and err.value.headers["Content-Type"].startswith("application/json")
+
+
 def test_api(server):
     index = get_json(server, "/api/v1/")
     assert index["api_version"] == "v1"

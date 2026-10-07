@@ -1,8 +1,8 @@
 <?php
 // benchgap.net backend (Slim 4): the site's pages (index.html filled in for
-// each path), the site data (data/benchgap.json), the public API (api/v1/...)
-// and llms.txt, computed on request from the score database. .htaccess sends
-// every request that is not a static file here.
+// each path), the site data (data/: all of it, and each page's slice), the
+// public API (api/v1/...) and llms.txt, computed from the score database.
+// .htaccess sends every request that is not a static file here.
 //
 // The database is set in config.php (see config.example.php). Local preview:
 //   php -S localhost:8000 -t web web/serve.php
@@ -10,6 +10,7 @@ declare(strict_types=1);
 
 use Benchgap\Api;
 use Benchgap\Pages;
+use Benchgap\Site;
 use Benchgap\Snapshot;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -36,11 +37,48 @@ function database(): PDO
     ]);
 }
 
-// the API over the database, built once per request
+// the site data (Snapshot) of the database's current build. Building it takes about half a
+// second, so it is kept in a file (in the temp directory) until the data or this code changes;
+// without a writable temp directory every request builds it again
+function snapshot(): array
+{
+    static $snapshot;
+    if ($snapshot !== null) {
+        return $snapshot;
+    }
+    $db = database();
+    $code = implode(' ', array_map('filemtime', glob(__DIR__ . '/src/*.php')));
+    // this site's files (another copy of it may share the temp directory), one per build and code version
+    $prefix = sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12);
+    $file = "$prefix-" . sha1($code . ' ' . Snapshot::version($db)) . '.ser';
+    $data = is_file($file) ? @unserialize((string) file_get_contents($file), ['allowed_classes' => false]) : false;
+    if (!is_array($data)) {
+        $data = Snapshot::build($db);
+        // written under another name first, so a concurrent request never reads half a file
+        $tmp = "$file." . getmypid();
+        if (@file_put_contents($tmp, serialize($data)) !== false && @chmod($tmp, 0600) && @rename($tmp, $file)) {
+            foreach (glob("$prefix-*.ser") ?: [] as $old) {
+                if ($old !== $file) {
+                    @unlink($old);
+                }
+            }
+        }
+    }
+    return $snapshot = $data;
+}
+
+// the API over the site data, built once per request
 function api(): Api
 {
     static $api;
-    return $api ??= new Api(Snapshot::build(database()));
+    return $api ??= new Api(snapshot());
+}
+
+// the front-end's documents (data/...), built once per request
+function site(): Site
+{
+    static $site;
+    return $site ??= new Site(snapshot());
 }
 
 // a document with an ETag; the Cache middleware answers a matching If-None-Match with 304
@@ -85,7 +123,21 @@ $errors->setErrorHandler(HttpNotFoundException::class, function (Request $reques
     return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
 });
 
-$app->get('/data/benchgap.json', fn (Request $rq, Response $rs) => send($rs, Snapshot::build(database())));
+// the whole site data in one document; the site's pages load their own slices (Site)
+$app->get('/data/benchgap.json', fn (Request $rq, Response $rs) => send($rs, snapshot()));
+$app->group('/data', function (RouteCollectorProxy $data) {
+    $data->get('/site.json', fn (Request $rq, Response $rs) => send($rs, site()->site()));
+    $data->get('/home.json', fn (Request $rq, Response $rs) => send($rs, site()->home()));
+    $data->get('/b/{name}/{version}.json', fn (Request $rq, Response $rs, array $a) =>
+        send($rs, found(site()->board("{$a['name']}/{$a['version']}"), $rq)));
+    $data->get('/model/{slug}.json', fn (Request $rq, Response $rs, array $a) => send($rs, found(site()->model($a['slug']), $rq)));
+    $data->get('/matrix.json', fn (Request $rq, Response $rs) => send($rs, site()->matrix()));
+    $data->get('/score/{model:[0-9]+}/{benchmark:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
+        send($rs, found(site()->score((int) $a['model'], (int) $a['benchmark']), $rq)));
+    $data->get('/calibration.json', fn (Request $rq, Response $rs) => send($rs, site()->calibration()));
+    $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
+        send($rs, found(site()->mapping((int) $a['id']), $rq)));
+});
 $app->get('/sitemap.xml', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->sitemap(), 'application/xml'));
 $app->get('/llms.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llms(), 'text/markdown'));
 $app->get('/llms-full.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llmsFull(), 'text/markdown'));
