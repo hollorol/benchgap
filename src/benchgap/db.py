@@ -1,0 +1,205 @@
+"""SQLite schema and small data-access helpers.
+
+All scores are stored as fractions in [0, 1]. Reports render percent.
+
+Design notes for the probabilistic future:
+- ``mappings.params_json`` holds the fitted parameters of a mapping; a
+  probabilistic method can additionally store posterior summaries there.
+- ``scores.prediction_json`` holds prediction metadata (input score,
+  extrapolation flag); a probabilistic gapfill can put credible intervals
+  there and/or fill the nullable ``ci95_lo`` / ``ci95_hi`` columns.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Any, Optional
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS benchmarks (
+    id   INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS benchmark_versions (
+    id           INTEGER PRIMARY KEY,
+    benchmark_id INTEGER NOT NULL REFERENCES benchmarks(id),
+    version      TEXT NOT NULL,
+    harness      TEXT NOT NULL DEFAULT 'unknown',
+    source_url   TEXT,
+    UNIQUE (benchmark_id, version, harness)
+);
+
+CREATE TABLE IF NOT EXISTS models (
+    id      INTEGER PRIMARY KEY,
+    slug    TEXT NOT NULL UNIQUE,
+    name    TEXT,
+    release TEXT
+);
+
+CREATE TABLE IF NOT EXISTS mappings (
+    id              INTEGER PRIMARY KEY,
+    from_version_id INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    to_version_id   INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    method          TEXT NOT NULL,
+    params_json     TEXT NOT NULL,
+    metrics_json    TEXT NOT NULL,
+    n_points        INTEGER NOT NULL,
+    train_range_json TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (from_version_id, to_version_id, method)
+);
+
+CREATE TABLE IF NOT EXISTS mapping_points (
+    mapping_id INTEGER NOT NULL REFERENCES mappings(id) ON DELETE CASCADE,
+    model_id   INTEGER NOT NULL REFERENCES models(id),
+    x          REAL NOT NULL,
+    y          REAL NOT NULL,
+    PRIMARY KEY (mapping_id, model_id)
+);
+
+CREATE TABLE IF NOT EXISTS scores (
+    id              INTEGER PRIMARY KEY,
+    model_id        INTEGER NOT NULL REFERENCES models(id),
+    version_id      INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    value           REAL NOT NULL,
+    source          TEXT NOT NULL CHECK (source IN ('measured', 'gapfilled')),
+    mapping_id      INTEGER REFERENCES mappings(id),
+    prediction_json TEXT,
+    ci95_lo         REAL,
+    ci95_hi         REAL,
+    retrieved_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (model_id, version_id, source, mapping_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_scores_model ON scores(model_id);
+CREATE INDEX IF NOT EXISTS idx_scores_version ON scores(version_id);
+"""
+
+
+def connect(path: str | Path) -> sqlite3.Connection:
+    """Open (creating if needed) the benchgap database with foreign keys on."""
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db(conn: sqlite3.Connection) -> None:
+    conn.executescript(SCHEMA)
+    conn.commit()
+
+
+# --- lookup / upsert helpers -------------------------------------------------
+
+
+def get_or_create_benchmark(conn: sqlite3.Connection, name: str) -> int:
+    conn.execute("INSERT OR IGNORE INTO benchmarks (name) VALUES (?)", (name,))
+    return conn.execute(
+        "SELECT id FROM benchmarks WHERE name = ?", (name,)
+    ).fetchone()["id"]
+
+
+def get_or_create_version(
+    conn: sqlite3.Connection,
+    benchmark: str,
+    version: str,
+    harness: str = "unknown",
+    source_url: Optional[str] = None,
+) -> int:
+    bid = get_or_create_benchmark(conn, benchmark)
+    conn.execute(
+        "INSERT OR IGNORE INTO benchmark_versions"
+        " (benchmark_id, version, harness, source_url) VALUES (?, ?, ?, ?)",
+        (bid, version, harness, source_url),
+    )
+    return conn.execute(
+        "SELECT id FROM benchmark_versions"
+        " WHERE benchmark_id = ? AND version = ? AND harness = ?",
+        (bid, version, harness),
+    ).fetchone()["id"]
+
+
+def get_or_create_model(
+    conn: sqlite3.Connection, slug: str, name: str, release: Optional[str] = None
+) -> int:
+    conn.execute(
+        "INSERT OR IGNORE INTO models (slug, name, release) VALUES (?, ?, ?)",
+        (slug, name, release),
+    )
+    row = conn.execute("SELECT id, name, release FROM models WHERE slug = ?", (slug,)).fetchone()
+    if (name and row["name"] is None) or (release and row["release"] is None):
+        conn.execute(
+            "UPDATE models SET name = COALESCE(?, name), release = COALESCE(?, release)"
+            " WHERE id = ?",
+            (name, release, row["id"]),
+        )
+    return row["id"]
+
+
+def set_measured_score(
+    conn: sqlite3.Connection,
+    model_id: int,
+    version_id: int,
+    value: float,
+    retrieved_at: Optional[str] = None,
+) -> None:
+    """Insert or update the single measured score for a (model, version)."""
+    row = conn.execute(
+        "SELECT id FROM scores"
+        " WHERE model_id = ? AND version_id = ? AND source = 'measured'",
+        (model_id, version_id),
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            "INSERT INTO scores (model_id, version_id, value, source, retrieved_at)"
+            " VALUES (?, ?, ?, 'measured', ?)",
+            (model_id, version_id, float(value), retrieved_at),
+        )
+    else:
+        conn.execute(
+            "UPDATE scores SET value = ?, retrieved_at = ? WHERE id = ?",
+            (float(value), retrieved_at, row["id"]),
+        )
+
+
+def version_label(row: sqlite3.Row) -> str:
+    """Human-readable identifier for a benchmark version row."""
+    return f"{row['benchmark']}/{row['version']}@{row['harness']}"
+
+
+def parse_version_spec(conn: sqlite3.Connection, spec: str) -> sqlite3.Row:
+    """Resolve a version spec of the form benchmark/version[@harness].
+
+    The harness part is optional when it is unambiguous.
+    """
+    parts = spec.split("/")
+    if len(parts) != 2:
+        raise ValueError(f"version spec must be 'benchmark/version[@harness]', got {spec!r}")
+    bench, rest = parts
+    if "@" in rest:
+        version, harness = rest.split("@", 1)
+    else:
+        version, harness = rest, None
+    sql = (
+        "SELECT v.*, b.name AS benchmark FROM benchmark_versions v"
+        " JOIN benchmarks b ON b.id = v.benchmark_id"
+        " WHERE b.name = ? AND v.version = ?"
+    )
+    args: list[Any] = [bench, version]
+    if harness is not None:
+        sql += " AND v.harness = ?"
+        args.append(harness)
+    rows = conn.execute(sql, args).fetchall()
+    if not rows:
+        raise ValueError(f"no benchmark version matching {spec!r}")
+    if len(rows) > 1:
+        labels = ", ".join(version_label(r) for r in rows)
+        raise ValueError(f"{spec!r} is ambiguous, use @harness: {labels}")
+    return rows[0]
+
+
+def load_json(text: str) -> Any:
+    return json.loads(text)
