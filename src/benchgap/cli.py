@@ -12,7 +12,13 @@ from .db import connect, init_db, parse_version_spec
 from .fit import fit_mappings
 from .gapfill import gapfill
 from .ingest import ingest_csv
-from .report import mapping_summary, multi_mapping_summary, render_matrix
+from .report import (
+    DEFAULT_MIN_BENCHMARKS,
+    DEFAULT_MIN_MODELS,
+    mapping_summary,
+    multi_mapping_summary,
+    render_matrix,
+)
 from .fitting import predict as predict_with
 
 DEFAULT_DB = Path("data") / "benchgap.db"
@@ -95,7 +101,20 @@ def cmd_multifit(args: argparse.Namespace) -> None:
 
 
 def cmd_report(args: argparse.Namespace) -> None:
+    from .report import display_filter
+
     conn = _conn(args)
+    vids, mids = display_filter(conn, args.min_models, args.min_benchmarks)
+    n_all_versions = conn.execute("SELECT COUNT(*) FROM benchmark_versions").fetchone()[0]
+    n_all_models = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+    if len(vids) < n_all_versions or len(mids) < n_all_models:
+        print(
+            f"display filter: showing {len(vids)}/{n_all_versions} benchmark versions"
+            f" and {len(mids)}/{n_all_models} models"
+            f" (min {args.min_models} models per version,"
+            f" min {args.min_benchmarks} benchmarks per model)"
+        )
+        print()
     summary = mapping_summary(conn)
     if summary:
         print("mappings:")
@@ -118,14 +137,16 @@ def cmd_report(args: argparse.Namespace) -> None:
                 f" LOO RMSE={s['LOO_RMSE_pp']:.2f} pp)"
             )
         print()
-    print(render_matrix(conn))
+    print(render_matrix(conn, vids, mids))
 
 
 def cmd_html(args: argparse.Namespace) -> None:
     from .html_report import generate_html_report
 
     conn = _conn(args)
-    out = generate_html_report(conn, args.output)
+    out = generate_html_report(
+        conn, args.output, min_models=args.min_models, min_benchmarks=args.min_benchmarks
+    )
     print(f"wrote {out}")
 
 
@@ -192,14 +213,25 @@ def build_parser() -> argparse.ArgumentParser:
         " per target; gapfill prefers them when available",
     ).set_defaults(func=cmd_multifit)
 
-    sub.add_parser("report", help="show mappings and the score matrix").set_defaults(
-        func=cmd_report
-    )
+    rep = sub.add_parser("report", help="show mappings and the score matrix")
+    rep.add_argument("--min-models", type=int, default=DEFAULT_MIN_MODELS,
+                    help="display only benchmark versions with at least this many"
+                    " measured models (0 = show all)")
+    rep.add_argument("--min-benchmarks", type=int, default=DEFAULT_MIN_BENCHMARKS,
+                    help="display only models measured on at least this many"
+                    " benchmarks (0 = show all)")
+    rep.set_defaults(func=cmd_report)
 
     html = sub.add_parser("html", help="write a self-contained HTML report")
     html.add_argument(
         "output", default="data/report.html", nargs="?", help="output HTML path"
     )
+    html.add_argument("--min-models", type=int, default=DEFAULT_MIN_MODELS,
+                     help="display only benchmark versions with at least this many"
+                     " measured models (0 = show all)")
+    html.add_argument("--min-benchmarks", type=int, default=DEFAULT_MIN_BENCHMARKS,
+                     help="display only models measured on at least this many"
+                     " benchmarks (0 = show all)")
     html.set_defaults(func=cmd_html)
 
     pred = sub.add_parser(

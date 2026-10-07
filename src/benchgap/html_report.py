@@ -23,6 +23,9 @@ import numpy as np  # noqa: E402
 from .fitting import CANDIDATES, fit_all, predict, select_best  # noqa: E402
 from .report import (  # noqa: E402
     CAPABILITY_ORDER,
+    DEFAULT_MIN_BENCHMARKS,
+    DEFAULT_MIN_MODELS,
+    display_filter,
     mapping_summary,
     multi_mapping_summary,
     predictability_matrix,
@@ -171,8 +174,12 @@ def _mapping_card(conn: sqlite3.Connection, mapping: sqlite3.Row, labels: dict[i
     </section>"""
 
 
-def _matrix_html(conn: sqlite3.Connection) -> str:
-    columns, rows = score_matrix(conn)
+def _matrix_html(
+    conn: sqlite3.Connection,
+    include_versions: set[int] | None = None,
+    include_models: set[int] | None = None,
+) -> str:
+    columns, rows = score_matrix(conn, include_versions, include_models)
     # tooltip metadata per (model, version): which method gapfilled the cell
     meta = {
         (r["model_id"], r["version_id"]): r
@@ -240,9 +247,11 @@ def _predictability_color(loo_pp: float) -> str:
     return "rgb(239,68,68)"
 
 
-def _predictability_html(conn: sqlite3.Connection) -> str:
+def _predictability_html(
+    conn: sqlite3.Connection, include_versions: set[int] | None = None
+) -> str:
     """Color-coded source->target predictability matrix (LOO RMSE per pair)."""
-    versions, cells = predictability_matrix(conn)
+    versions, cells = predictability_matrix(conn, include_versions)
     if not versions or not any(any(r) for r in cells):
         return ""
     head = "".join(
@@ -308,9 +317,23 @@ def _capability_stats(conn: sqlite3.Connection) -> list[tuple[str, int, int, int
     ]
 
 
-def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
-    """Write a self-contained HTML report; returns the output path."""
+def generate_html_report(
+    conn: sqlite3.Connection,
+    path: str | Path,
+    min_models: int = DEFAULT_MIN_MODELS,
+    min_benchmarks: int = DEFAULT_MIN_BENCHMARKS,
+) -> Path:
+    """Write a self-contained HTML report; returns the output path.
+
+    ``min_models`` / ``min_benchmarks`` apply the dense-core display filter
+    (iteratively dropped sparse benchmarks and thin models) to the score
+    and predictability matrices only; pass 0 to show everything. The
+    database, mappings, and all other sections are unaffected.
+    """
     labels = _labels(conn)
+    vids, mids = display_filter(conn, min_models, min_benchmarks)
+    n_all_versions = conn.execute("SELECT COUNT(*) FROM benchmark_versions").fetchone()[0]
+    n_all_models = conn.execute("SELECT COUNT(*) FROM models").fetchone()[0]
     stats = {
         "models": conn.execute("SELECT COUNT(*) FROM models").fetchone()[0],
         "versions": conn.execute("SELECT COUNT(*) FROM benchmark_versions").fetchone()[0],
@@ -360,7 +383,13 @@ beats the best univariate mapping; otherwise the univariate mapping applies.
 Models missing one of the source scores fall back to the univariate path.</p>
 """
     predictability_section = ""
-    predictability_table = _predictability_html(conn)
+    predictability_table = _predictability_html(conn, vids)
+    predictability_note = ""
+    if len(vids) < n_all_versions:
+        predictability_note = (
+            f" Shown for the dense-core benchmark set ({len(vids)} of"
+            f" {n_all_versions} versions; see the score matrix note)."
+        )
     if predictability_table:
         predictability_section = f"""
 <h2>Predictability matrix</h2>
@@ -374,12 +403,23 @@ the method, sample size, and R². Green → red spans 0 → 15 pp (the quality
 gate); gray cells have no usable mapping (too little overlap, or the best
 fit failed the gate); dark cells mark the diagonal; blank cells never have a
 mapping because the pair crosses a capability boundary. Groups of
-same-capability benchmarks are separated by heavier borders.</p>
+same-capability benchmarks are separated by heavier borders.{predictability_note}</p>
 """
     cap_rows = "".join(
         f"<tr><td>{cap}</td><td>{nb}</td><td>{meas}</td><td>{gap}</td></tr>"
         for cap, nb, meas, gap in _capability_stats(conn)
     )
+    filter_note = ""
+    if len(vids) < n_all_versions or len(mids) < n_all_models:
+        filter_note = (
+            f'<p class="legend">Dense-core view: showing {len(vids)} of'
+            f" {n_all_versions} benchmark versions (each with at least"
+            f" {min_models} measured models) and {len(mids)} of {n_all_models}"
+            f" models (each measured on at least {min_benchmarks} benchmarks),"
+            " peeled iteratively until both hold. The full dataset, all"
+            " mappings, and all gapfilled scores are unaffected - this is a"
+            " display filter only.</p>"
+        )
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     html = f"""<!DOCTYPE html>
@@ -482,8 +522,9 @@ monotone. Solid curves are the selected fit; gray curves are the alternatives.</
 <div class="cards">{cards}</div>
 
 <h2>Score matrix (percent; amber = gapfilled, dash = kept gap)</h2>
+{filter_note}
 <div class="matrix-wrap">
-{_matrix_html(conn)}
+{_matrix_html(conn, vids, mids)}
 </div>
 <p class="legend">Amber cells are <b>gapfilled</b>: values predicted by the fitted
 mapping, not measured scores. Dashes are kept gaps: no measured source score in

@@ -18,6 +18,58 @@ CAPABILITY_ORDER = [
 ]
 
 
+# Display filter defaults: drop benchmark versions with fewer measured models
+# and models with fewer measured benchmarks than these, iteratively until
+# stable (bipartite core). Display only - the database keeps everything.
+DEFAULT_MIN_MODELS = 8
+DEFAULT_MIN_BENCHMARKS = 3
+
+
+def display_filter(
+    conn: sqlite3.Connection,
+    min_models: int = DEFAULT_MIN_MODELS,
+    min_benchmarks: int = DEFAULT_MIN_BENCHMARKS,
+) -> tuple[set[int], set[int]]:
+    """Benchmark version ids and model ids to show for a dense summary view.
+
+    Iteratively peels the measured-score bipartite graph: drop versions with
+    fewer than ``min_models`` measured models, then models with fewer than
+    ``min_benchmarks`` measured versions, and repeat until both hold - so
+    the displayed region is a dense core with minimal missing cells.
+    Thresholds <= 0 disable the corresponding peel.
+    """
+    pairs = {
+        (r["model_id"], r["version_id"])
+        for r in conn.execute(
+            "SELECT model_id, version_id FROM scores WHERE source = 'measured'"
+        )
+    }
+    versions = {v for _, v in pairs}
+    models = {m for m, _ in pairs}
+    while True:
+        version_count: dict[int, int] = {}
+        model_count: dict[int, int] = {}
+        for m, v in pairs:
+            if m in models and v in versions:
+                version_count[v] = version_count.get(v, 0) + 1
+                model_count[m] = model_count.get(m, 0) + 1
+        drop_v = {
+            v
+            for v in versions
+            if min_models > 0 and version_count.get(v, 0) < min_models
+        }
+        drop_m = {
+            m
+            for m in models
+            if min_benchmarks > 0 and model_count.get(m, 0) < min_benchmarks
+        }
+        if not drop_v and not drop_m:
+            break
+        versions -= drop_v
+        models -= drop_m
+    return versions, models
+
+
 def _version_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     rows = conn.execute(
         "SELECT v.id, v.version, v.harness, v.unit, b.name AS benchmark,"
@@ -102,12 +154,15 @@ def best_mappings(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
-def predictability_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[list[dict | None]]]:
+def predictability_matrix(
+    conn: sqlite3.Connection, include_versions: set[int] | None = None
+) -> tuple[list[dict], list[list[dict | None]]]:
     """Predictability of every target version from every source version.
 
     Returns (versions, cells) where versions are ordered by capability and
     cells[i][j] describes the best mapping versions[i] -> versions[j]
-    (None when no mapping exists). Diagonal cells are None.
+    (None when no mapping exists). Diagonal cells are None. When
+    ``include_versions`` is given, only those version ids are displayed.
     """
     versions = [
         {
@@ -116,6 +171,7 @@ def predictability_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[li
             "capability": v["capability"],
         }
         for v in _version_rows(conn)
+        if include_versions is None or v["id"] in include_versions
     ]
     by_pair = {
         (m["from_version_id"], m["to_version_id"]): m for m in best_mappings(conn)
@@ -152,13 +208,23 @@ def multi_mapping_summary(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
-def score_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
+def score_matrix(
+    conn: sqlite3.Connection,
+    include_versions: set[int] | None = None,
+    include_models: set[int] | None = None,
+) -> tuple[list[dict], list[dict]]:
     """Models x versions matrix; gapfilled cells marked 'g', missing '.'.
 
     Columns are grouped by capability. Cell values are in the version's
-    native unit (fractions rendered as percent by callers).
+    native unit (fractions rendered as percent by callers). When
+    ``include_versions`` / ``include_models`` are given, only those rows
+    and columns are displayed.
     """
-    versions = _version_rows(conn)
+    versions = [
+        v
+        for v in _version_rows(conn)
+        if include_versions is None or v["id"] in include_versions
+    ]
     columns = []
     for v in versions:
         columns.append(
@@ -179,6 +245,8 @@ def score_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
 
     rows = []
     for m in conn.execute("SELECT id, slug, name FROM models ORDER BY slug"):
+        if include_models is not None and m["id"] not in include_models:
+            continue
         cells = []
         for col in columns:
             entry = scores.get((m["id"], col["id"]))
@@ -204,9 +272,13 @@ def _format_cell(col: dict, cell: dict) -> str:
     return f"{cell['value']:5.1f}{mark}".ljust(8)
 
 
-def render_matrix(conn: sqlite3.Connection) -> str:
+def render_matrix(
+    conn: sqlite3.Connection,
+    include_versions: set[int] | None = None,
+    include_models: set[int] | None = None,
+) -> str:
     """Plain-text matrix: measured values plain, gapfilled marked with *."""
-    columns, rows = score_matrix(conn)
+    columns, rows = score_matrix(conn, include_versions, include_models)
     name_w = max([len(r["slug"]) for r in rows] + [len("model")])
     lines = []
     header_cells = []

@@ -52,10 +52,20 @@ benchgap ingest                            # load data/seed/scores.csv
 benchgap fit -v                            # fit univariate mappings per version pair
 benchgap multifit                          # fit multivariate mappings per target
 benchgap gapfill                           # fill missing scores (prefers multi where it wins)
-benchgap report                            # mapping summary + score matrix (terminal)
+benchgap report                            # dense-core score matrix (terminal)
 benchgap html                               # self-contained HTML report -> data/report.html
 benchgap predict terminal-bench/4.0 terminal-bench/2.1 59.6
+benchgap report --min-models 12 --min-benchmarks 5   # denser view (0 disables filtering)
 pytest                                      # run the test suite
+```
+
+The matrices show a **dense-core view** by default: benchmark versions with
+fewer than `--min-models` (default 8) measured models and models measured on
+fewer than `--min-benchmarks` (default 3) benchmarks are peeled iteratively
+until both thresholds hold, which minimizes empty cells (12% dashes at the
+defaults, ~60% unfiltered). This is display-only - the database, mappings,
+gapfill, and all other report sections keep the full dataset; pass 0 for
+either threshold to see everything.
 ```
 
 The HTML report (`benchgap html`, needs the `report` extra: `pip install
