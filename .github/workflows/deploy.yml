@@ -1,5 +1,6 @@
 # Upload the benchgap.net website (web/) over FTPS on every push to main, or by
-# hand from the Actions tab / `gh workflow run deploy.yml`. Tests gate the deploy.
+# hand from the Actions tab / `gh workflow run deploy.yml`. Run the tests locally
+# (pytest) before pushing; CI does not run them.
 # Only the code is uploaded: the data and config.php stay on the server as they are.
 # Repository secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD.
 name: Deploy benchgap.net
@@ -18,24 +19,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-          cache: pip
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.5"
-          extensions: pdo_sqlite
-      - run: pip install -e ".[dev]"
-      - run: composer install --no-interaction --no-progress --working-dir web
-      - run: pytest -q
-
   deploy:
-    needs: test
     runs-on: ubuntu-latest
     environment:
       name: production

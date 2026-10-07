@@ -65,7 +65,7 @@ benchgap/
 │   ├── serve.php            # Slim 4 backend: pages, site data, public API, llms.txt
 │   ├── src/                 # Snapshot.php (site data, confidence levels), Api.php, Pages.php, Curves.php
 │   └── api/v1/openapi.json  # OpenAPI 3.1 description of the API
-├── .github/workflows/       # tests, then upload web/ to benchgap.net on every push to main
+├── .github/workflows/       # upload web/ to benchgap.net on every push to main
 └── tests/
 ```
 
@@ -112,7 +112,7 @@ directory); pass `--db` to use a different database file.
 [benchgap.net](https://benchgap.net) lives in `web/`: a vanilla JS front-end
 and a small [Slim 4](https://www.slimframework.com/) backend (`serve.php`)
 that computes the site's data and the public API from the benchgap database.
-Every push to `main` runs the tests and deploys `web/`
+Every push to `main` deploys `web/`
 (`.github/workflows/deploy.yml`).
 
 Pages: per-benchmark leaderboards, the full score matrix, a page per
