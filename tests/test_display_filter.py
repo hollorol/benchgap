@@ -1,14 +1,6 @@
 """Tests for the dense-core display filter."""
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
-from benchgap.db import connect, init_db
-from benchgap.fit import fit_mappings
-from benchgap.gapfill import gapfill
-from benchgap.ingest import ingest_csv
 from benchgap.report import (
     DEFAULT_MIN_BENCHMARKS,
     DEFAULT_MIN_MODELS,
@@ -18,27 +10,13 @@ from benchgap.report import (
     score_matrix,
 )
 
-REPO = Path(__file__).resolve().parent.parent
-SEED = REPO / "data" / "seed" / "scores.csv"
 
-
-@pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    conn = connect(tmp_path_factory.mktemp("filter") / "filter.db")
-    init_db(conn)
-    ingest_csv(conn, SEED)
-    fit_mappings(conn)
-    gapfill(conn)
-    yield conn
-    conn.close()
-
-
-def test_filter_is_a_fixpoint(built):
+def test_filter_is_a_fixpoint(gapfilled_db):
     """Every shown version/model meets both thresholds within the shown set."""
-    vids, mids = display_filter(built, DEFAULT_MIN_MODELS, DEFAULT_MIN_BENCHMARKS)
+    vids, mids = display_filter(gapfilled_db, DEFAULT_MIN_MODELS, DEFAULT_MIN_BENCHMARKS)
     shown = {
         (r["model_id"], r["version_id"])
-        for r in built.execute(
+        for r in gapfilled_db.execute(
             "SELECT model_id, version_id FROM scores WHERE source = 'measured'"
         )
         if r["model_id"] in mids and r["version_id"] in vids
@@ -52,11 +30,11 @@ def test_filter_is_a_fixpoint(built):
     assert all(c >= DEFAULT_MIN_BENCHMARKS for c in model_count.values())
 
 
-def test_sparse_benchmarks_and_thin_models_hidden(built):
-    vids, mids = display_filter(built)
+def test_sparse_benchmarks_and_thin_models_hidden(gapfilled_db):
+    vids, mids = display_filter(gapfilled_db)
     labels = {
         r["id"]: f"{r['benchmark']}/{r['version']}"
-        for r in built.execute(
+        for r in gapfilled_db.execute(
             "SELECT v.id, v.version, b.name AS benchmark FROM benchmark_versions v"
             " JOIN benchmarks b ON b.id = v.benchmark_id"
         )
@@ -76,7 +54,7 @@ def test_sparse_benchmarks_and_thin_models_hidden(built):
     # models measured on very few benchmarks drop out
     shown_models = {
         r["slug"]
-        for r in built.execute("SELECT id, slug FROM models")
+        for r in gapfilled_db.execute("SELECT id, slug FROM models")
         if r["id"] in mids
     }
     assert "claude-4-sonnet" not in shown_models
@@ -86,35 +64,35 @@ def test_sparse_benchmarks_and_thin_models_hidden(built):
     assert "claude-fable-5-1-max-with-fallback" in shown_models
 
 
-def test_zero_thresholds_show_everything(built):
-    vids, mids = display_filter(built, 0, 0)
-    assert len(vids) == built.execute("SELECT COUNT(*) FROM benchmark_versions").fetchone()[0]
-    assert len(mids) == built.execute("SELECT COUNT(*) FROM models").fetchone()[0]
+def test_zero_thresholds_show_everything(gapfilled_db):
+    vids, mids = display_filter(gapfilled_db, 0, 0)
+    assert len(vids) == gapfilled_db.execute("SELECT COUNT(*) FROM benchmark_versions").fetchone()[0]
+    assert len(mids) == gapfilled_db.execute("SELECT COUNT(*) FROM models").fetchone()[0]
 
 
-def test_matrices_respect_the_filter(built):
-    vids, mids = display_filter(built)
-    cols, rows = score_matrix(built, vids, mids)
+def test_matrices_respect_the_filter(gapfilled_db):
+    vids, mids = display_filter(gapfilled_db)
+    cols, rows = score_matrix(gapfilled_db, vids, mids)
     assert len(cols) == len(vids)
     assert len(rows) == len(mids)
     # the unfiltered call still shows everything
-    all_cols, all_rows = score_matrix(built)
+    all_cols, all_rows = score_matrix(gapfilled_db)
     assert len(all_cols) == 24 and len(all_rows) == 85
 
-    vers, cells = predictability_matrix(built, vids)
+    vers, cells = predictability_matrix(gapfilled_db, vids)
     assert len(vers) == len(vids)
     shown_maps = [
         m
-        for m in best_mappings(built)
+        for m in best_mappings(gapfilled_db)
         if m["from_version_id"] in vids and m["to_version_id"] in vids
     ]
     assert sum(1 for row in cells for c in row if c is not None) == len(shown_maps)
 
 
-def test_filtered_view_is_denser(built):
-    vids, mids = display_filter(built)
-    cols, rows = score_matrix(built, vids, mids)
+def test_filtered_view_is_denser(gapfilled_db):
+    vids, mids = display_filter(gapfilled_db)
+    cols, rows = score_matrix(gapfilled_db, vids, mids)
     dashes = sum(1 for r in rows for c in r["cells"] if c["kind"] == "missing")
-    all_cols, all_rows = score_matrix(built)
+    all_cols, all_rows = score_matrix(gapfilled_db)
     all_dashes = sum(1 for r in all_rows for c in r["cells"] if c["kind"] == "missing")
     assert dashes / (len(rows) * len(cols)) < all_dashes / (len(all_rows) * len(all_cols))

@@ -150,6 +150,17 @@ def cmd_html(args: argparse.Namespace) -> None:
     print(f"wrote {out}")
 
 
+def cmd_sql(args: argparse.Namespace) -> None:
+    from .mysql import write_sql
+
+    conn = _conn(args)
+    counts = write_sql(conn, args.output)
+    rows = ", ".join(f"{t} {n}" for t, n in counts.items())
+    print(f"wrote {args.output}: {len(counts)} tables ({rows})")
+    if not conn.execute("SELECT 1 FROM scores WHERE source = 'gapfilled' LIMIT 1").fetchone():
+        print("warning: the database has no gapfilled scores; run 'benchgap gapfill' first")
+
+
 def cmd_predict(args: argparse.Namespace) -> None:
     conn = _conn(args)
     src = parse_version_spec(conn, args.from_version)
@@ -233,6 +244,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="display only models measured on at least this many"
                      " benchmarks (0 = show all)")
     html.set_defaults(func=cmd_html)
+
+    sql = sub.add_parser(
+        "sql", help="write the database as a MySQL load script (for benchgap.net)"
+    )
+    sql.add_argument("output", default="dist/benchgap.sql", nargs="?", help="output .sql path")
+    sql.set_defaults(func=cmd_sql)
 
     pred = sub.add_parser(
         "predict", help="map a score between two versions (fractions or percent)"

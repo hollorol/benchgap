@@ -1,0 +1,49 @@
+# benchgap.net (Apache)
+AddType image/svg+xml .svg
+AddType font/woff2 .woff2
+Options -Indexes
+DirectoryIndex index.html
+# /api is a page, not the api/ folder: no redirect to /api/
+DirectorySlash Off
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/csv text/markdown application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_headers.c>
+  # fonts never change; everything else is revalidated so a fresh upload shows up immediately
+  <FilesMatch "\.woff2$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(css|js|json|html|svg)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+  <Files "openapi.json">
+    Header set Access-Control-Allow-Origin "*"
+  </Files>
+  # gzip appends -gzip to the ETag; strip it from revalidations so serve.php can answer 304
+  RequestHeader edit* If-None-Match "-gzip\"" "\""
+  # the raw data and API responses are for programs, not search results
+  <If "%{THE_REQUEST} =~ m#^\S+ /(data/|api/v1)#">
+    Header set X-Robots-Tag "noindex"
+  </If>
+  Header always set Strict-Transport-Security "max-age=31536000"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+RewriteEngine On
+# one host name: www.benchgap.net -> benchgap.net
+RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]
+# the backend's code and settings are not public
+RewriteRule ^(src|vendor)(/|$) - [F]
+# pages have no trailing slash (the API index aside)
+RewriteRule ^((?!api/v1/$).+)/$ /$1 [R=301,L]
+# serve.php answers everything that is not a static file: the pages, the data, the API, the sitemap, llms.txt
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ serve.php [L]
+
+<FilesMatch "^(config(\.example)?\.php|composer\.(json|lock)|\.ftp-deploy-sync-state\.json)$">
+  Require all denied
+</FilesMatch>

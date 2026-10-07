@@ -1,0 +1,68 @@
+# Upload the benchgap.net website (web/) over FTPS on every push to main, or by
+# hand from the Actions tab / `gh workflow run deploy.yml`. Tests gate the deploy.
+# Only the code is uploaded: the data and config.php stay on the server as they are.
+# Repository secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD.
+name: Deploy benchgap.net
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# never run two uploads at once; a newer push waits for the running one
+concurrency:
+  group: deploy-benchgap-net
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: pdo_sqlite
+      - run: pip install -e ".[dev]"
+      - run: composer install --no-interaction --no-progress --working-dir web
+      - run: pytest -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://benchgap.net/
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+
+      - name: Install the backend's dependencies (web/vendor)
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress --working-dir web
+
+      # the repo keeps the readable source; only the uploaded copy is minified
+      - name: Minify app.js
+        run: npx --yes esbuild@0.28.2 web/assets/app.js --minify --target=es2020 --outfile=web/assets/app.js --allow-overwrite
+
+      - name: Upload web/ over FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          local-dir: ./web/
+          server-dir: ./
+          exclude: |
+            **/.git*
+            **/.git*/**
+            config*.php
