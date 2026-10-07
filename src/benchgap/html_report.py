@@ -25,6 +25,7 @@ from .report import (  # noqa: E402
     CAPABILITY_ORDER,
     mapping_summary,
     multi_mapping_summary,
+    predictability_matrix,
     score_matrix,
 )
 
@@ -227,6 +228,68 @@ def _matrix_html(conn: sqlite3.Connection) -> str:
     )
 
 
+def _predictability_color(loo_pp: float) -> str:
+    """Green -> amber -> red across the 0-15 pp LOO range (the quality gate)."""
+    t = max(0.0, min(loo_pp / 15.0, 1.0))
+    stops = [(0.0, (16, 185, 129)), (0.5, (245, 158, 11)), (1.0, (239, 68, 68))]
+    for (t0, c0), (t1, c1) in zip(stops, stops[1:]):
+        if t <= t1:
+            u = (t - t0) / (t1 - t0)
+            rgb = tuple(int(a + (b - a) * u) for a, b in zip(c0, c1))
+            return f"rgb({rgb[0]},{rgb[1]},{rgb[2]})"
+    return "rgb(239,68,68)"
+
+
+def _predictability_html(conn: sqlite3.Connection) -> str:
+    """Color-coded source->target predictability matrix (LOO RMSE per pair)."""
+    versions, cells = predictability_matrix(conn)
+    if not versions or not any(any(r) for r in cells):
+        return ""
+    head = "".join(
+        f'<th class="pm {"brk" if j > 0 and versions[j]["capability"] != versions[j-1]["capability"] else ""}">'
+        f"{v['label']}</th>"
+        for j, v in enumerate(versions)
+    )
+    body = []
+    for i, src in enumerate(versions):
+        row_cells = []
+        for j, dst in enumerate(versions):
+            brk = ' brk' if j > 0 and versions[j]["capability"] != versions[j - 1]["capability"] else ""
+            if i == j:
+                row_cells.append(f'<td class="pm diag{brk}"></td>')
+            elif src["capability"] != dst["capability"]:
+                row_cells.append(
+                    f'<td class="pm na{brk}" title="never fitted: different capability'
+                    f' ({src["capability"]} vs {dst["capability"]})"></td>'
+                )
+            else:
+                m = cells[i][j]
+                if m is None:
+                    row_cells.append(
+                        f'<td class="pm none{brk}" title="no mapping: not enough paired'
+                        ' models or the best fit failed the quality gate"></td>'
+                    )
+                else:
+                    color = _predictability_color(m["LOO_RMSE"] * 100)
+                    tip = (
+                        f"{m['method']}: n={m['n_pairs']}, R2={m['R2']:.3f},"
+                        f" LOO RMSE={m['LOO_RMSE'] * 100:.2f} pp"
+                    )
+                    row_cells.append(
+                        f'<td class="pm{brk}" style="background:{color}"'
+                        f' title="{tip}">{m["LOO_RMSE"] * 100:.1f}</td>'
+                    )
+        row_brk = ' brk' if i > 0 and src["capability"] != versions[i - 1]["capability"] else ""
+        body.append(
+            f'<tr><th class="rowhead{row_brk}">{src["label"]}</th>{"".join(row_cells)}</tr>'
+        )
+    return (
+        '<table class="pmatrix">'
+        f'<tr><th class="rowhead">source ↓ / target →</th>{head}</tr>'
+        f'{"".join(body)}</table>'
+    )
+
+
 def _capability_stats(conn: sqlite3.Connection) -> list[tuple[str, int, int, int]]:
     """(capability, n_benchmarks, n_measured, n_gapfilled) per capability."""
     return [
@@ -296,6 +359,23 @@ when the model is measured on every source benchmark it uses and its LOO RMSE
 beats the best univariate mapping; otherwise the univariate mapping applies.
 Models missing one of the source scores fall back to the univariate path.</p>
 """
+    predictability_section = ""
+    predictability_table = _predictability_html(conn)
+    if predictability_table:
+        predictability_section = f"""
+<h2>Predictability matrix</h2>
+<div class="matrix-wrap">
+{predictability_table}
+</div>
+<p class="legend">Rows are source benchmarks, columns are targets; each cell is
+the leave-one-out CV RMSE (pp) of the best fitted mapping predicting the
+column benchmark from the row benchmark - lower is better. Hover a cell for
+the method, sample size, and R². Green → red spans 0 → 15 pp (the quality
+gate); gray cells have no usable mapping (too little overlap, or the best
+fit failed the gate); dark cells mark the diagonal; blank cells never have a
+mapping because the pair crosses a capability boundary. Groups of
+same-capability benchmarks are separated by heavier borders.</p>
+"""
     cap_rows = "".join(
         f"<tr><td>{cap}</td><td>{nb}</td><td>{meas}</td><td>{gap}</td></tr>"
         for cap, nb, meas, gap in _capability_stats(conn)
@@ -343,6 +423,18 @@ Models missing one of the source scores fall back to the univariate path.</p>
   .matrix-wrap {{ overflow-x: auto; }}
   .matrix td.gapfilled {{ color: #b45309; background: #fffbeb; }}
   .matrix td.missing {{ color: #d1d5db; }}
+  .pmatrix {{ border-collapse: collapse; font-size: .72rem; }}
+  .pmatrix th, .pmatrix td {{ padding: .18rem .3rem; text-align: center;
+                             border: 1px solid #f0f0f0; white-space: nowrap; }}
+  .pmatrix th.rowhead {{ text-align: left; font-weight: 500; background: #fff;
+                        position: sticky; left: 0; }}
+  .pmatrix .brk {{ border-left-width: 3px; }}
+  .pmatrix tr td.brk {{ border-left: 3px solid #9ca3af; }}
+  .pmatrix td.diag {{ background: #111827; }}
+  .pmatrix td.na {{ background: #f9fafb; border: 1px dotted #e5e7eb; }}
+  .pmatrix td.none {{ background: #e5e7eb; }}
+  .pmatrix td.pm {{ color: #111827; font-weight: 600; }}
+  .pmatrix th.brk {{ border-left: 3px solid #9ca3af; }}
   .legend {{ color: var(--muted); font-size: .85rem; }}
   footer {{ color: var(--muted); font-size: .8rem; border-top: 1px solid var(--line);
            margin-top: 2rem; padding-top: .8rem; }}
@@ -383,6 +475,8 @@ Michaelis–Menten form, Hill, and an offset logistic). All candidates are
 monotone. Solid curves are the selected fit; gray curves are the alternatives.</p>
 
 {multi_section}
+
+{predictability_section}
 
 <h2>Mapping detail (top {len(mappings)} by gapfill usage)</h2>
 <div class="cards">{cards}</div>

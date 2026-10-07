@@ -57,5 +57,23 @@ def test_html_report(built_db, tmp_path):
     if n_multi:
         assert "Multivariate mappings" in html
         assert html.count("<tr><td>") >= n_multi  # multi rows among the tables
+    # predictability matrix: one colored cell per stored best mapping
+    from benchgap.report import best_mappings, predictability_matrix
+
+    versions, cells = predictability_matrix(built_db)
+    n_maps = len(best_mappings(built_db))
+    assert len(versions) == 24
+    flat = [c for row in cells for c in row]
+    assert sum(1 for c in flat if c is not None) == n_maps
+    # diagonal and cross-capability cells are never mappings
+    for i, src in enumerate(versions):
+        for j, dst in enumerate(versions):
+            if i == j or src["capability"] != dst["capability"]:
+                assert cells[i][j] is None
+    assert "Predictability matrix" in html
+    assert html.count('style="background:rgb(') == n_maps
+    assert html.count('class="pm diag') == len(versions)
+    # the flagship mapping appears with its method tooltip
+    assert 'title="mm_offset: n=15' in html
     # gaps are visible as dashes
     assert html.count('class="missing">') > 0

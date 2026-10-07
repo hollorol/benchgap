@@ -74,6 +74,64 @@ def mapping_summary(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def best_mappings(conn: sqlite3.Connection) -> list[dict]:
+    """Best mapping per ordered version pair, with version ids for matrices."""
+    rows = conn.execute(
+        "SELECT m.from_version_id, m.to_version_id, m.method, m.n_points,"
+        "       json_extract(m.metrics_json, '$.R2') AS r2,"
+        "       json_extract(m.metrics_json, '$.LOO_RMSE') AS loo_rmse"
+        " FROM mappings m"
+        " WHERE m.id = ("
+        "   SELECT m2.id FROM mappings m2"
+        "    WHERE m2.from_version_id = m.from_version_id"
+        "      AND m2.to_version_id = m.to_version_id"
+        "    ORDER BY COALESCE(json_extract(m2.metrics_json, '$.LOO_RMSE'), 1e9),"
+        "             COALESCE(json_extract(m2.metrics_json, '$.RMSE'), 1e9)"
+        "    LIMIT 1)"
+    ).fetchall()
+    return [
+        {
+            "from_version_id": r["from_version_id"],
+            "to_version_id": r["to_version_id"],
+            "method": r["method"],
+            "n_pairs": r["n_points"],
+            "R2": r["r2"],
+            "LOO_RMSE": r["loo_rmse"],
+        }
+        for r in rows
+    ]
+
+
+def predictability_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[list[dict | None]]]:
+    """Predictability of every target version from every source version.
+
+    Returns (versions, cells) where versions are ordered by capability and
+    cells[i][j] describes the best mapping versions[i] -> versions[j]
+    (None when no mapping exists). Diagonal cells are None.
+    """
+    versions = [
+        {
+            "id": v["id"],
+            "label": f"{v['benchmark']}/{v['version']}",
+            "capability": v["capability"],
+        }
+        for v in _version_rows(conn)
+    ]
+    by_pair = {
+        (m["from_version_id"], m["to_version_id"]): m for m in best_mappings(conn)
+    }
+    cells: list[list[dict | None]] = []
+    for src in versions:
+        row = []
+        for dst in versions:
+            if src["id"] == dst["id"]:
+                row.append(None)
+            else:
+                row.append(by_pair.get((src["id"], dst["id"])))
+        cells.append(row)
+    return versions, cells
+
+
 def multi_mapping_summary(conn: sqlite3.Connection) -> list[dict]:
     """One row per multivariate mapping: target, features, quality."""
     labels = _labels(conn)

@@ -60,7 +60,11 @@ pytest                                      # run the test suite
 
 The HTML report (`benchgap html`, needs the `report` extra: `pip install
 ".[report]"`) is a single self-contained file: database stats, mapping
-summary, per-mapping fit figures (paired scores, all candidate curves,
+summary, a color-coded **predictability matrix** (rows = source benchmark,
+columns = target, cell color = LOO CV RMSE of the best mapping from green
+to red across the 0-15 pp quality-gate range; gray = no usable mapping,
+dark = diagonal, blank = cross-capability by design), multivariate
+mappings, per-mapping fit figures (paired scores, all candidate curves,
 residuals, gapfilled points marked), and the full score matrix with
 gapfilled cells highlighted. Charts are embedded as base64 PNGs, so the
 file works offline and can be shared as-is.
