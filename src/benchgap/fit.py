@@ -6,6 +6,7 @@ import sqlite3
 from typing import Optional
 
 from .fitting import fit_all, select_best
+from .parallel import pmap
 
 # Minimum number of paired models required to fit a mapping.
 MIN_PAIRS = 5
@@ -80,8 +81,15 @@ def _store_mapping(
     return mapping_id
 
 
+def _fit_pair(pairs: list[tuple[int, float, float]]):
+    return fit_all([p[1] for p in pairs], [p[2] for p in pairs])
+
+
 def fit_mappings(
-    conn: sqlite3.Connection, min_pairs: int = MIN_PAIRS, keep: Optional[str] = "best"
+    conn: sqlite3.Connection,
+    min_pairs: int = MIN_PAIRS,
+    keep: Optional[str] = "best",
+    jobs: Optional[int] = None,
 ) -> list[dict]:
     """Fit mappings for every eligible ordered version pair.
 
@@ -92,57 +100,40 @@ def fit_mappings(
     gap rather than inheriting a score from an unrelated benchmark.
 
     ``keep`` controls what is stored: 'best' keeps only the LOO-CV-selected
-    mapping per pair, 'all' keeps every candidate fit. Returns a summary list.
+    mapping per pair, 'all' keeps every candidate fit. The pairs are fitted on
+    ``jobs`` processes (default: every core). Returns a summary list.
     """
     versions = [v for v in _versions(conn) if v["unit"] == "fraction"]
-    summary = []
-    for i, src in enumerate(versions):
+    tasks = []
+    for src in versions:
         for dst in versions:
             if src["id"] == dst["id"] or src["capability"] != dst["capability"]:
                 continue
             pairs = _paired_scores(conn, src["id"], dst["id"])
-            if len(pairs) < min_pairs:
-                continue
-            xs = [p[1] for p in pairs]
-            ys = [p[2] for p in pairs]
-            results = fit_all(xs, ys)
-            best = select_best(results)
-            if best.metrics["R2"] < MIN_R2 or (
-                best.metrics["LOO_RMSE"] == best.metrics["LOO_RMSE"]
-                and best.metrics["LOO_RMSE"] > MAX_LOO_RMSE
-            ):
-                summary.append(
-                    {
-                        "from": f"{src['benchmark']}/{src['version']}@{src['harness']}",
-                        "to": f"{dst['benchmark']}/{dst['version']}@{dst['harness']}",
-                        "capability": src["capability"],
-                        "n_pairs": len(pairs),
-                        "best_method": None,
-                        "best_LOO_RMSE": best.metrics["LOO_RMSE"],
-                        "rejected": f"R2={best.metrics['R2']:.2f},"
-                        f" LOO RMSE={best.metrics['LOO_RMSE'] * 100:.1f}pp"
-                        " below quality gate",
-                        "candidates": {
-                            r.method: {
-                                "R2": r.metrics["R2"],
-                                "LOO_RMSE": r.metrics["LOO_RMSE"],
-                            }
-                            for r in results
-                        },
-                    }
-                )
-                continue
-            stored = results if keep == "all" else [best]
-            for r in stored:
-                _store_mapping(conn, src["id"], dst["id"], r, pairs)
+            if len(pairs) >= min_pairs:
+                tasks.append((src, dst, pairs))
+    fitted = pmap(_fit_pair, [t[2] for t in tasks], jobs)
+
+    summary = []
+    for (src, dst, pairs), results in zip(tasks, fitted):
+        best = select_best(results)
+        if best is None:  # no candidate converged
+            continue
+        if best.metrics["R2"] < MIN_R2 or (
+            best.metrics["LOO_RMSE"] == best.metrics["LOO_RMSE"]
+            and best.metrics["LOO_RMSE"] > MAX_LOO_RMSE
+        ):
             summary.append(
                 {
                     "from": f"{src['benchmark']}/{src['version']}@{src['harness']}",
                     "to": f"{dst['benchmark']}/{dst['version']}@{dst['harness']}",
                     "capability": src["capability"],
                     "n_pairs": len(pairs),
-                    "best_method": best.method,
+                    "best_method": None,
                     "best_LOO_RMSE": best.metrics["LOO_RMSE"],
+                    "rejected": f"R2={best.metrics['R2']:.2f},"
+                    f" LOO RMSE={best.metrics['LOO_RMSE'] * 100:.1f}pp"
+                    " below quality gate",
                     "candidates": {
                         r.method: {
                             "R2": r.metrics["R2"],
@@ -152,5 +143,26 @@ def fit_mappings(
                     },
                 }
             )
+            continue
+        stored = results if keep == "all" else [best]
+        for r in stored:
+            _store_mapping(conn, src["id"], dst["id"], r, pairs)
+        summary.append(
+            {
+                "from": f"{src['benchmark']}/{src['version']}@{src['harness']}",
+                "to": f"{dst['benchmark']}/{dst['version']}@{dst['harness']}",
+                "capability": src["capability"],
+                "n_pairs": len(pairs),
+                "best_method": best.method,
+                "best_LOO_RMSE": best.metrics["LOO_RMSE"],
+                "candidates": {
+                    r.method: {
+                        "R2": r.metrics["R2"],
+                        "LOO_RMSE": r.metrics["LOO_RMSE"],
+                    }
+                    for r in results
+                },
+            }
+        )
     conn.commit()
     return summary

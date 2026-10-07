@@ -17,7 +17,7 @@
 
   const DATA_URL = "/data/benchgap.json";
   const REPO_URL = "https://github.com/hollorol/benchgap";
-  const DEFAULT_BENCH = "terminal-bench/4.0";
+  const DEFAULT_BENCH = "terminal-bench-4/current";
   // the ledes below are also on the pages serve.php renders (src/Pages.php): keep the two in step
   const ABOUT = "benchgap is an LLM benchmark leaderboard that fills in the missing scores. Most models are only "
     + "ever run on a handful of benchmarks, so benchgap calibrates benchmarks against each other on the models "
@@ -66,7 +66,11 @@
     ix.cell = new Map(D.scores.map((s) => [s.m + ":" + s.b, s]));
     ix.byBench = groupBy(D.scores, (s) => s.b);
     ix.byModel = groupBy(D.scores, (s) => s.m);
-    ix.benchesByCap = D.capabilities.map((c) => ({ cap: c, benches: D.benchmarks.filter((b) => b.capability === c.id) }));
+    // the site shows only what the backend lists (Snapshot::LISTED); counts come listed already
+    ix.listed = D.benchmarks.filter((b) => b.listed);
+    ix.benchesByCap = D.capabilities
+      .map((c) => ({ cap: c, benches: ix.listed.filter((b) => b.capability === c.id) }))
+      .filter(({ benches }) => benches.length);
     ix.estByMapping = groupBy(D.scores.filter((s) => s.s === "e" && s.via.kind === "uni"), (s) => s.via.mapping);
     ix.mappingByPair = new Map(D.mappings.map((m) => [m.from + ":" + m.to, m]));
     // per-benchmark range of measured scores, for the matrix tint
@@ -111,10 +115,13 @@
     lines.push(`<div class="t-note">Not a measured score.</div>`);
     return lines.join("");
   }
+  const HARNESSES = { "artificial-analysis": "Artificial Analysis", "vals-ai": "Vals AI" };
+  const harnessNote = (b) => HARNESSES[b.harness] ? `Run by ${HARNESSES[b.harness]}.` : "A published result.";
+  const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
   function describeMeasured(s, link) {
     const b = ix.bench.get(s.b);
     return `<div class="t-h">${esc(b.label)} · measured</div>${link ? modelLine(s) : ""}`
-      + `<div class="t-v">${pct(s.v)}%</div><div class="t-note">Reported by the ${esc(b.harness)} harness.</div>`;
+      + `<div class="t-v">${pct(s.v)}%</div><div class="t-note">${esc(harnessNote(b))}</div>`;
   }
   let tipEl = null;        // element the tooltip currently describes
   let tipSize = null;      // its measured size, so moves don't re-measure
@@ -291,9 +298,94 @@
   // --- page: leaderboard --------------------------------------------------------
   // phones: the benchmarks of b's capability as a swipeable row of chips (none if b is alone in it)
   // a benchmark's chip, current if it is b
-  const benchChip = (x, b) => `<a class="chip" href="${benchHref(x)}" aria-current="${x.id === b.id}">${esc(x.label)}<span class="cnt">${x.n_measured}${x.n_estimated ? "+" + x.n_estimated : ""}</span></a>`;
+  // a benchmark's model counts: measured, plus estimated if any
+  const benchCount = (x) => `${x.n_measured}${x.n_estimated ? "+" + x.n_estimated : ""}`;
+  const benchChip = (x, b) => `<a class="chip" href="${benchHref(x)}" aria-current="${x.id === b.id}">${esc(x.label)}<span class="cnt">${benchCount(x)}</span></a>`;
+  const byMeasured = (p, q) => q.n_measured - p.n_measured || p.label.localeCompare(q.label);
+  const MAX_CHIPS = 8;  // chips per capability on the leaderboard picker and the phones' rail
+  // a capability's chips: up to MAX_CHIPS, the original benchmarks first, then the most measured,
+  // and the open benchmark b if it belongs to the capability but is not among them
+  function capChips(cap, benches, b) {
+    const chips = [...benches.filter((x) => x.featured), ...benches.filter((x) => !x.featured).sort(byMeasured)].slice(0, MAX_CHIPS);
+    if (b.capability === cap && !chips.includes(b)) chips.push(b);
+    return chips;
+  }
+  let pickerExtra = null;   // the open benchmark, if the picker drew a chip just for it
+  // each capability's chips; the rest folds into one "+N more" list
+  function pickerHTML(b) {
+    pickerExtra = null;
+    return `<nav class="picker" aria-label="Benchmarks">${ix.benchesByCap.map(({ cap, benches }) => {
+      const chips = capChips(cap.id, benches, b);
+      if (chips.length > MAX_CHIPS) pickerExtra = b;
+      const rest = benches.filter((x) => !chips.includes(x)).sort(byMeasured);
+      const more = rest.length ? `<button type="button" class="chip more-btn" aria-expanded="false" aria-controls="more-${esc(cap.id)}">+${rest.length} more</button>
+        <div class="more-list" id="more-${esc(cap.id)}" hidden><p class="more-note">By models measured · faint ones have fewer than 5</p>${rest
+          .map((x) => `<a class="more-item${x.n_measured < 5 ? " few" : ""}" href="${benchHref(x)}" aria-current="${x.id === b.id}"><span>${esc(x.label)}</span><span class="cnt">${benchCount(x)}</span></a>`)
+          .join("")}</div>` : "";
+      return `<div class="picker-row"><div class="cap">${esc(cap.label)}</div><div class="chips">${chips.map((x) => benchChip(x, b)).join("")}${more}</div></div>`;
+    }).join("")}</nav>`;
+  }
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const EASE = "cubic-bezier(.2, .7, .2, 1)";
+  // animates el between keyframes, clipped (.animating) meanwhile so a changing height hides overflow
+  function ease(el, frames, ms, done) {
+    el.classList.add("animating");
+    const a = el.animate(frames, { duration: ms, easing: EASE });
+    a.onfinish = () => { el.classList.remove("animating"); if (done) done(); };
+    return a;
+  }
+  // a "+N more" button opens its list and closes any other; Escape closes it.
+  // The list grows from (or shrinks to) nothing, so the rows below slide instead of jumping.
+  const BOX = ["height", "paddingTop", "paddingBottom", "marginTop", "marginBottom"];
+  function toggleList(list, open) {
+    if (list.anim) list.anim.finish();  // a click mid-animation: settle the last one first
+    if (open === !list.hidden) return;
+    if (reduceMotion.matches) { list.hidden = !open; return; }
+    list.hidden = false;
+    const cs = getComputedStyle(list);
+    const full = { opacity: 1, transform: "none" };
+    BOX.forEach((k) => { full[k] = cs[k]; });
+    const none = { opacity: 0, transform: "translateY(-4px)" };
+    BOX.forEach((k) => { none[k] = "0px"; });
+    list.anim = ease(list, open ? [none, full] : [full, none], open ? 240 : 180, () => {
+      list.anim = null;
+      if (!open) list.hidden = true;
+    });
+  }
+  // replaces el's content: the old fades out, then the new fades in while el eases to its new height
+  function swapContent(el, html) {
+    const id = (el.swapId = (el.swapId || 0) + 1);  // a newer swap supersedes this one
+    if (reduceMotion.matches) { el.innerHTML = html; return; }
+    el.getAnimations().forEach((a) => a.cancel());
+    const from = el.offsetHeight;
+    const out = el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(4px)" }],
+      { duration: 130, easing: "ease-in", fill: "forwards" });
+    out.onfinish = () => {
+      if (id !== el.swapId) return;
+      el.innerHTML = html;
+      out.cancel();
+      const to = el.offsetHeight;
+      ease(el, [{ opacity: 0, transform: "translateY(6px)", height: from + "px" }, { opacity: 1, transform: "none", height: to + "px" }], 280);
+    };
+  }
+  const setMore = (btn, open) => {
+    btn.setAttribute("aria-expanded", String(open));
+    toggleList(document.getElementById(btn.getAttribute("aria-controls")), open);
+  };
+  const closeMore = (except) => main.querySelectorAll('.more-btn[aria-expanded="true"]').forEach((btn) => {
+    if (btn !== except) setMore(btn, false);
+  });
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest && e.target.closest(".more-btn");
+    if (!btn) return;
+    const open = btn.getAttribute("aria-expanded") !== "true";
+    closeMore(btn);
+    setMore(btn, open);
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMore(); });
+  // phones: the open benchmark's capability as a swipeable row of the same chips as the picker
   function railHTML(b) {
-    const benches = ix.benchesByCap.find(({ cap }) => cap.id === b.capability).benches;
+    const benches = capChips(b.capability, (ix.benchesByCap.find(({ cap }) => cap.id === b.capability) || { benches: [] }).benches, b);
     if (benches.length < 2) return "";
     return `<p class="rail-cap">Also in <b>${esc(capLabel(b.capability))}</b></p><nav class="rail chip-row" aria-label="${esc(capLabel(b.capability))} benchmarks">${benches
       .map((x) => benchChip(x, b))
@@ -315,7 +407,13 @@
       "LLM benchmark scores: measured where available, estimated where missing, with every estimate's error and confidence.", "/");
     else setMeta(`${b.label} leaderboard`, `${b.label} leaderboard: ${b.n_measured} measured and ${b.n_estimated} estimated LLM scores, each estimate with its error and confidence.`);
     if ($("#board-sec")) {
-      main.querySelectorAll(".picker .chip").forEach((a) => a.setAttribute("aria-current", String(a.getAttribute("href") === benchHref(b))));
+      // the picker is redrawn only when the open benchmark needs a chip of its own or leaves one
+      if (pickerExtra || !main.querySelector(`.picker .chip[href="${benchHref(b)}"]`)) $(".picker").outerHTML = pickerHTML(b);
+      else {
+        main.querySelectorAll('.picker [aria-current="true"]').forEach((a) => a.setAttribute("aria-current", "false"));
+        main.querySelectorAll(`.picker [href="${benchHref(b)}"]`).forEach((a) => a.setAttribute("aria-current", "true"));
+        closeMore();
+      }
       $("#bench-select").value = b.key;
       $("#bench-rail").innerHTML = railHTML(b);
       renderBoardBody(b);
@@ -347,17 +445,9 @@
         </div>
       </section>`;
 
-    const picker = `<nav class="picker" aria-label="Benchmarks">${ix.benchesByCap
-      .map(
-        ({ cap, benches }) => `<div class="picker-row"><div class="cap">${esc(cap.label)}</div><div class="chips">${benches
-          .map(
-            (x) => benchChip(x, b)
-          )
-          .join("")}</div></div>`
-      )
-      .join("")}</nav>`;
+    const picker = pickerHTML(b);
 
-    const pickerMobile = `<div class="picker-mobile"><label><span class="ctl-label">Benchmark · ${D.benchmarks.length} to pick from</span><select class="select" id="bench-select">${ix.benchesByCap
+    const pickerMobile = `<div class="picker-mobile"><label><span class="ctl-label">Benchmark · ${D.meta.counts.benchmarks} to pick from</span><select class="select" id="bench-select">${b.listed ? "" : `<option value="${esc(b.key)}" selected>${esc(b.label)}</option>`}${ix.benchesByCap
       .map(({ cap, benches }) => `<optgroup label="${esc(cap.label)}">${benches
         .map((x) => `<option value="${esc(x.key)}" ${x.id === b.id ? "selected" : ""}>${esc(x.label)} (${x.n_measured}${x.n_estimated ? " + " + x.n_estimated + " est." : ""})</option>`)
         .join("")}</optgroup>`)
@@ -399,7 +489,7 @@
           <h2 class="h2" style="margin-top:.4rem">${esc(b.label)}</h2>
         </div>
         <div class="src">${b.n_measured} measured · <i>${nEst} estimated</i>${nLow ? ` (${nLow} low confidence)` : ""}
-          ${b.source_url ? ` · source: <a href="${esc(b.source_url)}" rel="noopener" target="_blank">${esc(b.harness)}</a>` : ""}</div>
+          ${b.source_url ? ` · source: <a href="${esc(b.source_url)}" rel="noopener" target="_blank">${esc(host(b.source_url))}</a>` : ""}</div>
       </div>
       <p class="lede board-lead">${esc(benchLead(b, all))}</p>
       <div class="controls">${showSeg()}</div>
@@ -417,25 +507,54 @@
     return { max, ticks };
   }
 
+  // a leaderboard longer than TAIL.min_rows folds where the scores drop below TAIL.below (never
+  // before row TAIL.min_rows), if more than TAIL.more_below rows score below it; one longer than
+  // TAIL.long_rows shows at most its top TAIL.long_share. The first hidden rows fade out above a
+  // "Show N more" button
+  const TAIL = { min_rows: 25, below: 0.15, more_below: 5, long_rows: 120, long_share: 1 / 3 };
+  let tailOpen = null;   // the benchmark whose folded tail is open
+  // [index of the first folded row, whether the TAIL.below score set it], or null: no fold
+  function tailCut(rows) {
+    if (rows.length <= TAIL.min_rows) return null;
+    const low = rows.findIndex((s) => s.v < TAIL.below);
+    const byLow = low >= 0 && rows.length - low > TAIL.more_below;   // rows are sorted: all from low on are below
+    let cut = byLow ? Math.max(low, TAIL.min_rows) : rows.length, byScore = byLow;
+    if (rows.length > TAIL.long_rows && Math.ceil(rows.length * TAIL.long_share) < cut) {
+      cut = Math.ceil(rows.length * TAIL.long_share);
+      byScore = false;
+    }
+    return cut < rows.length ? [cut, byScore] : null;
+  }
+
   function renderBoardRows(b) {
     const rows = (ix.byBench.get(b.id) || []).filter(visible).sort((p, q) => q.v - p.v);
     const hi = Math.max(0.1, ...rows.map((s) => s.v + (s.s === "e" ? s.sd : 0)));
     const { max: axisMax, ticks } = axis(hi);
     const X = (v) => Math.max(0, Math.min(100, (v / axisMax) * 100));
 
-    const body = rows
-      .map((s, i) => {
+    const rowHTML = (s, i) => {
         const m = ix.model.get(s.m);
         const est = s.s === "e";
         const rank = est ? `≈${i + 1}` : String(i + 1);
-        return `<div class="row ${est ? "e " + s.tier : "m"}" data-p="${m.provider}" style="--d:${Math.min(i, 30) * 14}ms">
+        return `<div class="row ${est ? "e " + s.tier : "m"}" data-p="${m.provider}">
           <div class="rank ${est ? "est" : ""}">${rank}</div>
           <div class="who">${dot(m)}${modelLink(m)}${tierFlag(s)}</div>
           <div class="track" data-tip="${s.m}:${s.b}" tabindex="0" aria-label="${esc(m.name)}: ${est ? "estimated " : ""}${pct(s.v)} percent">${trackHTML(s, X, ticks)}</div>
           <div class="val">${est ? "≈" : ""}${pct(s.v)}%${est ? `<span class="pm">±${pct(s.sd)}</span>` : ""}</div>
         </div>`;
-      })
-      .join("");
+    };
+    const fold = tailCut(rows);
+    const open = tailOpen === b.id;
+    let body;
+    if (!fold) body = rows.map(rowHTML).join("");
+    else {
+      const [cut, byScore] = fold;
+      const more = `Show ${rows.length - cut} more${byScore ? ` · scoring below ${Math.round(TAIL.below * 100)}%` : ""}`;
+      body = rows.slice(0, cut).map(rowHTML).join("")
+        + `<div class="board-tail${open ? "" : " folded"}" id="board-tail">${rows.slice(cut).map((s, i) => rowHTML(s, cut + i)).join("")}</div>
+          <div class="tail-ctl"><button type="button" class="btn tail-btn" aria-controls="board-tail" aria-expanded="${open}"
+            data-more="${more}">${open ? "Show fewer" : more}</button></div>`;
+    }
 
     hideTip();
     $("#board-rows").innerHTML = `
@@ -444,14 +563,28 @@
           <div class="ticks">${ticks.map((t) => `<span style="left:${X(t)}%">${Math.round(t * 100)}</span>`).join("")}</div><span></span></div>
         ${body || `<p class="empty">No scores to show with the current filter.</p>`}
       </div>`;
+    const btn = $("#board-rows .tail-btn");
+    if (btn) btn.addEventListener("click", () => toggleTail(b, btn));
+  }
+  // unfolds (or folds back) the tail, easing its height between the faded peek and all its rows
+  function toggleTail(b, btn) {
+    const tail = $("#board-tail");
+    const open = btn.getAttribute("aria-expanded") !== "true";
+    tailOpen = open ? b.id : null;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.textContent = open ? "Show fewer" : btn.dataset.more;
+    const from = tail.offsetHeight;
+    tail.classList.toggle("folded", !open);
+    const to = tail.offsetHeight;
+    if (!open) btn.scrollIntoView({ block: "nearest" });
+    if (!reduceMotion.matches) ease(tail, [{ height: from + "px" }, { height: to + "px" }], open ? 420 : 300);
   }
 
   // --- page: matrix -----------------------------------------------------------
-  let matrixCells = null;   // "m:b" -> cell class at the last redraw (null: first draw)
 
   function renderMatrix() {
     setMeta("LLM benchmark score matrix", "Every model on every benchmark: measured LLM scores and calibrated estimates for the missing ones, side by side.");
-    matrixCells = null;
+    mx = null;
     main.innerHTML = `<div class="page">
       ${pageHead("Score matrix", "Every model × every benchmark", `Measured cells are tinted by score within each column. Hatched italic cells are estimates;
         a red corner marks a <b>low-confidence</b> estimate. Dots are gaps that stay gaps: no calibrated source to estimate from.
@@ -470,6 +603,13 @@
     $("#dense").addEventListener("change", (e) => { prefs.dense = e.target.checked; store.set("dense", prefs.dense); renderMatrixTable(); });
     // column headers are re-created on every redraw, so sorting is delegated
     const wrap = $("#mx-wrap");
+    // new rows as the box scrolls, at most once a frame
+    let ticking = false;
+    wrap.addEventListener("scroll", () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => { ticking = false; paintMatrix(false); });
+    }, { passive: true });
     const sortBy = (el) => { const id = Number(el.dataset.sort); prefs.sortCol = prefs.sortCol === id ? null : id; renderMatrixTable(); };
     wrap.addEventListener("click", (e) => { const el = e.target.closest("[data-sort]"); if (el) sortBy(el); });
     wrap.addEventListener("keydown", (e) => {
@@ -479,14 +619,35 @@
     renderMatrixTable();
   }
 
+  // The matrix draws only the cells in view (plus a margin) inside its scroll box: tens of
+  // thousands of cells at once make every toggle, sort and scroll stall. Spacer rows and cells
+  // keep the scroll size; rows and columns each have one fixed size, so position = index × size.
+  // It redraws only when the view nears the edge of what is drawn, not on every scrolled frame.
+  const MX_ROWS = 24, MX_COLS = 10;   // rows and columns drawn beyond each edge of the view
+  const MX_EDGE = 6;                  // redraw when the view comes this close to the drawn edge
+  let mx = null;   // the table's models, benchmarks, cell sizes and the drawn window
+
   function renderMatrixTable() {
-    const benches = D.benchmarks.filter((b) => !prefs.dense || b.dense);
+    const benches = ix.listed.filter((b) => !prefs.dense || b.dense);
     let models = D.models.filter((m) => !prefs.dense || m.dense);
 
     const cellOf = (m, b) => {
       const s = ix.cell.get(m.id + ":" + b.id);
       return s && visible(s) ? s : null;
     };
+    // one pass over each model's own scores: the counts (over every cell, drawn or not), and
+    // which models have something to show here (with this "Show" setting): the others get no row
+    const drawn = new Set(benches.map((b) => b.id));
+    let shown = 0, est = 0, low = 0;
+    models = models.filter((m) => {
+      let any = false;
+      for (const s of ix.byModel.get(m.id) || []) {
+        if (!drawn.has(s.b) || !visible(s)) continue;
+        any = true; shown++;
+        if (s.s === "e") { est++; if (s.tier === "low") low++; }
+      }
+      return any;
+    });
     if (prefs.sortCol && benches.some((b) => b.id === prefs.sortCol)) {
       const b = ix.bench.get(prefs.sortCol);
       models = models.slice().sort((p, q) => {
@@ -497,59 +658,91 @@
       models = models.slice().sort((p, q) => q.n_measured - p.n_measured || p.name.localeCompare(q.name));
     }
 
-    const spans = [];
-    benches.forEach((b) => {
-      const last = spans[spans.length - 1];
-      if (last && last.cap === b.capability) last.n++;
-      else spans.push({ cap: b.capability, n: 1 });
-    });
-    const brk = (j) => (j > 0 && benches[j].capability !== benches[j - 1].capability ? " brk" : "");
-
-    let shown = 0, est = 0, low = 0, gaps = 0;
-    const prev = matrixCells;
-    const cells = new Map();
-    // "changed" marks a cell whose content differs from the previous redraw
-    const mark = (m, b, kind) => {
-      const key = m.id + ":" + b.id;
-      cells.set(key, kind);
-      return prev && prev.get(key) !== kind ? " changed" : "";
-    };
-    const body = models
-      .map((m) => {
-        const tds = benches
-          .map((b, j) => {
-            const s = cellOf(m, b);
-            if (!s) { gaps++; return `<td class="gap${brk(j)}${mark(m, b, "gap")}">·</td>`; }
-            shown++;
-            if (s.s === "e") {
-              est++; if (s.tier === "low") low++;
-              return `<td class="e ${s.tier}${brk(j)}${mark(m, b, "e")}" data-tip="${m.id}:${b.id}" tabindex="0">${pct(s.v, 0)}</td>`;
-            }
-            const [lo, hi] = ix.measuredRange.get(b.id);
-            const h = hi > lo ? (s.v - lo) / (hi - lo) : 0.5;
-            return `<td class="m${brk(j)}${mark(m, b, "m")}" style="--h:${(0.15 + h * 0.85).toFixed(2)}" data-tip="${m.id}:${b.id}">${pct(s.v, 0)}</td>`;
-          })
-          .join("");
-        return `<tr><th scope="row"><a href="${modelHref(m)}" title="${esc(m.name)}">${dot(m)}<span>${esc(m.name)}</span></a></th>${tds}</tr>`;
-      })
-      .join("");
-
-    matrixCells = cells;
+    const gaps = models.length * benches.length - shown;
     hideTip();
     $("#mx-counts").innerHTML = `${models.length} models · ${benches.length} benchmarks · ${shown - est} measured · <i>${est} estimated</i> (${low} low confidence) · ${gaps} gaps`;
+
+    mx = { models, benches, cellOf, rowH: mx ? mx.rowH : 0, colW: mx ? mx.colW : 0, nameW: 0, win: null };
     const wrap = $("#mx-wrap");
-    wrap.innerHTML = `
-        <table class="mx">
-          <thead>
-            <tr class="caps"><th class="corner" rowspan="2">Model</th>${spans
-              .map((sp, k) => `<th colspan="${sp.n}" class="${k > 0 ? "brk" : ""}" title="${esc(capLabel(sp.cap))}">${esc(capLabel(sp.cap))}</th>`)
-              .join("")}</tr>
-            <tr class="cols">${benches
-              .map((b, j) => `<th class="${prefs.sortCol === b.id ? "sorted" : ""}${brk(j)}"><span class="colh" data-sort="${b.id}" role="button" tabindex="0" title="Sort by ${esc(b.label)}">${esc(b.label)}</span></th>`)
-              .join("")}</tr>
-          </thead>
-          <tbody>${body}</tbody>
-        </table>`;
+    wrap.innerHTML = `<table class="mx"><thead></thead><tbody></tbody></table>`;
+    paintMatrix(true);
+  }
+
+  // a capability's first column gets a heavier left border
+  const mxBrk = (benches, j) => (j > 0 && benches[j].capability !== benches[j - 1].capability ? " brk" : "");
+  // spacer cells for columns not drawn
+  const mxPadCells = (n, colW, tag) => (n > 0 ? `<${tag} class="mx-padc" colspan="${n}" style="width:${n * colW}px;min-width:${n * colW}px"></${tag}>` : "");
+
+  function matrixHead(c0, c1) {
+    const { benches, colW } = mx;
+    // the capability spans of the drawn columns
+    const spans = [];
+    for (let j = c0; j < c1; j++) {
+      const last = spans[spans.length - 1];
+      if (last && last.cap === benches[j].capability) last.n++;
+      else spans.push({ cap: benches[j].capability, n: 1, j });
+    }
+    return `<tr class="caps"><th class="corner" rowspan="2">Model</th>${mxPadCells(c0, colW, "th")}${spans
+        .map((sp) => `<th colspan="${sp.n}" class="${mxBrk(benches, sp.j).trim()}" title="${esc(capLabel(sp.cap))}"><span class="cap-l">${esc(capLabel(sp.cap))}</span></th>`)
+        .join("")}${mxPadCells(benches.length - c1, colW, "th")}</tr>
+      <tr class="cols">${mxPadCells(c0, colW, "th")}${benches.slice(c0, c1)
+        .map((b, k) => `<th class="${prefs.sortCol === b.id ? "sorted" : ""}${mxBrk(benches, c0 + k)}"><span class="colh" data-sort="${b.id}" role="button" tabindex="0" title="Sort by ${esc(b.label)}">${esc(b.label)}</span></th>`)
+        .join("")}${mxPadCells(benches.length - c1, colW, "th")}</tr>`;
+  }
+
+  function matrixRow(m, c0, c1) {
+    const { benches, cellOf, colW } = mx;
+    let tds = "";
+    for (let j = c0; j < c1; j++) {
+      const b = benches[j], s = cellOf(m, b), brk = mxBrk(benches, j);
+      if (!s) tds += `<td class="gap${brk}">·</td>`;
+      else if (s.s === "e") tds += `<td class="e ${s.tier}${brk}" data-tip="${m.id}:${b.id}" tabindex="0">${pct(s.v, 0)}</td>`;
+      else {
+        const [lo, hi] = ix.measuredRange.get(b.id);
+        const h = hi > lo ? (s.v - lo) / (hi - lo) : 0.5;
+        tds += `<td class="m${brk}" style="--h:${(0.15 + h * 0.85).toFixed(2)}" data-tip="${m.id}:${b.id}">${pct(s.v, 0)}</td>`;
+      }
+    }
+    return `<tr><th scope="row"><a href="${modelHref(m)}" title="${esc(m.name)}">${dot(m)}<span>${esc(m.name)}</span></a></th>${mxPadCells(c0, colW, "td")}${tds}${mxPadCells(benches.length - c1, colW, "td")}</tr>`;
+  }
+
+  // draws the cells around the view, if the view has come near the edge of what is drawn (or force)
+  function paintMatrix(force) {
+    const wrap = $("#mx-wrap"), table = wrap && wrap.querySelector("table");
+    if (!mx || !table) return;
+    const nR = mx.models.length, nC = mx.benches.length;
+    // first guesses; the first drawing measures them
+    const rowH = mx.rowH || (phone.matches ? 41 : 31), colW = mx.colW || (phone.matches ? 44 : 46);
+    const head = table.tHead, nameW = mx.nameW || (phone.matches ? 136 : 230);
+    const top = Math.max(0, wrap.scrollTop - head.offsetHeight);
+    const left = Math.max(0, wrap.scrollLeft);
+    // the rows and columns in view
+    const r0 = Math.floor(top / rowH), r1 = Math.ceil((top + wrap.clientHeight) / rowH);
+    const v0 = Math.floor(left / colW), v1 = Math.ceil((left + wrap.clientWidth - nameW) / colW);
+    const w = mx.win;
+    const inside = w && r0 >= w.r0 + (w.r0 > 0 ? MX_EDGE : 0) && r1 <= w.r1 - (w.r1 < nR ? MX_EDGE : 0)
+      && v0 >= w.c0 + (w.c0 > 0 ? MX_EDGE / 2 : 0) && v1 <= w.c1 - (w.c1 < nC ? MX_EDGE / 2 : 0);
+    if (!force && inside) return;
+    const win = {
+      r0: Math.max(0, r0 - MX_ROWS), r1: Math.min(nR, r1 + MX_ROWS),
+      c0: Math.max(0, v0 - MX_COLS), c1: Math.min(nC, v1 + MX_COLS),
+    };
+    const sameCols = w && w.c0 === win.c0 && w.c1 === win.c1;
+    mx.win = win;
+    if (force || !sameCols) head.innerHTML = matrixHead(win.c0, win.c1);
+    const pad = (rows) => (rows > 0 ? `<tr class="mx-pad" aria-hidden="true"><td colspan="${nC + 1}" style="height:${rows * rowH}px"></td></tr>` : "");
+    table.tBodies[0].innerHTML = pad(win.r0) + mx.models.slice(win.r0, win.r1).map((m) => matrixRow(m, win.c0, win.c1)).join("") + pad(nR - win.r1);
+    if (tipEl && !tipEl.isConnected) hideTip();
+    if (!force) return;
+    // a full drawing measures the real sizes (scrolling never changes them); draw again if the guess was off
+    const row = table.tBodies[0].querySelector("tr:not(.mx-pad)"), cell = row && row.querySelector("td:not(.mx-padc)");
+    mx.nameW = head.querySelector(".corner").offsetWidth;
+    // the capability labels stop at the model column's edge while the columns scroll under it
+    wrap.style.setProperty("--name-w", mx.nameW + "px");
+    const off = row && (Math.abs(row.offsetHeight - rowH) > 0.5 || Math.abs(cell.offsetWidth - colW) > 0.5);
+    mx.rowH = row ? row.offsetHeight : rowH;
+    mx.colW = cell ? cell.offsetWidth : colW;
+    if (off) paintMatrix(true);
   }
 
   // --- page: model ------------------------------------------------------------
@@ -558,7 +751,7 @@
     if (!m) return renderNotFound(`No model “${esc(slug)}”.`);
     setMeta(`${m.name} benchmark scores`, `${m.name} benchmark scores: measured on ${m.n_measured} benchmark${m.n_measured === 1 ? "" : "s"}`
       + (m.n_estimated ? `, estimated on ${m.n_estimated} more, with the error and confidence of each estimate.` : "."));
-    const scores = ix.byModel.get(m.id) || [];
+    const scores = (ix.byModel.get(m.id) || []).filter((s) => ix.bench.get(s.b).listed);
     const byB = new Map(scores.map((s) => [s.b, s]));
     const est = scores.filter((s) => s.s === "e");
     const nTier = (t) => est.filter((s) => s.tier === t).length;
@@ -620,68 +813,75 @@
   function renderCalibration() {
     setMeta("LLM benchmark calibrations", "Which LLM benchmarks predict which: the fitted cross-benchmark calibrations behind every estimate, with their errors.");
     const gate = D.meta.quality_gate.max_loo_pp;
-    const involved = new Set();
-    D.mappings.forEach((m) => { involved.add(m.from); involved.add(m.to); });
-    const vs = D.benchmarks.filter((b) => involved.has(b.id));
-    // phones show the pair map one capability at a time (.pm-off hides the others), the one with the most mappings first
-    const nByCap = groupBy(D.mappings, (m) => ix.bench.get(m.from).capability);
+    // one capability at a time (the one with the most mappings first), over the listed benchmarks only
+    const listed = (m) => ix.bench.get(m.from).listed && ix.bench.get(m.to).listed;
+    const maps = D.mappings.filter(listed);
+    const nByCap = groupBy(maps, (m) => ix.bench.get(m.from).capability);
     const caps = D.capabilities.filter((c) => nByCap.has(c.id)).map((c) => ({ id: c.id, label: c.label, n: nByCap.get(c.id).length }));
-    const cap = caps.reduce((a, c) => (c.n > a.n ? c : a)).id;
-    const off = (b) => (b.capability === cap ? "" : " pm-off");
-    const head = vs.map((b) => `<th class="${off(b)}"><span class="colh">${esc(b.label)}</span></th>`).join("");
-    const body = vs
-      .map((src, i) => {
-        const cells = vs
+    const LIST_ROWS = 20;  // mappings listed before "Show all"
+
+    function pairMap(cap) {
+      const involved = new Set();
+      nByCap.get(cap).forEach((m) => { involved.add(m.from); involved.add(m.to); });
+      const vs = D.benchmarks.filter((b) => involved.has(b.id));
+      const head = vs.map((b) => `<th><span class="colh">${esc(b.label)}</span></th>`).join("");
+      const body = vs
+        .map((src, i) => `<tr><th scope="row">${esc(src.label)}</th>${vs
           .map((dst, j) => {
-            if (i === j) return `<td class="diag${off(dst)}"></td>`;
-            if (src.capability !== dst.capability) return `<td class="na${off(dst)}"></td>`;
+            if (i === j) return `<td class="diag"></td>`;
             const m = ix.mappingByPair.get(src.id + ":" + dst.id);
-            if (!m) return `<td class="none${off(dst)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
-            return `<td class="cell${off(dst)}" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
+            if (!m) return `<td class="none" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
+            return `<td class="cell" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
           })
-          .join("");
-        return `<tr class="${off(src)}"><th scope="row">${esc(src.label)}</th>${cells}</tr>`;
-      })
-      .join("");
+          .join("")}</tr>`)
+        .join("");
+      return `<table class="pm"><thead><tr><th style="text-align:right;vertical-align:bottom" class="muted">source ↓ · target →</th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+    function mapList(cap, all) {
+      const rows = nByCap.get(cap).slice().sort((a, b) => a.loo - b.loo);
+      const html = (all ? rows : rows.slice(0, LIST_ROWS))
+        .map((m) => {
+          const f = ix.bench.get(m.from), t = ix.bench.get(m.to);
+          return `<tr><td><a href="${mappingHref(m.id)}">${esc(f.label)} → ${esc(t.label)}</a></td><td>${esc(methodLabel(m.method))}</td>
+            <td class="num">${m.n}</td><td class="num">${m.r2.toFixed(3)}</td><td class="num err"><span class="scale-dot" style="background:${lossColor(m.loo * 100, gate)}"></span>${pct(m.loo)}</td><td class="num">${m.n_used}</td></tr>`;
+        })
+        .join("");
+      return `<table class="list maps"><thead><tr><th>Mapping</th><th>Selected curve</th><th style="text-align:right">n</th><th style="text-align:right">R²</th><th style="text-align:right">LOO error (pp)</th><th style="text-align:right">Estimates</th></tr></thead><tbody>${html}</tbody></table>`
+        + (!all && rows.length > LIST_ROWS ? `<button type="button" class="btn more-maps">Show all ${rows.length} mappings</button>` : "");
+    }
 
-    const list = D.mappings
-      .slice()
-      .sort((a, b) => a.loo - b.loo)
-      .map((m) => {
-        const f = ix.bench.get(m.from), t = ix.bench.get(m.to);
-        return `<tr><td><a href="${mappingHref(m.id)}">${esc(f.label)} → ${esc(t.label)}</a></td><td>${esc(methodLabel(m.method))}</td>
-          <td class="num">${m.n}</td><td class="num">${m.r2.toFixed(3)}</td><td class="num err"><span class="scale-dot" style="background:${lossColor(m.loo * 100, gate)}"></span>${pct(m.loo)}</td><td class="num">${m.n_used}</td></tr>`;
-      })
-      .join("");
-
+    let cap = caps.reduce((a, c) => (c.n > a.n ? c : a)).id;
     main.innerHTML = `<div class="page">
       ${pageHead("Calibration", "Which benchmarks predict which", `For each ordered pair of same-capability benchmarks with at least ${D.meta.quality_gate.min_pairs} shared models,
         several monotone curves are fitted and the one with the lowest leave-one-out error is kept, if it passes the quality gate
-        (R² ≥ ${D.meta.quality_gate.min_r2}, error ≤ ${gate} pp). Cells show that error in percentage points: rows are the source, columns the target.`)}
+        (R² ≥ ${D.meta.quality_gate.min_r2}, error ≤ ${gate} pp). Cells show that error in percentage points: rows are the source, columns the target.
+        Benchmarks are only calibrated within a capability; pick one below.`)}
       <section class="section">
         <div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
           .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === cap}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`)
           .join("")}</div>
-        <div class="pm-wrap"><table class="pm"><thead><tr><th style="text-align:right;vertical-align:bottom" class="muted">source ↓ · target →</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+        <div class="pm-wrap" id="pm-wrap">${pairMap(cap)}</div>
         <div class="scale"><span>0 pp</span><span class="ramp" style="background:${LOSS_RAMP}"></span><span>${gate} pp (gate)</span>
           <span style="margin-left:1rem"><span class="sq none"></span>no usable mapping</span>
-          <span><span class="sq diag"></span>same benchmark</span>
-          <span>blank: different capability, never fitted</span></div>
+          <span><span class="sq diag"></span>same benchmark</span></div>
       </section>
       <section class="section">
-        <h2 class="h2">All fitted mappings</h2>
-        <div class="list-wrap"><table class="list maps"><thead><tr><th>Mapping</th><th>Selected curve</th><th style="text-align:right">n</th><th style="text-align:right">R²</th><th style="text-align:right">LOO error (pp)</th><th style="text-align:right">Estimates</th></tr></thead><tbody>${list}</tbody></table></div>
+        <h2 class="h2">Fitted mappings · <span id="maps-cap">${esc(capLabel(cap))}</span></h2>
+        <div class="list-wrap" id="maps">${mapList(cap, false)}</div>
       </section></div>`;
 
-    // a chip re-marks the rows and columns to hide
-    const showCap = (id) => {
-      main.querySelectorAll(".pm-caps .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.cap === id)));
-      main.querySelectorAll(".pm tr").forEach((tr, i) => {
-        tr.classList.toggle("pm-off", i > 0 && vs[i - 1].capability !== id);
-        [...tr.children].forEach((cell, j) => cell.classList.toggle("pm-off", j > 0 && vs[j - 1].capability !== id));
-      });
-    };
-    main.querySelectorAll(".pm-caps .chip").forEach((c) => c.addEventListener("click", () => showCap(c.dataset.cap)));
+    // a chip redraws the pair map and the list for its capability
+    main.querySelectorAll(".pm-caps .chip").forEach((c) => c.addEventListener("click", () => {
+      cap = c.dataset.cap;
+      main.querySelectorAll(".pm-caps .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+      hideTip();
+      swapContent($("#pm-wrap"), pairMap(cap));
+      swapContent($("#maps-cap"), esc(capLabel(cap)));
+      swapContent($("#maps"), mapList(cap, false));
+    }));
+    $("#maps").addEventListener("click", (e) => {
+      if (e.target.closest(".more-maps")) swapContent($("#maps"), mapList(cap, true));
+    });
   }
 
   function renderMapping(id) {
@@ -751,10 +951,10 @@
       <div class="grid-2 section">
         <div class="card">${svg}
           <div class="legend" style="border:0;padding-bottom:0">
-            <span><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="currentColor"/></svg> measured on both</span>
-            <span><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="var(--conf-high)" stroke-width="2"/></svg> high</span>
-            <span><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="var(--conf-medium)" stroke-width="2"/></svg> medium</span>
-            <span><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="var(--conf-low)" stroke-width="2" stroke-dasharray="2 1.5"/></svg> low confidence</span>
+            <span class="ring-key"><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="currentColor"/></svg> measured on both</span>
+            <span class="ring-key"><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="var(--conf-high)" stroke-width="2"/></svg> high</span>
+            <span class="ring-key"><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="var(--conf-medium)" stroke-width="2"/></svg> medium</span>
+            <span class="ring-key"><svg width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="var(--conf-low)" stroke-width="2" stroke-dasharray="2 1.5"/></svg> low confidence</span>
           </div>
         </div>
         <div>
@@ -784,7 +984,8 @@
         .map(([id, label]) => `<a class="chip" href="#${id}">${label}</a>`).join("")}</nav>
       <article class="prose">
         <h2 id="data">The data</h2>
-        <p>Measured scores come from public evaluation leaderboards (harness: ${esc(D.meta.harnesses.join(", "))}),
+        <p>Measured scores come from public evaluation leaderboards and model reports, compiled by
+        <a href="https://benchlm.ai/data" rel="noopener" target="_blank">BenchLM.ai</a> (harness: ${esc(D.meta.harnesses.join(", "))}),
         retrieved ${esc(D.meta.retrieved_at || "")}. Every score is stored as a fraction and shown as a percentage. Each benchmark belongs to a
         <b>capability</b> group (agentic terminal, agentic tools, knowledge, vision, …). Benchmarks are only ever calibrated against
         benchmarks of the same capability: a model never run on a vision benchmark keeps that gap instead of inheriting a score from text benchmarks.</p>
@@ -848,8 +1049,8 @@
   ];
   const API_FIELDS = {
     Score: [
-      ["model", "string", "Model slug, e.g. <code>gpt-6-astra-high</code>."],
-      ["benchmark", "string", "Benchmark key <code>name/version</code>, e.g. <code>terminal-bench/4.0</code>."],
+      ["model", "string", "Model slug, e.g. <code>gpt-6-astra</code>."],
+      ["benchmark", "string", `Benchmark key <code>name/version</code>, e.g. <code>${DEFAULT_BENCH}</code>.`],
       ["score", "number", "Fraction in [0, 1]. Multiply by 100 for percent."],
       ["source", '"measured" | "estimated"', "Measured scores come from a public leaderboard; estimates are predictions."],
       ["estimate", "Estimate | null", "Present only for estimated scores."],
@@ -921,16 +1122,16 @@
 
   function codeSamples(base) {
     return {
-      curl: `curl ${base}benchmarks/terminal-bench/4.0.json`,
+      curl: `curl ${base}benchmarks/${DEFAULT_BENCH}.json`,
       Python: `import requests
 
-data = requests.get("${base}benchmarks/terminal-bench/4.0.json").json()
+data = requests.get("${base}benchmarks/${DEFAULT_BENCH}.json").json()
 for s in data["scores"]:
     est = s["estimate"]
     if est and est["confidence"] == "low":
         continue  # skip low-confidence estimates
     print(s["model"], round(s["score"] * 100, 1), s["source"])`,
-      JavaScript: `const res = await fetch("${base}models/gpt-6-astra-high.json");
+      JavaScript: `const res = await fetch("${base}models/gpt-6-astra.json");
 const { model, scores } = await res.json();
 const measured = scores.filter((s) => s.source === "measured");
 console.log(model.name, measured.length, "measured scores");`,
@@ -1015,8 +1216,9 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
           <li><b>Errors:</b> an unknown benchmark, model or mapping is a plain HTTP 404.</li>
         </ul>
         <h2>Using the data</h2>
-        <p>The benchmark data is collected from public leaderboards (each benchmark's <code>source_url</code>,
-        mainly Artificial Analysis) and remains under its sources' terms; check them before republishing scores.
+        <p>The measured scores are data from <a href="https://benchlm.ai/data" rel="noopener" target="_blank">BenchLM.ai</a>,
+        licensed under <a href="https://creativecommons.org/licenses/by-nc/4.0/" rel="noopener" target="_blank">CC BY-NC 4.0</a>
+        (non-commercial use, with credit); the estimates are benchgap's additions. Check those terms before republishing scores.
         Estimates are model-based predictions: if you show them, show them as estimates, ideally with
         <code>error_pp</code> and <code>confidence</code>, and link back to benchgap.</p>
         <p>The benchgap code is <a href="${REPO_URL}/blob/main/LICENSE" target="_blank" rel="noopener">MIT-licensed</a>.
@@ -1124,32 +1326,156 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
   });
 
   // --- chrome -------------------------------------------------------------------
+  // --- search: models and benchmarks, filtered by type ------------------------------
+  const fold = (t) => t.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  const SEARCH_TYPES = [["all", "All"], ["model", "Models"], ["bench", "Benchmarks"]];
+  const SEARCH_GROUPS = Object.fromEntries(SEARCH_TYPES.slice(1));
+  const BENCH_ICON = '<svg class="srch-ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="7" width="3" height="7" rx=".6"/><rect x="6.5" y="3" width="3" height="11" rx=".6"/><rect x="11" y="9" width="3" height="5" rx=".6"/></svg>';
+  function initSearch(openSearch) {
+    const input = $("#site-search"), pop = $("#search-pop"), list = $("#search-results"), types = $(".search-types");
+    const items = [
+      ...D.models.filter((m) => m.listed).map((m) => ({ type: "model", label: m.name, text: fold(m.name + " " + m.slug), href: modelHref(m),
+        meta: `${D.meta.providers[m.provider] || "Other"} · ${m.n_measured} measured`, weight: m.n_measured, icon: dot(m) })),
+      // the listed benchmarks, the original ones first
+      ...ix.listed.map((b) => ({ type: "bench", label: b.label, text: fold(b.label + " " + b.key), href: benchHref(b),
+        meta: `${capLabel(b.capability)} · ${b.n_measured} measured`, weight: b.n_measured + (b.featured ? 1e4 : 0), icon: BENCH_ICON })),
+    ];
+    let type = store.get("search-type", "all");
+    if (!SEARCH_TYPES.some(([t]) => t === type)) type = "all";
+    let shown = [], active = -1;
+    types.innerHTML = SEARCH_TYPES.map(([t, label]) => `<button type="button" data-type="${t}">${label}<span class="cnt"></span></button>`).join("");
+
+    // every word of the query must appear; a match at the start of a word ranks above one inside a word
+    const where = (it, word) => { const i = it.text.indexOf(word); return i === 0 || /[^a-z0-9]/.test(it.text[i - 1]) ? 0 : 1; };
+    function matches(q) {
+      const words = fold(q).split(/\s+/).filter(Boolean);
+      return items
+        .filter((it) => words.every((w) => it.text.includes(w)))
+        .map((it) => [it, where(it, words[0])])
+        .sort((a, b) => a[1] - b[1] || b[0].weight - a[0].weight || a[0].label.localeCompare(b[0].label))
+        .map(([it]) => it);
+    }
+    // the query's words marked in a result's name
+    function mark(label, q) {
+      const words = fold(q).split(/\s+/).filter(Boolean), low = fold(label), on = new Array(label.length).fill(false);
+      words.forEach((w) => { for (let i = low.indexOf(w); i >= 0; i = low.indexOf(w, i + 1)) on.fill(true, i, i + w.length); });
+      let out = "";
+      for (let i = 0; i < label.length; ) {
+        let j = i; while (j < label.length && on[j] === on[i]) j++;
+        out += on[i] ? `<mark>${esc(label.slice(i, j))}</mark>` : esc(label.slice(i, j));
+        i = j;
+      }
+      return out;
+    }
+
+    function render() {
+      const q = input.value.trim();
+      // nothing typed: the most measured models and the original benchmarks
+      const pool = q ? matches(q) : items.slice().sort((a, b) => b.weight - a.weight);
+      const n = { all: pool.length, model: 0, bench: 0 };
+      pool.forEach((it) => n[it.type]++);
+      // the type buttons are updated in place: replacing them under a click would make it look like a click outside
+      types.querySelectorAll("button").forEach((btn) => {
+        btn.setAttribute("aria-pressed", String(btn.dataset.type === type));
+        btn.querySelector(".cnt").textContent = q ? n[btn.dataset.type] : "";
+      });
+      const per = type === "all" ? (q ? 6 : 4) : 50;
+      shown = [];
+      let html = "";
+      for (const t of type === "all" ? ["model", "bench"] : [type]) {
+        const group = pool.filter((it) => it.type === t);
+        if (!group.length) continue;
+        const some = group.slice(0, per);
+        html += `<li class="srch-group" role="presentation">${q ? SEARCH_GROUPS[t] : `Popular ${SEARCH_GROUPS[t].toLowerCase()}`}${q ? `<span>${some.length < group.length ? `${some.length} of ${group.length}` : group.length}</span>` : ""}</li>`;
+        html += some.map((it) => {
+          const i = shown.push(it) - 1;
+          return `<li role="option" id="srch-${i}" aria-selected="false"><a href="${it.href}" tabindex="-1" data-i="${i}">${it.icon}<span class="srch-name">${q ? mark(it.label, q) : esc(it.label)}</span><span class="srch-meta">${esc(it.meta)}</span></a></li>`;
+        }).join("");
+      }
+      if (!shown.length) html = `<li class="srch-empty" role="presentation">No ${type === "model" ? "model" : type === "bench" ? "benchmark" : "model or benchmark"} matches “${esc(q)}”.</li>`;
+      list.innerHTML = html;
+      setActive(q && shown.length ? 0 : -1);
+    }
+    function setActive(i) {
+      const old = list.querySelector('[aria-selected="true"]');
+      if (old) old.setAttribute("aria-selected", "false");
+      active = i;
+      const li = i >= 0 && $("#srch-" + i);
+      if (li) { li.setAttribute("aria-selected", "true"); li.scrollIntoView({ block: "nearest" }); input.setAttribute("aria-activedescendant", li.id); }
+      else input.removeAttribute("aria-activedescendant");
+    }
+    const isOpen = () => !pop.hidden;
+    function open() {
+      if (isOpen()) return;
+      pop.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      render();
+    }
+    function close() {
+      pop.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    }
+    function pick(it) {
+      close();
+      input.value = "";
+      input.blur();
+      openSearch(false);
+      go(it.href);
+    }
+
+    input.addEventListener("focus", open);
+    input.addEventListener("input", () => { open(); render(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!isOpen()) return open();
+        if (shown.length) setActive((active + (e.key === "ArrowDown" ? 1 : shown.length - 1 + (active < 0 ? 1 : 0))) % shown.length);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const it = shown[active >= 0 ? active : 0];
+        if (it && isOpen()) pick(it);
+      } else if (e.key === "Escape") {
+        if (isOpen()) { e.stopPropagation(); close(); }
+      }
+    });
+    // keep the focus in the box while using the panel
+    pop.addEventListener("mousedown", (e) => e.preventDefault());
+    types.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-type]");
+      if (!btn) return;
+      type = btn.dataset.type;
+      store.set("search-type", type);
+      render();
+    });
+    list.addEventListener("click", (e) => {
+      const a = e.target.closest("a[data-i]");
+      if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      e.preventDefault();
+      pick(shown[Number(a.dataset.i)]);
+    });
+    list.addEventListener("mousemove", (e) => {
+      const a = e.target.closest("a[data-i]");
+      if (a && Number(a.dataset.i) !== active) setActive(Number(a.dataset.i));
+    });
+    // the click's path as it was dispatched: still right if the clicked element has since been redrawn
+    const box = $(".search");
+    document.addEventListener("click", (e) => { if (isOpen() && !e.composedPath().includes(box)) close(); });
+    input.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== input) close(); }, 0));
+  }
+
   function initChrome() {
-    $("#model-list").innerHTML = D.models.map((m) => `<option value="${esc(m.name)}"></option>`).join("");
-    const search = $("#model-search");
-    const names = D.models.map((m) => [m.name.toLowerCase(), m]);
-    // exact: only a full model name (a picked suggestion, or leaving the box); otherwise
-    // the first name containing the query (Enter)
     // phones and tablets: the search button opens the box as a row under the bar
-    const topbar = $(".topbar"), searchBtn = $(".search-btn");
+    const topbar = $(".topbar"), searchBtn = $(".search-btn"), search = $("#site-search");
     const openSearch = (open) => {
       topbar.classList.toggle("searching", open);
       searchBtn.setAttribute("aria-expanded", String(open));
       if (open) search.focus();
     };
     searchBtn.addEventListener("click", () => openSearch(!topbar.classList.contains("searching")));
-    document.addEventListener("click", (e) => { if (topbar.classList.contains("searching") && !topbar.contains(e.target)) openSearch(false); });
-    search.addEventListener("keydown", (e) => { if (e.key === "Escape") { openSearch(false); searchBtn.focus(); } });
-    const find = (exact) => {
-      const q = search.value.trim().toLowerCase();
-      if (!q) return;
-      const hit = names.find(([n]) => n === q) || (!exact && names.find(([n]) => n.includes(q)));
-      if (hit) { go(modelHref(hit[1])); search.value = ""; search.blur(); openSearch(false); }
-    };
-    // picking a datalist suggestion fires "input" (not always "change") with no typing inputType
-    search.addEventListener("input", (e) => { if (!e.inputType || e.inputType === "insertReplacementText") find(true); });
-    search.addEventListener("change", () => find(true));
-    search.addEventListener("keydown", (e) => { if (e.key === "Enter") find(false); });
+    document.addEventListener("click", (e) => { if (topbar.classList.contains("searching") && !e.composedPath().includes(topbar)) openSearch(false); });
+    search.addEventListener("keydown", (e) => { if (e.key === "Escape" && topbar.classList.contains("searching")) { openSearch(false); searchBtn.focus(); } });
+    initSearch(openSearch);
   }
 
   // links from before pages had their own paths: #/model/x -> /model/x

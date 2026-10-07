@@ -129,7 +129,7 @@
             "schema": {
               "type": "string"
             },
-            "example": "terminal-bench"
+            "example": "terminal-bench-4"
           },
           {
             "name": "version",
@@ -139,7 +139,7 @@
             "schema": {
               "type": "string"
             },
-            "example": "4.0"
+            "example": "current"
           }
         ]
       }
@@ -233,7 +233,7 @@
             "schema": {
               "type": "string"
             },
-            "example": "gpt-6-astra-high"
+            "example": "gpt-6-astra"
           }
         ]
       }
@@ -462,7 +462,7 @@
         "properties": {
           "key": {
             "type": "string",
-            "example": "terminal-bench/4.0",
+            "example": "terminal-bench-4/current",
             "description": "Stable identifier: name/version."
           },
           "name": {
@@ -496,6 +496,10 @@
           "n_estimated": {
             "type": "integer"
           },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the site lists the benchmark: it has at least one estimate and at least 10 models, measured or estimated."
+          },
           "url": {
             "type": "string",
             "format": "uri"
@@ -516,7 +520,7 @@
         "properties": {
           "slug": {
             "type": "string",
-            "example": "gpt-6-astra-high"
+            "example": "gpt-6-astra"
           },
           "name": {
             "type": "string"
@@ -534,6 +538,10 @@
           },
           "n_estimated": {
             "type": "integer"
+          },
+          "listed": {
+            "type": "boolean",
+            "description": "Whether the site lists the model: it has a score on a listed benchmark. Its counts are of listed benchmarks."
           },
           "url": {
             "type": "string",

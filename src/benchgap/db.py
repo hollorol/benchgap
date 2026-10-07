@@ -20,7 +20,9 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS benchmarks (
     id         INTEGER PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE,
-    capability TEXT NOT NULL DEFAULT 'general'
+    capability TEXT NOT NULL DEFAULT 'general',
+    label      TEXT,
+    featured   INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS benchmark_versions (
@@ -94,16 +96,21 @@ CREATE INDEX IF NOT EXISTS idx_scores_version ON scores(version_id);
 """
 
 
-def connect(path: str | Path) -> sqlite3.Connection:
-    """Open (creating if needed) the benchgap database with foreign keys on."""
-    conn = sqlite3.connect(str(path))
-    conn.execute("PRAGMA foreign_keys = ON")
+def connect(path: str | Path, readonly: bool = False) -> sqlite3.Connection:
+    """Open (creating if needed) the benchgap database with foreign keys on, or an existing one read-only."""
+    if readonly:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    else:
+        conn = sqlite3.connect(str(path))
+        conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
 
 
 MIGRATIONS = [
     ("benchmarks", "capability", "ALTER TABLE benchmarks ADD COLUMN capability TEXT NOT NULL DEFAULT 'general'"),
+    ("benchmarks", "label", "ALTER TABLE benchmarks ADD COLUMN label TEXT"),
+    ("benchmarks", "featured", "ALTER TABLE benchmarks ADD COLUMN featured INTEGER NOT NULL DEFAULT 0"),
     ("benchmark_versions", "unit", "ALTER TABLE benchmark_versions ADD COLUMN unit TEXT NOT NULL DEFAULT 'fraction'"),
     ("scores", "multi_mapping_id", "ALTER TABLE scores ADD COLUMN multi_mapping_id INTEGER REFERENCES multi_mappings(id) ON DELETE SET NULL"),
 ]
@@ -122,7 +129,11 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def get_or_create_benchmark(
-    conn: sqlite3.Connection, name: str, capability: str = "general"
+    conn: sqlite3.Connection,
+    name: str,
+    capability: str = "general",
+    label: Optional[str] = None,
+    featured: bool = False,
 ) -> int:
     conn.execute(
         "INSERT OR IGNORE INTO benchmarks (name, capability) VALUES (?, ?)",
@@ -132,6 +143,10 @@ def get_or_create_benchmark(
         "UPDATE benchmarks SET capability = ? WHERE name = ? AND capability = 'general'",
         (capability, name),
     )
+    if label:
+        conn.execute("UPDATE benchmarks SET label = ? WHERE name = ?", (label, name))
+    if featured:
+        conn.execute("UPDATE benchmarks SET featured = 1 WHERE name = ?", (name,))
     return conn.execute(
         "SELECT id FROM benchmarks WHERE name = ?", (name,)
     ).fetchone()["id"]
@@ -145,8 +160,10 @@ def get_or_create_version(
     source_url: Optional[str] = None,
     capability: str = "general",
     unit: str = "fraction",
+    label: Optional[str] = None,
+    featured: bool = False,
 ) -> int:
-    bid = get_or_create_benchmark(conn, benchmark, capability)
+    bid = get_or_create_benchmark(conn, benchmark, capability, label, featured)
     conn.execute(
         "INSERT OR IGNORE INTO benchmark_versions"
         " (benchmark_id, version, harness, unit, source_url) VALUES (?, ?, ?, ?, ?)",

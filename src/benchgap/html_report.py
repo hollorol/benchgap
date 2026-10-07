@@ -100,7 +100,7 @@ def _mapping_figure(
     ys = np.array([p["y"] for p in points])
 
     results = fit_all(xs, ys)
-    best = select_best(results)
+    best = select_best(results)  # never None: the stored mapping's own method converged on these points
     params = json.loads(mapping["params_json"])
     train_range = json.loads(mapping["train_range_json"])
 

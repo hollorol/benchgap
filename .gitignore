@@ -7,6 +7,8 @@ __pycache__/
 
 # pipeline outputs (the database is built from data/seed; see README)
 data/*.db
+# BenchLM's data files: scripts/build_seed.py --fetch downloads them
+data/benchlm/
 data/report.html
 dist/
 

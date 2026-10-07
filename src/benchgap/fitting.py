@@ -71,26 +71,31 @@ def _sorted_xy(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return x[order], y[order]
 
 
-def _lsq_candidate(method, fn, param_names, p0_fn, equation, bounds=None) -> Candidate:
+def _clip(p0, bounds) -> list[float]:
+    """An initial guess moved inside the fit's bounds (curve_fit rejects one outside)."""
+    return [float(np.clip(v, lo, hi)) for v, lo, hi in zip(p0, bounds[0], bounds[1])]
+
+
+def _lsq_candidate(method, fn, param_names, p0_fn, equation, bounds=None, maxfev=20000) -> Candidate:
     def fit(x, y):
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
         kwargs = {}
         if bounds is not None:
             kwargs["bounds"] = bounds
-            p0 = [
-                float(np.clip(v, lo, hi))
-                for v, lo, hi in zip(p0_fn(x, y), bounds[0], bounds[1])
-            ]
+            p0 = _clip(p0_fn(x, y), bounds)
         else:
             p0 = p0_fn(x, y)
-        popt, _ = curve_fit(fn, x, y, p0=p0, maxfev=20000, **kwargs)
+        popt, _ = curve_fit(fn, x, y, p0=p0, maxfev=maxfev, **kwargs)
         return {n: float(v) for n, v in zip(param_names, popt)}
 
+    # predictions are scores, so clipped to the fraction scale [0, 1]: a linear fit extrapolated
+    # far outside its training range would otherwise predict below 0% or above 100%. The
+    # cross-validation scores this same clipped curve.
     def predict(params, x):
         x = np.atleast_1d(np.asarray(x, dtype=float))
         args = [params[n] for n in param_names]
-        return fn(x, *args)
+        return np.clip(fn(x, *args), 0.0, 1.0)
 
     return Candidate(method, tuple(param_names), fit, predict, equation)
 
@@ -133,20 +138,6 @@ _MM_BOUNDS = ([0.0, 0.0, 1e-9], [1.0, 2.0, np.inf])
 _MM_PLAIN_BOUNDS = ([0.0, 1e-9], [2.0, np.inf])
 
 
-def _fit_mm_offset(x, y) -> dict[str, float]:
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
-    popt, _ = curve_fit(
-        _mm_offset, x, y, p0=_mm_offset_p0(x, y), maxfev=20000, bounds=_MM_BOUNDS
-    )
-    return {"y0": float(popt[0]), "vmax": float(popt[1]), "k": float(popt[2])}
-
-
-def _mm_offset_predict(params, x) -> np.ndarray:
-    x = np.atleast_1d(np.asarray(x, dtype=float))
-    return _mm_offset(x, params["y0"], params["vmax"], params["k"])
-
-
 def _mm_offset_inv_fn(x, y0, vmax, k):
     """Inverse MM+offset curve: u = K*(x - y0) / (y0 + Vmax - x), in [0, 1].
 
@@ -165,16 +156,14 @@ def _mm_offset_inv_fn(x, y0, vmax, k):
     return np.clip(u, 0.0, 1.0)
 
 
-def _mm_offset_inv_fit(x, y) -> dict[str, float]:
-    """Least-squares fit of the inverse MM+offset family in the target space.
+def _mm_offset_inv_p0(x, y):
+    """Seed of the inverse MM+offset fit.
 
-    Fitting the inverse *form* directly (rather than inverting the forward
-    fit's point predictions) avoids error amplification near the ceiling:
-    a forward fit saturates below the highest observed scores, and naive
-    inversion of those maps them to nonsense.
+    The inverse *form* is fitted directly in the target space (rather than
+    inverting the forward fit's point predictions), which avoids error
+    amplification near the ceiling: a forward fit saturates below the highest
+    observed scores, and naive inversion of those maps them to nonsense.
     """
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y, dtype=float)
     x_min, x_max = float(np.min(x)), float(np.max(x))
     y0_0 = max(x_min - 0.05, 0.0)
     asymptote_0 = min(x_max + 0.05, 1.2)
@@ -183,15 +172,7 @@ def _mm_offset_inv_fit(x, y) -> dict[str, float]:
     xm = float(x[order[len(order) // 2]])
     ym = float(y[order[len(y) // 2]])
     k_0 = max(ym * (asymptote_0 - xm) / max(xm - y0_0, 1e-3), 1e-3)
-    popt, _ = curve_fit(
-        _mm_offset_inv_fn,
-        x,
-        y,
-        p0=[y0_0, asymptote_0 - y0_0, k_0],
-        maxfev=40000,
-        bounds=([0.0, 0.0, 1e-9], [1.0, 2.0, 20.0]),
-    )
-    return {"y0": float(popt[0]), "vmax": float(popt[1]), "k": float(popt[2])}
+    return [y0_0, asymptote_0 - y0_0, k_0]
 
 
 CANDIDATES: dict[str, Candidate] = {
@@ -204,19 +185,16 @@ CANDIDATES: dict[str, Candidate] = {
         "y = {vmax:.4f}·x / ({k:.5f} + x)",
         _MM_PLAIN_BOUNDS,
     ),
-    "mm_offset": Candidate(
-        "mm_offset",
-        ("y0", "vmax", "k"),
-        _fit_mm_offset,
-        _mm_offset_predict,
+    "mm_offset": _lsq_candidate(
+        "mm_offset", _mm_offset, ("y0", "vmax", "k"), _mm_offset_p0,
         "y = {y0:.4f} + {vmax:.4f}·x / ({k:.5f} + x)",
+        _MM_BOUNDS,
     ),
-    "mm_offset_inv": Candidate(
-        "mm_offset_inv",
-        ("y0", "vmax", "k"),
-        _mm_offset_inv_fit,
-        lambda params, x: _mm_offset_inv_fn(x, params["y0"], params["vmax"], params["k"]),
+    "mm_offset_inv": _lsq_candidate(
+        "mm_offset_inv", _mm_offset_inv_fn, ("y0", "vmax", "k"), _mm_offset_inv_p0,
         "y = {k:.5f}·(x − {y0:.4f}) / ({y0:.4f} + {vmax:.4f} − x)",
+        ([0.0, 0.0, 1e-9], [1.0, 2.0, 20.0]),
+        maxfev=40000,
     ),
     "hill": _lsq_candidate(
         "hill", _hill, ("y0", "a", "k", "n"), _hill_p0,
@@ -297,12 +275,24 @@ def fit_candidate(method: str, x, y) -> FitResult:
 
 
 def fit_all(x, y) -> list[FitResult]:
-    """Fit every registered candidate on the same paired data."""
-    return [fit_candidate(m, x, y) for m in CANDIDATES]
+    """Fit every registered candidate on the same paired data.
+
+    A candidate whose least-squares fit does not converge on this data is
+    left out (it would have no parameters to predict with).
+    """
+    results = []
+    for m in CANDIDATES:
+        try:
+            results.append(fit_candidate(m, x, y))
+        except RuntimeError:
+            continue
+    return results
 
 
-def select_best(results: list[FitResult]) -> FitResult:
-    """Selection rule: lowest leave-one-out CV RMSE (falls back to RMSE)."""
+def select_best(results: list[FitResult]) -> FitResult | None:
+    """Selection rule: lowest leave-one-out CV RMSE (falls back to RMSE); None if there are no results."""
+    if not results:
+        return None
     keyed = [
         (r.metrics.get("LOO_RMSE"), r.metrics["RMSE"], i, r)
         for i, r in enumerate(results)

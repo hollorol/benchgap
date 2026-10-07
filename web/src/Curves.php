@@ -46,20 +46,22 @@ final class Curves
         return $curve;
     }
 
+    /** A curve's score at $x, clipped to [0, 1] as the pipeline clips its predictions (fitting.py). */
     public static function predict(string $method, array $p, float $x): float
     {
-        return match ($method) {
+        $y = match ($method) {
             'linear' => $p['slope'] * $x + $p['intercept'],
             'mm' => fdiv($p['vmax'] * $x, $p['k'] + $x),
             'mm_offset' => $p['y0'] + fdiv($p['vmax'] * $x, $p['k'] + $x),
-            // inverse of y0 + vmax·u/(k + u), clamped to [0, 1]
+            // inverse of y0 + vmax·u/(k + u): 0 up to y0, 1 from the ceiling on
             'mm_offset_inv' => match (true) {
                 $x <= $p['y0'] => 0.0,
                 $p['y0'] + $p['vmax'] - $x <= 1e-9 => 1.0,
-                default => min(1.0, max(0.0, fdiv($p['k'] * ($x - $p['y0']), $p['y0'] + $p['vmax'] - $x))),
+                default => fdiv($p['k'] * ($x - $p['y0']), $p['y0'] + $p['vmax'] - $x),
             },
             'hill' => $p['y0'] + ($p['a'] - $p['y0']) * fdiv($x ** $p['n'], $p['k'] ** $p['n'] + $x ** $p['n']),
             'logistic' => $p['y0'] + fdiv($p['a'] - $p['y0'], 1.0 + exp(-$p['k'] * ($x - $p['xmid']))),
         };
+        return is_finite($y) ? min(1.0, max(0.0, $y)) : $y;   // non-finite: sample() leaves the point out
     }
 }

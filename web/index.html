@@ -37,7 +37,7 @@
   "isAccessibleForFree": true,
   "keywords": ["LLM benchmarks", "language model evaluation", "leaderboard", "missing data imputation", "benchmark calibration"],
   "creator": {"@type": "Organization", "name": "benchgap", "url": "https://github.com/hollorol/benchgap"},
-  "isBasedOn": "https://artificialanalysis.ai/evaluations",
+  "isBasedOn": "https://benchlm.ai/data",
   "measurementTechnique": "Monotone cross-benchmark calibration curves selected by leave-one-out cross-validation",
   "variableMeasured": ["benchmark score (fraction of tasks solved)", "estimate error (percentage points)", "estimate confidence level"],
   "distribution": [
@@ -72,12 +72,17 @@
       <a href="/api" data-nav="api">API</a>
     </nav>
     <div class="topbar-tools">
-      <label class="search">
-        <span class="sr">Find a model</span>
-        <input id="model-search" type="search" placeholder="Find a model…" list="model-list" autocomplete="off">
-        <datalist id="model-list"></datalist>
-      </label>
-      <button type="button" class="search-btn" aria-label="Find a model" aria-controls="model-search" aria-expanded="false">
+      <div class="search" role="search">
+        <label class="sr" for="site-search">Find a model or a benchmark</label>
+        <input id="site-search" type="search" placeholder="Find a model or benchmark…" autocomplete="off" spellcheck="false"
+          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="search-results">
+        <div class="search-pop" id="search-pop" hidden>
+          <div class="search-types" role="group" aria-label="Type"></div>
+          <ul class="search-results" id="search-results" role="listbox" aria-label="Results"></ul>
+          <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close</p>
+        </div>
+      </div>
+      <button type="button" class="search-btn" aria-label="Find a model or a benchmark" aria-controls="site-search" aria-expanded="false">
         <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4 4"/></svg>
       </button>
       <a class="gh-link" href="https://github.com/hollorol/benchgap" rel="noopener" target="_blank" aria-label="benchgap on GitHub" title="Source code on GitHub">
@@ -99,7 +104,8 @@
     <p class="foot-meta">data <span id="data-date"></span> · <a href="/data/benchgap.json" download>JSON</a> ·
       <a href="/method">method</a> · <a href="https://github.com/hollorol/benchgap" rel="noopener" target="_blank">GitHub</a><br>
       code <a href="https://github.com/hollorol/benchgap/blob/main/LICENSE" rel="noopener" target="_blank">MIT</a> ·
-      data from public leaderboards</p>
+      data from <a href="https://benchlm.ai/data" rel="noopener" target="_blank">BenchLM.ai</a>
+      (<a href="https://creativecommons.org/licenses/by-nc/4.0/" rel="noopener" target="_blank">CC BY-NC 4.0</a>)</p>
   </div>
 </footer>
 

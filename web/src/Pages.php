@@ -16,7 +16,7 @@ namespace Benchgap;
  */
 final class Pages
 {
-    public const DEFAULT_BENCH = 'terminal-bench/4.0';  // the leaderboard on the home page (app.js DEFAULT_BENCH)
+    public const DEFAULT_BENCH = 'terminal-bench-4/current';  // the leaderboard on the home page (app.js DEFAULT_BENCH)
     private const ABOUT = 'benchgap is an LLM benchmark leaderboard that fills in the missing scores. Most models are only '
         . 'ever run on a handful of benchmarks, so benchgap calibrates benchmarks against each other on the models '
         . 'measured on both, then estimates each missing score with its cross-validated error and a confidence level. '
@@ -35,6 +35,7 @@ final class Pages
     private array $index;
     private array $benchmarks;      // by key
     private array $models;          // by slug
+    private array $listed;          // the listed benchmarks (Snapshot::LISTED) by key: the ones the site shows
     private array $capabilities;    // label by id
     private string $date;           // when the measured scores were retrieved
 
@@ -42,6 +43,7 @@ final class Pages
     {
         $this->index = $api->index();
         $this->benchmarks = array_column($api->benchmarks()['benchmarks'], null, 'key');
+        $this->listed = array_filter($this->benchmarks, fn ($b) => $b['listed']);
         $this->models = array_column($api->models()['models'], null, 'slug');
         $this->capabilities = array_column($this->index['capabilities'], 'label', 'id');
         $this->date = $this->index['data_retrieved_at'] ?? '';
@@ -81,7 +83,7 @@ final class Pages
             ...array_map(fn ($path, $page) => "- [{$page[0]}]($site$path): {$page[1]}", array_keys(self::PAGES), self::PAGES),
             '', '## Leaderboards', '',
         ];
-        foreach ($this->benchmarks as $b) {
+        foreach ($this->listed as $b) {
             $lines[] = "- [{$b['label']}]({$b['page']}): {$b['n_measured']} measured and {$b['n_estimated']} estimated scores";
         }
         array_push(
@@ -103,7 +105,7 @@ final class Pages
         foreach ($this->rules() as $item) {
             $lines[] = '- ' . strip_tags($item);
         }
-        foreach ($this->benchmarks as $key => $b) {
+        foreach ($this->listed as $key => $b) {
             $scores = $this->api->benchmark($key)['scores'];
             array_push($lines, '', "## {$b['label']}", '', $this->benchmarkLead($b, $scores), '', "Page: {$b['page']}", '',
                 '| # | Model | Score | Source |', '|---:|---|---:|---|');
@@ -120,8 +122,8 @@ final class Pages
     {
         $pages = [
             ...array_map(fn ($path) => Api::SITE_URL . $path, array_keys(self::PAGES)),
-            ...array_column($this->benchmarks, 'page'),
-            ...array_column($this->models, 'page'),
+            ...array_column($this->listed, 'page'),
+            ...array_column(array_filter($this->models, fn ($m) => $m['listed']), 'page'),
             ...array_column($this->api->mappings()['mappings'], 'page'),
         ];
         $lastmod = substr($this->index['generated_at'] ?? '', 0, 10);
@@ -158,7 +160,7 @@ final class Pages
         }
         $table = $this->table(['#', 'Model', 'Score', 'Source'], $rows);
         $lead = '<p class="lede">' . self::esc($this->benchmarkLead($b, $scores)) . '</p>';
-        $source = $b['source_url'] ? '<p>Measured scores: <a href="' . self::esc($b['source_url']) . '">' . self::esc($b['harness']) . '</a>.</p>' : '';
+        $source = $b['source_url'] ? '<p>Measured scores: <a href="' . self::esc($b['source_url']) . '">' . self::esc(self::host($b['source_url'])) . '</a>.</p>' : '';
         $all = '<section class="section"><h2 class="h2">All leaderboards</h2>' . $this->benchmarkList() . '</section>';
         if ($home) {
             return $this->result(self::HOME_TITLE, self::HOME_DESCRIPTION, '/',
@@ -180,7 +182,7 @@ final class Pages
         }
         $rows = array_map(fn ($s) => [
             $this->link($this->benchmarks[$s['benchmark']]), self::pct($s['score']) . '%', self::source($s),
-        ], $this->api->model($slug)['scores']);
+        ], array_filter($this->api->model($slug)['scores'], fn ($s) => isset($this->listed[$s['benchmark']])));
         $plural = $m['n_measured'] === 1 ? '' : 's';
         return $this->result("{$m['name']} benchmark scores",
             "{$m['name']} benchmark scores: measured on {$m['n_measured']} benchmark$plural"
@@ -193,7 +195,8 @@ final class Pages
 
     public function matrix(): array
     {
-        $models = array_map(fn ($m) => '<li>' . $this->link($m) . " ({$m['n_measured']} measured, {$m['n_estimated']} estimated)</li>", $this->models);
+        $models = array_map(fn ($m) => '<li>' . $this->link($m) . " ({$m['n_measured']} measured, {$m['n_estimated']} estimated)</li>",
+            array_filter($this->models, fn ($m) => $m['listed']));
         return $this->result('LLM benchmark score matrix',
             'Every model on every benchmark: measured LLM scores and calibrated estimates for the missing ones, side by side.', '/matrix',
             $this->header('Score matrix', 'Every model × every benchmark',
@@ -350,7 +353,7 @@ final class Pages
     private function benchmarkList(): string
     {
         $groups = [];
-        foreach ($this->benchmarks as $b) {
+        foreach ($this->listed as $b) {
             $groups[$b['capability']][] = '<li>' . $this->link($b) . '</li>';
         }
         return implode('', array_map(
@@ -385,5 +388,11 @@ final class Pages
     private static function esc(string|int|float $s): string
     {
         return htmlspecialchars((string) $s, ENT_QUOTES);
+    }
+
+    /** The site a URL points to, for link text: "https://benchlm.ai/benchmarks/x" -> "benchlm.ai". */
+    private static function host(string $url): string
+    {
+        return preg_replace('/^www\./', '', parse_url($url, PHP_URL_HOST) ?: $url);
     }
 }

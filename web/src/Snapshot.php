@@ -31,39 +31,15 @@ final class Snapshot
     // capability order, which is the order of CAPABILITY_LABELS).
     public const QUALITY_GATE = ['min_pairs' => 5, 'min_r2' => 0.3, 'max_loo_pp' => 15.0];
     public const DENSE = ['min_models' => 8, 'min_benchmarks' => 3];
+    // the benchmarks the site lists: at least one estimate and this many models, measured or estimated.
+    // The counts, the dense core and the models listed are all of listed benchmarks; an unlisted one
+    // keeps its page and its API entry.
+    public const LISTED = ['min_estimated' => 1, 'min_models' => 10];
 
     private const RELIABILITY = [
         'high_max_pp' => 5.0, 'medium_max_pp' => 10.0, 'min_reliable_n' => 8, 'min_informative_r2' => 0.5,
     ];
     private const TIERS = ['high', 'medium', 'low'];
-
-    /** Display names (benchmark/version -> label); others show as "name version". */
-    private const DISPLAY_NAMES = [
-        'terminal-bench/2.1' => 'Terminal-Bench 2.1',
-        'terminal-bench/4.0' => 'Terminal-Bench 4.0',
-        'terminal-bench-hard/1.0' => 'Terminal-Bench Hard',
-        'terminal-bench-science/0.1' => 'Terminal-Bench Science 0.1',
-        'gpqa/diamond' => 'GPQA Diamond',
-        'mmlu-pro/1.0' => 'MMLU-Pro',
-        'global-mmlu-lite/1.0' => 'Global-MMLU-Lite',
-        'hle/1.0' => "Humanity's Last Exam",
-        'critpt/1.0' => 'CritPt',
-        'math-500/1.0' => 'MATH-500',
-        'aime-2025/2025' => 'AIME 2025',
-        'livecodebench/1.0' => 'LiveCodeBench',
-        'scicode/1.0' => 'SciCode',
-        'tau-bank/3-banking' => 'τ³-Bench Banking',
-        'tau-bench/2-telecom' => 'τ²-Bench Telecom',
-        'automationbench/1.0' => 'AutomationBench',
-        'apex-agents/1.0' => 'APEX-Agents',
-        'analyst-agent/1.0' => 'AA-AnalystAgent',
-        'enterprise-ops-gym/1.0' => 'EnterpriseOps-Gym',
-        'harvey-lab/1.0' => 'Harvey LAB',
-        'itbench/sre' => 'ITBench SRE',
-        'ifbench/1.0' => 'IFBench',
-        'mmmu-pro/1.0' => 'MMMU-Pro',
-        'gdp-pdf/1.0' => 'GDP.pdf',
-    ];
 
     public const CAPABILITY_LABELS = [
         'agentic-terminal' => 'Agentic · terminal',
@@ -72,6 +48,7 @@ final class Snapshot
         'math' => 'Math',
         'knowledge' => 'Knowledge & reasoning',
         'instruction-following' => 'Instruction following',
+        'multilingual' => 'Multilingual',
         'vision' => 'Vision & documents',
         'long-context' => 'Long context',
         'general' => 'General',
@@ -111,15 +88,12 @@ final class Snapshot
     public static function build(PDO $db): array
     {
         $versions = $db->query(
-            'SELECT v.id, v.version, v.harness, v.source_url, b.name AS benchmark, b.capability'
+            'SELECT v.id, v.version, v.harness, v.source_url, b.name AS benchmark, b.capability, b.label, b.featured'
             . ' FROM benchmark_versions v JOIN benchmarks b ON b.id = v.benchmark_id'
         )->fetchAll();
         $rank = array_flip(array_keys(self::CAPABILITY_LABELS));
         usort($versions, fn ($a, $b) => [$rank[$a['capability']] ?? 99, $a['benchmark'], $a['version']]
             <=> [$rank[$b['capability']] ?? 99, $b['benchmark'], $b['version']]);
-
-        $measured = $db->query("SELECT model_id, version_id FROM scores WHERE source = 'measured'")->fetchAll();
-        [$denseVersions, $denseModels] = self::denseCore($measured);
 
         $benchmarks = [];
         foreach ($versions as $r) {
@@ -127,11 +101,12 @@ final class Snapshot
             $benchmarks[] = [
                 'id' => (int) $r['id'],
                 'key' => $key,
-                'label' => self::DISPLAY_NAMES[$key] ?? "{$r['benchmark']} {$r['version']}",
+                'label' => $r['label'] ?? "{$r['benchmark']} {$r['version']}",
                 'capability' => $r['capability'],
                 'harness' => $r['harness'],
                 'source_url' => $r['source_url'],
-                'dense' => isset($denseVersions[$r['id']]),
+                // the original benchmarks, which the leaderboard picker shows first (scripts/build_seed.py)
+                'featured' => (bool) $r['featured'],
             ];
         }
         $capabilities = [];
@@ -162,7 +137,6 @@ final class Snapshot
 
         $scores = [];
         $used = [];
-        $tiers = array_fill_keys(self::TIERS, 0);
         foreach ($db->query('SELECT * FROM scores ORDER BY version_id, model_id, source') as $s) {
             $row = ['m' => (int) $s['model_id'], 'b' => (int) $s['version_id'], 'v' => self::num($s['value'])];
             if ($s['source'] === 'measured') {
@@ -188,7 +162,6 @@ final class Snapshot
             $extrapolated = (bool) ($pred['extrapolated'] ?? false);
             $loo = $mp['metrics']['LOO_RMSE'] ?? null;
             [$tier, $why] = self::reliability($loo, $mp['metrics']['R2'] ?? null, (int) $mp['n_points'], $extrapolated);
-            $tiers[$tier]++;
             $scores[] = $row + [
                 's' => 'e',
                 'sd' => self::num($loo),
@@ -200,15 +173,39 @@ final class Snapshot
             ];
         }
 
-        // counts from the exported scores, so they always match what the site shows
+        // counts from the exported scores, so they always match what the site shows: a benchmark's
+        // over all of its scores (they decide whether it is listed), everything else over listed ones
         $count = [];
         foreach ($scores as $sc) {
             $count['b'][$sc['b']][$sc['s']] = ($count['b'][$sc['b']][$sc['s']] ?? 0) + 1;
-            $count['m'][$sc['m']][$sc['s']] = ($count['m'][$sc['m']][$sc['s']] ?? 0) + 1;
         }
+        $listed = [];
         foreach ($benchmarks as &$b) {
             $b['n_measured'] = $count['b'][$b['id']]['m'] ?? 0;
             $b['n_estimated'] = $count['b'][$b['id']]['e'] ?? 0;
+            $b['listed'] = $b['n_estimated'] >= self::LISTED['min_estimated']
+                && $b['n_measured'] + $b['n_estimated'] >= self::LISTED['min_models'];
+            if ($b['listed']) {
+                $listed[$b['id']] = true;
+            }
+        }
+        unset($b);
+        $tiers = array_fill_keys(self::TIERS, 0);
+        $measured = [];
+        foreach ($scores as $sc) {
+            if (!isset($listed[$sc['b']])) {
+                continue;
+            }
+            $count['m'][$sc['m']][$sc['s']] = ($count['m'][$sc['m']][$sc['s']] ?? 0) + 1;
+            if ($sc['s'] === 'e') {
+                $tiers[$sc['tier']]++;
+            } else {
+                $measured[] = ['model_id' => $sc['m'], 'version_id' => $sc['b']];
+            }
+        }
+        [$denseVersions, $denseModels] = self::denseCore($measured);
+        foreach ($benchmarks as &$b) {
+            $b['dense'] = isset($denseVersions[$b['id']]);
         }
         unset($b);
 
@@ -221,6 +218,7 @@ final class Snapshot
                 'name' => $name,
                 'provider' => self::provider($name),
                 'dense' => isset($denseModels[$m['id']]),
+                'listed' => isset($count['m'][$m['id']]),
                 'n_measured' => $count['m'][$m['id']]['m'] ?? 0,
                 'n_estimated' => $count['m'][$m['id']]['e'] ?? 0,
             ];
@@ -257,9 +255,9 @@ final class Snapshot
                 'retrieved_at' => $db->query("SELECT MAX(retrieved_at) FROM scores WHERE source = 'measured'")->fetchColumn(),
                 'harnesses' => $harnesses,
                 'counts' => [
-                    'models' => count($models),
-                    'benchmarks' => count($benchmarks),
-                    'measured' => count($scores) - $estimated,
+                    'models' => count(array_filter($models, fn ($m) => $m['listed'])),
+                    'benchmarks' => count($listed),
+                    'measured' => count($measured),
                     'estimated' => $estimated,
                     'mappings' => count($mappingDocs),
                     'confidence' => $tiers,

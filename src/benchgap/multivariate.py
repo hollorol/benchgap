@@ -24,6 +24,7 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 from .fitting import _loo_indices
+from .parallel import pmap
 
 MV_CANDIDATES = ("linear_mv", "mm_mv")
 
@@ -195,17 +196,84 @@ def _training_set(
     return X, y, model_ids
 
 
+# what each worker's searches read: its own connection to the database (sqlite3 connections
+# can't be shared across processes), the benchmark versions and the minimum overlap
+_worker: dict = {}
+
+
+def _init(db: str | sqlite3.Connection, versions: list[dict], min_pairs: int) -> None:
+    """A worker's state: ``db`` is the database's path, or in this process its open connection."""
+    from .db import connect  # local import to avoid a cycle
+
+    _worker.update(conn=connect(db, readonly=True) if isinstance(db, str) else db, versions=versions, min_pairs=min_pairs)
+
+
+def _search(target: dict) -> dict | None:
+    """Greedy forward selection of the target's best feature set (None: no usable fit)."""
+    from .fit import _paired_scores  # local import to avoid a cycle
+
+    conn, versions, min_pairs = _worker["conn"], _worker["versions"], _worker["min_pairs"]
+    sources = [
+        v
+        for v in versions
+        if v["id"] != target["id"]
+        and v["capability"] == target["capability"]
+        and len(_paired_scores(conn, target["id"], v["id"])) >= min_pairs
+    ]
+    selected: list[dict] = []
+    best = None
+    while sources and len(selected) < MAX_FEATURES:
+        step_best = None
+        for s in sources:
+            if any(s["id"] == f["id"] for f in selected):
+                continue
+            feats = selected + [s]
+            fids = [f["id"] for f in feats]
+            X, y, _ = _training_set(conn, target["id"], fids)
+            if len(y) < _min_train(min_pairs, len(fids)):
+                continue
+            for method in MV_CANDIDATES:
+                try:
+                    params = fit_mv(method, X, y)
+                    metrics = mv_metrics(method, params, X, y)
+                except (RuntimeError, np.linalg.LinAlgError, ValueError):
+                    continue
+                loo = metrics.get("LOO_RMSE")
+                if loo is None or not np.isfinite(loo):
+                    continue
+                if step_best is None or loo < step_best["metrics"]["LOO_RMSE"]:
+                    step_best = {
+                        "features": feats,
+                        "method": method,
+                        "params": params,
+                        "metrics": metrics,
+                        "X": X,
+                        "y": y,
+                    }
+        if step_best is None:
+            break
+        if best is None or step_best["metrics"]["LOO_RMSE"] < best["metrics"]["LOO_RMSE"] - 1e-4:
+            best = step_best
+            selected = step_best["features"]
+        else:
+            break
+    return best
+
+
 def fit_multimappings(
     conn: sqlite3.Connection,
     min_pairs: int,
     min_r2: float,
     max_loo_rmse: float,
+    jobs: int | None = None,
 ) -> list[dict]:
-    """Greedy per-target multivariate fits; returns a summary list."""
-    from .fit import _paired_scores  # local import to avoid a cycle
+    """Greedy per-target multivariate fits; returns a summary list.
 
+    The targets' feature searches run on ``jobs`` processes (default: every
+    core), each reading the database through its own connection.
+    """
     versions = [
-        r
+        dict(r)
         for r in conn.execute(
             "SELECT v.id, v.version, v.harness, b.name AS benchmark,"
             "       b.capability AS capability"
@@ -213,55 +281,12 @@ def fit_multimappings(
             " WHERE v.unit = 'fraction'"
         )
     ]
+    conn.commit()  # the workers read the committed database
+    path = conn.execute("PRAGMA database_list").fetchone()[2]
+    # an in-memory database (no path) exists only in this process
+    searched = pmap(_search, versions, jobs if path else 1, _init, (path or conn, versions, min_pairs))
     summary = []
-    for target in versions:
-        sources = [
-            v
-            for v in versions
-            if v["id"] != target["id"]
-            and v["capability"] == target["capability"]
-            and len(_paired_scores(conn, target["id"], v["id"])) >= min_pairs
-        ]
-        if not sources:
-            continue
-        selected: list[sqlite3.Row] = []
-        best = None
-        while len(selected) < MAX_FEATURES:
-            step_best = None
-            for s in sources:
-                if any(s["id"] == f["id"] for f in selected):
-                    continue
-                feats = selected + [s]
-                fids = [f["id"] for f in feats]
-                X, y, _ = _training_set(conn, target["id"], fids)
-                if len(y) < _min_train(min_pairs, len(fids)):
-                    continue
-                for method in MV_CANDIDATES:
-                    try:
-                        params = fit_mv(method, X, y)
-                        metrics = mv_metrics(method, params, X, y)
-                    except (RuntimeError, np.linalg.LinAlgError, ValueError):
-                        continue
-                    loo = metrics.get("LOO_RMSE")
-                    if loo is None or not np.isfinite(loo):
-                        continue
-                    if step_best is None or loo < step_best["metrics"]["LOO_RMSE"]:
-                        step_best = {
-                            "features": feats,
-                            "method": method,
-                            "params": params,
-                            "metrics": metrics,
-                            "X": X,
-                            "y": y,
-                        }
-            if step_best is None:
-                break
-            if best is None or step_best["metrics"]["LOO_RMSE"] < best["metrics"]["LOO_RMSE"] - 1e-4:
-                best = step_best
-                selected = step_best["features"]
-            else:
-                break
-
+    for target, best in zip(versions, searched):
         if best is None or len(best["features"]) < 2:
             # a single-feature multivariate fit adds nothing over the
             # univariate mappings; only store genuinely multi-input fits
@@ -280,7 +305,7 @@ def fit_multimappings(
         # a multi-mapping must beat the target's best univariate mapping,
         # otherwise gapfill would never select it
         uni_loo = conn.execute(
-            "SELECT MIN(COALESCE(json_extract(metrics_json, '$.LOO_RMSE'), 1e9))"
+            "SELECT COALESCE(MIN(COALESCE(json_extract(metrics_json, '$.LOO_RMSE'), 1e9)), 1e9)"
             " FROM mappings WHERE to_version_id = ?",
             (target["id"],),
         ).fetchone()[0]

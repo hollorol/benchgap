@@ -32,6 +32,8 @@ def _conn(args: argparse.Namespace) -> sqlite3.Connection:
     return connect(path)
 
 
+JOBS_HELP = "processes to fit on (default 0: every core; 1: no parallelism)"
+
 def cmd_init(args: argparse.Namespace) -> None:
     conn = connect(args.db)
     init_db(conn)
@@ -46,7 +48,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 
 def cmd_fit(args: argparse.Namespace) -> None:
     conn = _conn(args)
-    summary = fit_mappings(conn, keep=args.keep)
+    summary = fit_mappings(conn, keep=args.keep, jobs=args.jobs)
     if not summary:
         print("no version pairs with enough paired models to fit")
         return
@@ -86,7 +88,7 @@ def cmd_multifit(args: argparse.Namespace) -> None:
     from .multivariate import fit_multimappings
 
     conn = _conn(args)
-    summary = fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
+    summary = fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE, jobs=args.jobs)
     if not summary:
         print("no targets with enough same-capability overlap for multivariate fits")
         return
@@ -212,17 +214,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="store only the best mapping per pair (default) or all candidates",
     )
     fit.add_argument("-v", "--verbose", action="store_true", help="show all candidates")
+    fit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
     fit.set_defaults(func=cmd_fit)
 
     sub.add_parser("gapfill", help="fill missing scores using fitted mappings").set_defaults(
         func=cmd_gapfill
     )
 
-    sub.add_parser(
+    mfit = sub.add_parser(
         "multifit",
         help="fit multivariate mappings (several benchmarks -> one)"
         " per target; gapfill prefers them when available",
-    ).set_defaults(func=cmd_multifit)
+    )
+    mfit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
+    mfit.set_defaults(func=cmd_multifit)
 
     rep = sub.add_parser("report", help="show mappings and the score matrix")
     rep.add_argument("--min-models", type=int, default=DEFAULT_MIN_MODELS,

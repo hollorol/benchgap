@@ -17,8 +17,8 @@ final class Api
     public const SITE_URL = 'https://benchgap.net';
     private const URL = self::SITE_URL . '/api/' . self::VERSION;
     private const REPO_URL = 'https://github.com/hollorol/benchgap';
-    private const DATA_NOTICE = "Benchmark scores are collected from public leaderboards (see each benchmark's "
-        . 'source_url) and remain under their sources\' terms. The benchgap code is MIT-licensed.';
+    private const DATA_NOTICE = 'Measured scores: data from BenchLM.ai (https://benchlm.ai/data), CC BY-NC 4.0'
+        . ' (https://creativecommons.org/licenses/by-nc/4.0/); estimates are benchgap\'s additions. The benchgap code is MIT-licensed.';
     private const CSV_COLUMNS = [
         'model', 'model_name', 'provider', 'benchmark', 'benchmark_label', 'capability',
         'score', 'source', 'confidence', 'error_pp', 'extrapolated', 'method', 'inputs',
@@ -180,6 +180,7 @@ final class Api
             'source_url' => $b['source_url'],
             'n_measured' => $b['n_measured'],
             'n_estimated' => $b['n_estimated'],
+            'listed' => $b['listed'],
             'url' => self::URL . "/benchmarks/{$b['key']}.json",
             'page' => self::SITE_URL . "/b/{$b['key']}",
         ];
@@ -194,6 +195,7 @@ final class Api
             'provider_name' => $this->data['meta']['providers'][$m['provider']] ?? $m['provider'],
             'n_measured' => $m['n_measured'],
             'n_estimated' => $m['n_estimated'],
+            'listed' => $m['listed'],
             'url' => self::URL . "/models/{$m['slug']}.json",
             'page' => self::SITE_URL . '/model/' . rawurlencode($m['slug']),
         ];

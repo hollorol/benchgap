@@ -12,6 +12,7 @@ CAPABILITY_ORDER = [
     "math",
     "knowledge",
     "instruction-following",
+    "multilingual",
     "vision",
     "long-context",
     "general",
