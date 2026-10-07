@@ -262,10 +262,19 @@ final class Pages
             . '<ul>' . implode('', $endpoints) . '</ul>');
     }
 
+    /** the 404 page (as app.js's renderNotFound) */
     public function notFound(): array
     {
-        return $this->result('Not found', '', null,
-            $this->header('Not found', 'Page not found.', '<p class="lede"><a href="/">Back to the leaderboard</a></p>'));
+        return $this->result('Not found', '', null, <<<'HTML'
+            <section class="nf">
+            <svg class="nf-mark" viewBox="0 0 120 64" aria-hidden="true"><defs><pattern id="nf-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.6" height="5"/></pattern></defs><rect x="4" y="20" width="26" height="44" rx="2"/><rect class="nf-gap" x="47" y="4" width="26" height="60" rx="2" fill="url(#nf-hatch)"/><rect x="90" y="30" width="26" height="34" rx="2"/></svg>
+            <div class="eyebrow">Not found · 404</div>
+            <h1 class="display">This one is a gap we <em>can’t</em> fill.</h1>
+            <p class="lede">Page not found. It may have been renamed, or the link has a typo.</p>
+            <a class="btn nf-home" href="/">Back to the leaderboard</a>
+            <nav class="nf-links" aria-label="Elsewhere on benchgap"><div class="ctl-label">Or try</div><a href="/matrix">Every model × every benchmark</a><a href="/calibration">Which benchmarks predict which</a><a href="/api">Every score in the public API</a></nav>
+            </section>
+            HTML);
     }
 
     // -- text ----------------------------------------------------------------------

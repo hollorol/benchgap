@@ -94,20 +94,27 @@
       })
       .join(", ");
 
-  function describeEstimate(s) {
+  // the model's name, heading the sheet (the hover tooltip sits next to it)
+  const modelLine = (s) => `<div class="h3">${esc(ix.model.get(s.m).name)}</div>`;
+  // the calibration an estimate came from, if it came from a single one
+  const fitHref = (s) => (s.s === "e" && s.via.kind === "uni" ? mappingHref(s.via.mapping) : "");
+
+  function describeEstimate(s, link) {
     const b = ix.bench.get(s.b);
     const lines = [];
     lines.push(`<div class="t-h">${esc(b.label)}<span class="t-tier ${s.tier}">${s.tier} confidence</span></div>`);
+    if (link) lines.push(modelLine(s));
     lines.push(`<div class="t-v"><i>≈ ${pct(s.v)}%</i> <span class="t-note">± ${pct(s.sd)} pp</span></div>`);
-    lines.push(`<div>Estimated from ${sourceList(s, false)} via ${esc(methodLabel(s.method))}, fitted on ${s.via.n} models measured on both.</div>`);
+    lines.push(`<div>Estimated from ${sourceList(s, link)} via ${esc(methodLabel(s.method))}, fitted on ${s.via.n} models measured on both.</div>`);
     if (s.why && s.why.length) lines.push(`<ul>${s.why.map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`);
     else lines.push(`<div class="t-note">Low cross-validated error, inside the fitted range.</div>`);
     lines.push(`<div class="t-note">Not a measured score.</div>`);
     return lines.join("");
   }
-  function describeMeasured(s) {
+  function describeMeasured(s, link) {
     const b = ix.bench.get(s.b);
-    return `<div class="t-h">${esc(b.label)} · measured</div><div class="t-v">${pct(s.v)}%</div><div class="t-note">Reported by the ${esc(b.harness)} harness.</div>`;
+    return `<div class="t-h">${esc(b.label)} · measured</div>${link ? modelLine(s) : ""}`
+      + `<div class="t-v">${pct(s.v)}%</div><div class="t-note">Reported by the ${esc(b.harness)} harness.</div>`;
   }
   let tipEl = null;        // element the tooltip currently describes
   let tipSize = null;      // its measured size, so moves don't re-measure
@@ -129,18 +136,55 @@
     tip.style.left = left + "px";
     tip.style.top = top + "px";
   }
-  const hideTip = () => { tip.hidden = true; tipEl = null; };
+  let scrim = null;        // the dimmed backdrop behind a sheet
+  function hideTip() {
+    tip.hidden = true;
+    tipEl = null;
+    tip.classList.remove("sheet");
+    tip.setAttribute("role", "tooltip");
+    if (scrim) scrim.hidden = true;
+  }
   const tipTarget = (e) => e.target.closest("[data-tip],[data-tiptext]");
-  function tipFor(el) {
+  // the details for el; link: with links (in a sheet, which can be tapped)
+  function tipFor(el, link) {
     const key = el.getAttribute("data-tip");
     if (key) {
       const s = ix.cell.get(key);
-      if (s) return s.s === "e" ? describeEstimate(s) : describeMeasured(s);
+      if (s) return s.s === "e" ? describeEstimate(s, link) : describeMeasured(s, link);
     }
     const raw = el.getAttribute("data-tiptext");
     return raw ? esc(raw) : null;
   }
+  // touch screens cannot hover: a tap opens the details as a sheet instead
+  const touch = matchMedia("(pointer: coarse)");   // as the CSS
+  function openSheet(el) {
+    const html = tipFor(el, true);
+    if (!html) return;
+    const s = ix.cell.get(el.getAttribute("data-tip"));
+    const fit = s && fitHref(s) ? `<a href="${fitHref(s)}">See the calibration</a>` : "";
+    if (!scrim) {
+      scrim = document.createElement("div");
+      scrim.className = "tip-scrim";
+      scrim.addEventListener("click", hideTip);
+      document.body.append(scrim);
+    }
+    scrim.hidden = false;
+    tip.innerHTML = `${html}<div class="tip-actions">${fit}<button type="button" class="btn">Close</button></div>`;
+    tip.querySelector(".tip-actions button").addEventListener("click", hideTip);
+    tip.classList.add("sheet");
+    tip.setAttribute("role", "dialog");
+    tip.style.left = tip.style.top = "";
+    tip.hidden = false;
+    tipEl = el;
+  }
+  document.addEventListener("click", (e) => {
+    if (!touch.matches || tip.contains(e.target)) return;
+    const el = tipTarget(e);
+    if (el && !el.closest("a")) openSheet(el);   // a link inside a target (calibration cells) just navigates
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !tip.hidden) hideTip(); });
   document.addEventListener("mouseover", (e) => {
+    if (touch.matches) return;   // the tap's emulated mouse events; the click opens a sheet
     const el = tipTarget(e);
     const html = el && (el === tipEl || tipFor(el));
     if (!html) return hideTip();
@@ -150,13 +194,14 @@
     if (tipEl && tipTarget(e) === tipEl) moveTip(e.clientX, e.clientY);
   });
   document.addEventListener("focusin", (e) => {
+    if (touch.matches || tip.classList.contains("sheet")) return;
     const el = tipTarget(e);
     const html = el && tipFor(el);
     if (!html) return hideTip();
     const r = el.getBoundingClientRect();
     showTip(el, html, r.left + r.width / 2, r.bottom);
   });
-  document.addEventListener("focusout", hideTip);
+  document.addEventListener("focusout", () => { if (!tip.classList.contains("sheet")) hideTip(); });
   window.addEventListener("scroll", hideTip, { passive: true });
 
   // --- shared fragments -------------------------------------------------------
@@ -221,8 +266,10 @@
       })
     );
   }
-  const SHOW_OPTIONS = [["measured", "Measured only"], ["reliable", "+ reliable estimates"], ["all", "+ all estimates"]];
-  const showSeg = () => `<span><span class="ctl-label">Show</span>${segHTML("Which scores to show", SHOW_OPTIONS, prefs.show)}</span>`;
+  // option labels: long, and short for phones
+  const SHOW_OPTIONS = [["measured", "Measured only", "Measured"], ["reliable", "+ reliable estimates", "+ Reliable est."], ["all", "+ all estimates", "+ All est."]]
+    .map(([k, long, short]) => [k, `<span class="lg">${long}</span><span class="sh">${short}</span>`]);
+  const showSeg = () => `<span class="show-ctl"><span class="ctl-label">Show</span>${segHTML("Which scores to show", SHOW_OPTIONS, prefs.show)}</span>`;
   const bindShowSeg = (root, rerender) =>
     bindSeg(root.querySelector(".seg"), (value) => {
       prefs.show = value;
@@ -230,7 +277,7 @@
       rerender();
     });
 
-  const tierFlag = (s) => (s.s === "e" && s.tier === "low" ? `<span class="flag low" title="Low-confidence estimate">⚠ low conf.</span>` : "");
+  const tierFlag = (s) => (s.s === "e" && s.tier === "low" ? `<span class="flag low" title="Low-confidence estimate"><span class="lg">⚠ low conf.</span><span class="sh">⚠ low</span></span>` : "");
 
   // bar track: grid lines, the bar, and a ±sd whisker for estimates; X maps a fraction to %
   function trackHTML(s, X, ticks) {
@@ -242,6 +289,24 @@
   }
 
   // --- page: leaderboard --------------------------------------------------------
+  // phones: the benchmarks of b's capability as a swipeable row of chips (none if b is alone in it)
+  // a benchmark's chip, current if it is b
+  const benchChip = (x, b) => `<a class="chip" href="${benchHref(x)}" aria-current="${x.id === b.id}">${esc(x.label)}<span class="cnt">${x.n_measured}${x.n_estimated ? "+" + x.n_estimated : ""}</span></a>`;
+  function railHTML(b) {
+    const benches = ix.benchesByCap.find(({ cap }) => cap.id === b.capability).benches;
+    if (benches.length < 2) return "";
+    return `<p class="rail-cap">Also in <b>${esc(capLabel(b.capability))}</b></p><nav class="rail chip-row" aria-label="${esc(capLabel(b.capability))} benchmarks">${benches
+      .map((x) => benchChip(x, b))
+      .join("")}</nav>`;
+  }
+  // scrolls the rail (phones only) so the current benchmark's chip is in the middle
+  const phone = matchMedia("(max-width: 760px)");
+  function centerRail() {
+    if (!phone.matches) return;
+    const rail = $("#bench-rail .rail"), chip = rail && rail.querySelector('[aria-current="true"]');
+    if (chip) rail.scrollLeft += chip.getBoundingClientRect().left - rail.getBoundingClientRect().left - (rail.clientWidth - chip.offsetWidth) / 2;
+  }
+
   // Returns true when only the chart was swapped (already on the leaderboard).
   function renderBoard(key) {
     const b = ix.benchByKey.get(key);
@@ -252,7 +317,9 @@
     if ($("#board-sec")) {
       main.querySelectorAll(".picker .chip").forEach((a) => a.setAttribute("aria-current", String(a.getAttribute("href") === benchHref(b))));
       $("#bench-select").value = b.key;
+      $("#bench-rail").innerHTML = railHTML(b);
       renderBoardBody(b);
+      centerRail();
       return true;
     }
     const c = D.meta.counts;
@@ -284,21 +351,22 @@
       .map(
         ({ cap, benches }) => `<div class="picker-row"><div class="cap">${esc(cap.label)}</div><div class="chips">${benches
           .map(
-            (x) => `<a class="chip" href="${benchHref(x)}" aria-current="${x.id === b.id}">${esc(x.label)}<span class="cnt">${x.n_measured}${x.n_estimated ? "+" + x.n_estimated : ""}</span></a>`
+            (x) => benchChip(x, b)
           )
           .join("")}</div></div>`
       )
       .join("")}</nav>`;
 
-    const pickerMobile = `<div class="picker-mobile"><label><span class="sr">Benchmark</span><select class="select" id="bench-select">${ix.benchesByCap
+    const pickerMobile = `<div class="picker-mobile"><label><span class="ctl-label">Benchmark · ${D.benchmarks.length} to pick from</span><select class="select" id="bench-select">${ix.benchesByCap
       .map(({ cap, benches }) => `<optgroup label="${esc(cap.label)}">${benches
         .map((x) => `<option value="${esc(x.key)}" ${x.id === b.id ? "selected" : ""}>${esc(x.label)} (${x.n_measured}${x.n_estimated ? " + " + x.n_estimated + " est." : ""})</option>`)
         .join("")}</optgroup>`)
-      .join("")}</select></label></div>`;
+      .join("")}</select></label><div id="bench-rail">${railHTML(b)}</div></div>`;
 
     main.innerHTML = `<div class="page">${hero}${picker}${pickerMobile}<section id="board-sec"></section></div>`;
     $("#bench-select").addEventListener("change", (e) => go(benchHref({ key: e.target.value })));
     renderBoardBody(b);
+    centerRail();
     return false;
   }
 
@@ -395,6 +463,7 @@
         <span class="muted mono" style="font-size:.78rem" id="mx-counts"></span>
       </div>
       ${legendHTML()}
+      <p class="mx-hint"><span>Model names stay put; the scores scroll.</span><b>Swipe →</b></p>
       <div class="matrix-wrap" id="mx-wrap" style="margin-top:1rem"></div></div>`;
 
     bindShowSeg(main, renderMatrixTable);
@@ -502,7 +571,7 @@
               return `<div class="mrow gap"><div class="bn"><a href="${benchHref(b)}">${esc(b.label)}</a></div><div class="track">not measured · no calibrated source to estimate from</div><div class="val">—</div></div>`;
             }
             const e = s.s === "e";
-            const fit = s.via && s.via.kind === "uni" ? ` · <a href="${mappingHref(s.via.mapping)}">see the fit</a>` : "";
+            const fit = fitHref(s) ? ` · <a href="${fitHref(s)}">see the fit</a>` : "";
             const why = e
               ? `<div class="why">${confidenceFlag(s.tier)} estimated from ${sourceList(s, true)} via ${esc(methodLabel(s.method))}, ± ${pct(s.sd)} pp${fit}${
                   s.why.length ? `<span>· ${s.why.map(esc).join("; ")}</span>` : ""
@@ -554,19 +623,24 @@
     const involved = new Set();
     D.mappings.forEach((m) => { involved.add(m.from); involved.add(m.to); });
     const vs = D.benchmarks.filter((b) => involved.has(b.id));
-    const head = vs.map((b) => `<th><span class="colh">${esc(b.label)}</span></th>`).join("");
+    // phones show the pair map one capability at a time (.pm-off hides the others), the one with the most mappings first
+    const nByCap = groupBy(D.mappings, (m) => ix.bench.get(m.from).capability);
+    const caps = D.capabilities.filter((c) => nByCap.has(c.id)).map((c) => ({ id: c.id, label: c.label, n: nByCap.get(c.id).length }));
+    const cap = caps.reduce((a, c) => (c.n > a.n ? c : a)).id;
+    const off = (b) => (b.capability === cap ? "" : " pm-off");
+    const head = vs.map((b) => `<th class="${off(b)}"><span class="colh">${esc(b.label)}</span></th>`).join("");
     const body = vs
       .map((src, i) => {
         const cells = vs
           .map((dst, j) => {
-            if (i === j) return `<td class="diag"></td>`;
-            if (src.capability !== dst.capability) return `<td class="na"></td>`;
+            if (i === j) return `<td class="diag${off(dst)}"></td>`;
+            if (src.capability !== dst.capability) return `<td class="na${off(dst)}"></td>`;
             const m = ix.mappingByPair.get(src.id + ":" + dst.id);
-            if (!m) return `<td class="none" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
-            return `<td class="cell" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
+            if (!m) return `<td class="none${off(dst)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
+            return `<td class="cell${off(dst)}" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
           })
           .join("");
-        return `<tr><th scope="row">${esc(src.label)}</th>${cells}</tr>`;
+        return `<tr class="${off(src)}"><th scope="row">${esc(src.label)}</th>${cells}</tr>`;
       })
       .join("");
 
@@ -576,7 +650,7 @@
       .map((m) => {
         const f = ix.bench.get(m.from), t = ix.bench.get(m.to);
         return `<tr><td><a href="${mappingHref(m.id)}">${esc(f.label)} → ${esc(t.label)}</a></td><td>${esc(methodLabel(m.method))}</td>
-          <td class="num">${m.n}</td><td class="num">${m.r2.toFixed(3)}</td><td class="num"><span class="scale-dot" style="background:${lossColor(m.loo * 100, gate)}"></span>${pct(m.loo)}</td><td class="num">${m.n_used}</td></tr>`;
+          <td class="num">${m.n}</td><td class="num">${m.r2.toFixed(3)}</td><td class="num err"><span class="scale-dot" style="background:${lossColor(m.loo * 100, gate)}"></span>${pct(m.loo)}</td><td class="num">${m.n_used}</td></tr>`;
       })
       .join("");
 
@@ -585,6 +659,9 @@
         several monotone curves are fitted and the one with the lowest leave-one-out error is kept, if it passes the quality gate
         (R² ≥ ${D.meta.quality_gate.min_r2}, error ≤ ${gate} pp). Cells show that error in percentage points: rows are the source, columns the target.`)}
       <section class="section">
+        <div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
+          .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === cap}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`)
+          .join("")}</div>
         <div class="pm-wrap"><table class="pm"><thead><tr><th style="text-align:right;vertical-align:bottom" class="muted">source ↓ · target →</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
         <div class="scale"><span>0 pp</span><span class="ramp" style="background:${LOSS_RAMP}"></span><span>${gate} pp (gate)</span>
           <span style="margin-left:1rem"><span class="sq none"></span>no usable mapping</span>
@@ -593,8 +670,18 @@
       </section>
       <section class="section">
         <h2 class="h2">All fitted mappings</h2>
-        <div class="list-wrap"><table class="list"><thead><tr><th>Mapping</th><th>Selected curve</th><th style="text-align:right">n</th><th style="text-align:right">R²</th><th style="text-align:right">LOO error (pp)</th><th style="text-align:right">Estimates</th></tr></thead><tbody>${list}</tbody></table></div>
+        <div class="list-wrap"><table class="list maps"><thead><tr><th>Mapping</th><th>Selected curve</th><th style="text-align:right">n</th><th style="text-align:right">R²</th><th style="text-align:right">LOO error (pp)</th><th style="text-align:right">Estimates</th></tr></thead><tbody>${list}</tbody></table></div>
       </section></div>`;
+
+    // a chip re-marks the rows and columns to hide
+    const showCap = (id) => {
+      main.querySelectorAll(".pm-caps .chip").forEach((c) => c.setAttribute("aria-pressed", String(c.dataset.cap === id)));
+      main.querySelectorAll(".pm tr").forEach((tr, i) => {
+        tr.classList.toggle("pm-off", i > 0 && vs[i - 1].capability !== id);
+        [...tr.children].forEach((cell, j) => cell.classList.toggle("pm-off", j > 0 && vs[j - 1].capability !== id));
+      });
+    };
+    main.querySelectorAll(".pm-caps .chip").forEach((c) => c.addEventListener("click", () => showCap(c.dataset.cap)));
   }
 
   function renderMapping(id) {
@@ -693,14 +780,16 @@
     setMeta("How missing benchmark scores are estimated", "How benchgap estimates missing LLM benchmark scores: calibration curves, leave-one-out validation and confidence levels.");
     main.innerHTML = `<div class="page">
       ${pageHead("Method", "How the gaps are filled, and when not to trust it", esc(ABOUT))}
+      <nav class="jump chip-row" aria-label="On this page">${[["data", "The data"], ["calibrating", "Calibrating"], ["filling", "Filling a gap"], ["confidence", "Confidence"], ["caveats", "Caveats"]]
+        .map(([id, label]) => `<a class="chip" href="#${id}">${label}</a>`).join("")}</nav>
       <article class="prose">
-        <h2>The data</h2>
+        <h2 id="data">The data</h2>
         <p>Measured scores come from public evaluation leaderboards (harness: ${esc(D.meta.harnesses.join(", "))}),
         retrieved ${esc(D.meta.retrieved_at || "")}. Every score is stored as a fraction and shown as a percentage. Each benchmark belongs to a
         <b>capability</b> group (agentic terminal, agentic tools, knowledge, vision, …). Benchmarks are only ever calibrated against
         benchmarks of the same capability: a model never run on a vision benchmark keeps that gap instead of inheriting a score from text benchmarks.</p>
 
-        <h2>Calibrating one benchmark against another</h2>
+        <h2 id="calibrating">Calibrating one benchmark against another</h2>
         <p>For every ordered pair of same-capability benchmarks with at least ${g.min_pairs} models measured on both, ${g.n_candidates} monotone curve families are fitted
         by least squares: linear, Michaelis–Menten (with and without an offset), the inverse Michaelis–Menten form, Hill and an offset logistic.
         The saturating forms capture the typical shape: gains on an easier benchmark flatten out while a harder one keeps discriminating.</p>
@@ -709,12 +798,12 @@
         and the held-out score is predicted. That error, in percentage points, is the “±” shown next to every estimate. A pair keeps no mapping at all
         unless its best curve reaches R² ≥ ${g.min_r2} and an error of at most ${g.max_loo_pp} pp; poorly fitting pairs leave their gaps empty rather than filling them with noise.</p>
 
-        <h2>Filling a gap</h2>
+        <h2 id="filling">Filling a gap</h2>
         <p>For a model missing a score, every mapping into that benchmark from a benchmark the model <i>was</i> measured on is a candidate; the one
         with the lowest cross-validated error wins. Multivariate mappings (several source benchmarks combined) compete on the same footing when available.
         Estimates are never used to make further estimates: inputs are always measured scores.</p>
 
-        <h2>Confidence levels</h2>
+        <h2 id="confidence">Confidence levels</h2>
         <p>Every estimate gets a confidence level, so low-confidence fills are visibly different from the others on every page:</p>
         <table class="tier-table">
           <thead><tr><th>Level</th><th>Rule</th><th>Count</th></tr></thead>
@@ -730,10 +819,10 @@
           <li><b>Small sample</b>: the mapping was fitted on fewer than ${r.min_reliable_n} models, so its error estimate is itself noisy.</li>
           <li><b>Uninformative fit</b>: R² below ${r.min_informative_r2}; the curve explains little of how models differ on the target.</li>
         </ul>
-        <p>Hover over (or focus) any estimate to see exactly which benchmark it came from, the curve used, and which warnings applied.
+        <p>Hover over, tap or focus any estimate to see exactly which benchmark it came from, the curve used, and which warnings applied.
         The leaderboard and matrix can hide low-confidence estimates (<i>+ reliable estimates</i>) or all of them (<i>Measured only</i>).</p>
 
-        <h2>Caveats</h2>
+        <h2 id="caveats">Caveats</h2>
         <ul>
           <li>Estimates are predictions, not measurements. A model can genuinely over- or under-perform what its other scores imply.</li>
           <li>Coefficients are harness-specific: these calibrations hold for the source leaderboard's evaluation setup, not for other harnesses.</li>
@@ -890,7 +979,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
         <h2 class="h2">Endpoints</h2>
         <p class="muted">All paths are relative to the base URL. Every JSON document also carries
         <code>api_version</code>, <code>generated_at</code>, <code>data_retrieved_at</code> and <code>counts</code>.</p>
-        <div class="list-wrap"><table class="list"><thead><tr><th></th><th>Path</th><th>Returns</th></tr></thead><tbody>${API_ENDPOINTS
+        <div class="list-wrap"><table class="list api-ep"><thead><tr><th></th><th>Path</th><th>Returns</th></tr></thead><tbody>${API_ENDPOINTS
           .map(([path, d]) => `<tr><td><span class="verb">GET</span></td><td class="mono">${path.includes("{") ? esc(path) : `<a href="${esc(base + path)}" target="_blank" rel="noopener">${esc(path)}</a>`}</td><td>${d}</td></tr>`)
           .join("")}</tbody></table></div>
       </section>
@@ -965,9 +1054,19 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     $("#api-send").addEventListener("click", send);
   }
 
+  // the 404 page (as Pages::notFound); msg says what was not found, in HTML
   function renderNotFound(msg) {
     setMeta("Not found", "", null);
-    main.innerHTML = `<div class="page">${pageHead("Not found", msg, `<a href="/">Back to the leaderboard</a>`)}</div>`;
+    main.innerHTML = `<div class="page"><section class="nf reveal">
+      <svg class="nf-mark" viewBox="0 0 120 64" aria-hidden="true"><defs><pattern id="nf-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.6" height="5"/></pattern></defs>
+        <rect x="4" y="20" width="26" height="44" rx="2"/><rect class="nf-gap" x="47" y="4" width="26" height="60" rx="2" fill="url(#nf-hatch)"/><rect x="90" y="30" width="26" height="34" rx="2"/></svg>
+      <div class="eyebrow">Not found · 404</div>
+      <h1 class="display">This one is a gap we <em>can’t</em> fill.</h1>
+      <p class="lede">${msg} It may have been renamed, or the link has a typo.</p>
+      <a class="btn nf-home" href="/">Back to the leaderboard</a>
+      <nav class="nf-links" aria-label="Elsewhere on benchgap"><div class="ctl-label">Or try</div>
+        <a href="/matrix">Every model × every benchmark</a><a href="/calibration">Which benchmarks predict which</a><a href="/api">Every score in the public API</a></nav>
+    </section></div>`;
   }
 
   // --- router -----------------------------------------------------------------
@@ -1000,14 +1099,18 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     $('meta[name="robots"]').content = path === null ? "noindex" : "index, follow";
   }
 
+  let shownPath = null;   // the path the page was last rendered for
+  const scrollToHash = () => { const el = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1))); if (el) el.scrollIntoView(); return !!el; };
   function route() {
     hideTip();
     const path = location.pathname;
+    if (path === shownPath) return scrollToHash();   // only the #fragment changed: same page, no re-render
+    shownPath = path;
     const page = pageOf(path);
     const nav = page ? page[1] : "";
     const inPlace = page ? page[2](decodeURIComponent(path.match(page[0])[1] || "")) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-    if (!inPlace) window.scrollTo(0, 0);
+    if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }
 
   // in-site links switch pages without a reload
@@ -1027,11 +1130,21 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     const names = D.models.map((m) => [m.name.toLowerCase(), m]);
     // exact: only a full model name (a picked suggestion, or leaving the box); otherwise
     // the first name containing the query (Enter)
+    // phones and tablets: the search button opens the box as a row under the bar
+    const topbar = $(".topbar"), searchBtn = $(".search-btn");
+    const openSearch = (open) => {
+      topbar.classList.toggle("searching", open);
+      searchBtn.setAttribute("aria-expanded", String(open));
+      if (open) search.focus();
+    };
+    searchBtn.addEventListener("click", () => openSearch(!topbar.classList.contains("searching")));
+    document.addEventListener("click", (e) => { if (topbar.classList.contains("searching") && !topbar.contains(e.target)) openSearch(false); });
+    search.addEventListener("keydown", (e) => { if (e.key === "Escape") { openSearch(false); searchBtn.focus(); } });
     const find = (exact) => {
       const q = search.value.trim().toLowerCase();
       if (!q) return;
       const hit = names.find(([n]) => n === q) || (!exact && names.find(([n]) => n.includes(q)));
-      if (hit) { go(modelHref(hit[1])); search.value = ""; search.blur(); }
+      if (hit) { go(modelHref(hit[1])); search.value = ""; search.blur(); openSearch(false); }
     };
     // picking a datalist suggestion fires "input" (not always "change") with no typing inputType
     search.addEventListener("input", (e) => { if (!e.inputType || e.inputType === "insertReplacementText") find(true); });

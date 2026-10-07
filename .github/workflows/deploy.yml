@@ -34,8 +34,8 @@ jobs:
         run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress --working-dir web
 
       # the repo keeps the readable source; only the uploaded copy is minified
-      - name: Minify app.js
-        run: npx --yes esbuild@0.28.2 web/assets/app.js --minify --target=es2020 --outfile=web/assets/app.js --allow-overwrite
+      - name: Minify app.js and style.css
+        run: npx --yes esbuild@0.28.2 web/assets/app.js web/assets/style.css --minify --target=es2020 --outdir=web/assets --allow-overwrite
 
       - name: Upload web/ over FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
