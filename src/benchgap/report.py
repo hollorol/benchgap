@@ -1,6 +1,7 @@
 """Human-readable views of the database: mapping summary and score matrix."""
 from __future__ import annotations
 
+import json
 import sqlite3
 
 # Display order for capability groups in the matrix.
@@ -73,6 +74,26 @@ def mapping_summary(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
+def multi_mapping_summary(conn: sqlite3.Connection) -> list[dict]:
+    """One row per multivariate mapping: target, features, quality."""
+    labels = _labels(conn)
+    rows = conn.execute(
+        "SELECT * FROM multi_mappings"
+        " ORDER BY COALESCE(json_extract(metrics_json, '$.LOO_RMSE'), 1e9)"
+    ).fetchall()
+    return [
+        {
+            "target": labels[r["to_version_id"]],
+            "method": r["method"],
+            "features": [labels[fid] for fid in json.loads(r["feature_version_ids_json"])],
+            "n_pairs": r["n_points"],
+            "R2": json.loads(r["metrics_json"])["R2"],
+            "LOO_RMSE_pp": json.loads(r["metrics_json"])["LOO_RMSE"] * 100,
+        }
+        for r in rows
+    ]
+
+
 def score_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
     """Models x versions matrix; gapfilled cells marked 'g', missing '.'.
 
@@ -112,7 +133,7 @@ def score_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
                         "kind": "g" if entry[1] == "gapfilled" else "m",
                     }
                 )
-        rows.append({"slug": m["slug"], "name": m["name"], "cells": cells})
+        rows.append({"id": m["id"], "slug": m["slug"], "name": m["name"], "cells": cells})
     return columns, rows
 
 

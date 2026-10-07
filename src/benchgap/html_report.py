@@ -21,7 +21,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from .fitting import CANDIDATES, fit_all, predict, select_best  # noqa: E402
-from .report import CAPABILITY_ORDER, mapping_summary, score_matrix  # noqa: E402
+from .report import (  # noqa: E402
+    CAPABILITY_ORDER,
+    mapping_summary,
+    multi_mapping_summary,
+    score_matrix,
+)
 
 COLORS = {
     "measured": "#2563eb",
@@ -167,6 +172,23 @@ def _mapping_card(conn: sqlite3.Connection, mapping: sqlite3.Row, labels: dict[i
 
 def _matrix_html(conn: sqlite3.Connection) -> str:
     columns, rows = score_matrix(conn)
+    # tooltip metadata per (model, version): which method gapfilled the cell
+    meta = {
+        (r["model_id"], r["version_id"]): r
+        for r in conn.execute(
+            "SELECT model_id, version_id, prediction_json FROM scores"
+            " WHERE source = 'gapfilled'"
+        )
+    }
+    tooltips = {}
+    for key, r in meta.items():
+        p = json.loads(r["prediction_json"])
+        kind = "multivariate" if p.get("kind") == "multi" else "univariate"
+        n_inputs = len(p.get("input_scores", {})) or 1
+        tooltips[key] = (
+            f"gapfilled via {kind} {p['method']} from {n_inputs} source benchmark(s),"
+            " not a measured score"
+        )
     order = sorted(
         range(len(rows)),
         key=lambda i: max((c["value"] or -1) for c in rows[i]["cells"]),
@@ -187,13 +209,13 @@ def _matrix_html(conn: sqlite3.Connection) -> str:
     for i in order:
         r = rows[i]
         cells = []
-        for c in r["cells"]:
+        for col, c in zip(columns, r["cells"]):
             if c["value"] is None:
                 cells.append('<td class="missing">–</td>')
             elif c["kind"] == "g":
+                tip = tooltips.get((r["id"], col["id"]), "gapfilled: fitted mapping")
                 cells.append(
-                    f'<td class="gapfilled" title="gapfilled: fitted mapping,'
-                    f' not a measured score">{c["value"] * 100:.1f}</td>'
+                    f'<td class="gapfilled" title="{tip}">{c["value"] * 100:.1f}</td>'
                 )
             else:
                 cells.append(f"<td>{c['value'] * 100:.1f}</td>")
@@ -237,6 +259,7 @@ def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
         ).fetchone()[0],
     }
     summary = mapping_summary(conn)
+    multi = multi_mapping_summary(conn)
     mappings = _used_mappings(conn)
     if not mappings:
         # nothing gapfilled yet: show the single best-fitting mapping instead
@@ -252,6 +275,27 @@ def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
         f"<td>{s['LOO_RMSE_pp']:.2f}</td></tr>"
         for s in summary
     )
+    multi_rows = "".join(
+        f"<tr><td>{s['target']}</td><td>{', '.join(s['features'])}</td>"
+        f"<td><b>{s['method']}</b></td><td>{s['n_pairs']}</td>"
+        f"<td>{s['R2']:.3f}</td><td>{s['LOO_RMSE_pp']:.2f}</td></tr>"
+        for s in multi
+    )
+    multi_section = ""
+    if multi:
+        multi_section = f"""
+<h2>Multivariate mappings (several benchmarks → one)</h2>
+<table>
+<thead><tr><th>target</th><th>source benchmarks</th><th>method</th><th>n</th>
+<th>R²</th><th>LOO RMSE (pp)</th></tr></thead>
+<tbody>{multi_rows}</tbody>
+</table>
+<p class="legend">Per target, up to three same-capability source benchmarks are
+selected greedily by leave-one-out CV. Gapfill prefers a multivariate mapping
+when the model is measured on every source benchmark it uses and its LOO RMSE
+beats the best univariate mapping; otherwise the univariate mapping applies.
+Models missing one of the source scores fall back to the univariate path.</p>
+"""
     cap_rows = "".join(
         f"<tr><td>{cap}</td><td>{nb}</td><td>{meas}</td><td>{gap}</td></tr>"
         for cap, nb, meas, gap in _capability_stats(conn)
@@ -334,9 +378,11 @@ same-capability source score) stay empty - the gap is kept, not invented.</p>
 </table>
 </div>
 <p class="legend">Selection is by leave-one-out cross-validated RMSE among the fitted
-candidates (linear, Michaelis–Menten, Michaelis–Menten with offset, and the
-inverse Michaelis–Menten form for convex directions). All candidates are
+candidates (linear, Michaelis–Menten, Michaelis–Menten with offset, the inverse
+Michaelis–Menten form, Hill, and an offset logistic). All candidates are
 monotone. Solid curves are the selected fit; gray curves are the alternatives.</p>
+
+{multi_section}
 
 <h2>Mapping detail (top {len(mappings)} by gapfill usage)</h2>
 <div class="cards">{cards}</div>

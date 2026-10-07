@@ -47,7 +47,34 @@ def pairs():
 
 def test_candidates_are_monotone_forms():
     """No quadratic; every candidate is a monotone mapping family."""
-    assert set(CANDIDATES) == {"linear", "mm", "mm_offset", "mm_offset_inv"}
+    assert set(CANDIDATES) == {
+        "linear",
+        "mm",
+        "mm_offset",
+        "mm_offset_inv",
+        "hill",
+        "logistic",
+    }
+
+
+def test_hill_generalizes_mm_offset(pairs):
+    """Hill reduces to MM+offset at n=1, so its in-sample R2 can only match
+    or beat the MM+offset fit on the same data."""
+    xs, ys = pairs
+    hill = fit_candidate("hill", xs, ys)
+    mm = fit_candidate("mm_offset", xs, ys)
+    assert hill.metrics["R2"] >= mm.metrics["R2"] - 1e-9
+    assert hill.metrics["R2"] >= 0.94
+
+
+def test_hill_and_logistic_are_monotone_and_bounded(pairs):
+    xs, ys = pairs
+    grid = np.linspace(0, 1, 300)
+    for method in ("hill", "logistic"):
+        r = fit_candidate(method, xs, ys)
+        out = predict(method, r.params, grid)
+        assert np.all(np.diff(out) >= -1e-9), f"{method} must be monotone"
+        assert np.all(out <= 1.05)
 
 
 def test_all_candidates_fit(pairs):

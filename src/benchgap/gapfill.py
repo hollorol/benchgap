@@ -5,6 +5,7 @@ import json
 import sqlite3
 
 from .fitting import predict
+from .multivariate import predict_mv
 
 
 def _mappings_by_target(conn: sqlite3.Connection) -> dict[int, list[sqlite3.Row]]:
@@ -29,16 +30,108 @@ def _mappings_by_target(conn: sqlite3.Connection) -> dict[int, list[sqlite3.Row]
     return by_target
 
 
+def _multi_by_target(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
+    """Best multivariate mapping per target (lowest LOO_RMSE)."""
+    rows = conn.execute(
+        "SELECT * FROM multi_mappings"
+        " ORDER BY to_version_id,"
+        "   COALESCE(json_extract(metrics_json, '$.LOO_RMSE'), 1e9)"
+    ).fetchall()
+    by_target: dict[int, sqlite3.Row] = {}
+    for r in rows:
+        by_target.setdefault(r["to_version_id"], r)
+    return by_target
+
+
+def _measured(conn: sqlite3.Connection, model_id: int, version_id: int):
+    return conn.execute(
+        "SELECT value FROM scores"
+        " WHERE model_id = ? AND version_id = ? AND source = 'measured'",
+        (model_id, version_id),
+    ).fetchone()
+
+
+def _loo_key(metrics: dict) -> tuple:
+    loo = metrics.get("LOO_RMSE")
+    rmse = metrics.get("RMSE")
+    loo = loo if loo is not None and loo == loo else float("inf")
+    rmse = rmse if rmse is not None and rmse == rmse else float("inf")
+    return (loo, rmse)
+
+
+def _multi_prediction(conn, model, mm) -> dict | None:
+    """Multivariate candidate for a model, or None if a feature is missing."""
+    fids = json.loads(mm["feature_version_ids_json"])
+    xs = []
+    for fid in fids:
+        row = _measured(conn, model["id"], fid)
+        if row is None:
+            return None
+        xs.append(row["value"])
+    params = json.loads(mm["params_json"])
+    value = float(predict_mv(mm["method"], params, [xs])[0])
+    ranges = json.loads(mm["train_ranges_json"]) if mm["train_ranges_json"] else {}
+    extrapolated = any(
+        fid in ranges and not (ranges[fid][0] <= x <= ranges[fid][1])
+        for fid, x in zip(fids, xs)
+    )
+    metrics = json.loads(mm["metrics_json"])
+    return {
+        "value": value,
+        "metrics": metrics,
+        "prediction_json": json.dumps(
+            {
+                "kind": "multi",
+                "method": mm["method"],
+                "input_scores": {str(fid): x for fid, x in zip(fids, xs)},
+                "extrapolated": extrapolated,
+            }
+        ),
+        "multi_mapping_id": mm["id"],
+        "label": f"{mm['method']} (multi)",
+    }
+
+
+def _uni_prediction(conn, model, mp) -> dict | None:
+    row = _measured(conn, model["id"], mp["from_version_id"])
+    if row is None:
+        return None
+    params = json.loads(mp["params_json"])
+    metrics = json.loads(mp["metrics_json"])
+    value = float(predict(mp["method"], params, [row["value"]])[0])
+    train_range = json.loads(mp["train_range_json"]) if mp["train_range_json"] else None
+    extrapolated = train_range is not None and not (
+        train_range["x_min"] <= row["value"] <= train_range["x_max"]
+    )
+    return {
+        "value": value,
+        "metrics": metrics,
+        "prediction_json": json.dumps(
+            {
+                "kind": "uni",
+                "input_version_id": mp["from_version_id"],
+                "input_score": row["value"],
+                "method": mp["method"],
+                "extrapolated": extrapolated,
+            }
+        ),
+        "mapping_id": mp["id"],
+        "label": mp["method"],
+    }
+
+
 def gapfill(conn: sqlite3.Connection) -> list[dict]:
     """Fill missing measured scores with mapping predictions.
 
-    For every model lacking a measured score on a target version, every
-    source version the model *is* measured on is considered; the mapping
-    with the lowest LOO_RMSE wins. Prior gapfilled rows for the same
+    For every model lacking a measured score on a target version, the best
+    available predictor wins: multivariate mappings (which need the model
+    to be measured on every feature version) compete with univariate
+    mappings by LOO-CV RMSE. Prior gapfilled rows for the same
     (model, version) are replaced, so re-running after a refit refreshes
     predictions. Returns a summary of the filled rows.
     """
     by_target = _mappings_by_target(conn)
+    multi_by_target = _multi_by_target(conn)
     labels = {
         r["id"]: f"{r['benchmark']}/{r['version']}"
         for r in conn.execute(
@@ -47,7 +140,8 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
         )
     }
     filled = []
-    for target_id, mappings in by_target.items():
+    targets = sorted(set(by_target) | set(multi_by_target))
+    for target_id in targets:
         missing = conn.execute(
             "SELECT m.id, m.slug FROM models m"
             " WHERE NOT EXISTS (SELECT 1 FROM scores s"
@@ -55,33 +149,19 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
             (target_id,),
         ).fetchall()
         for model in missing:
-            best = None
-            for mp in mappings:
-                row = conn.execute(
-                    "SELECT value FROM scores"
-                    " WHERE model_id = ? AND version_id = ? AND source = 'measured'",
-                    (model["id"], mp["from_version_id"]),
-                ).fetchone()
-                if row is None:
-                    continue
-                metrics = json.loads(mp["metrics_json"])
-                cand = {
-                    "mapping": mp,
-                    "x": row["value"],
-                    "loo": metrics.get("LOO_RMSE"),
-                    "rmse": metrics.get("RMSE"),
-                }
-                if best is None or _cand_key(cand) < _cand_key(best):
-                    best = cand
-            if best is None:
+            candidates = []
+            mm = multi_by_target.get(target_id)
+            if mm is not None:
+                cand = _multi_prediction(conn, model, mm)
+                if cand is not None:
+                    candidates.append(cand)
+            for mp in by_target.get(target_id, []):
+                cand = _uni_prediction(conn, model, mp)
+                if cand is not None:
+                    candidates.append(cand)
+            if not candidates:
                 continue
-            mp = best["mapping"]
-            params = json.loads(mp["params_json"])
-            value = float(predict(mp["method"], params, [best["x"]])[0])
-            train_range = json.loads(mp["train_range_json"]) if mp["train_range_json"] else None
-            extrapolated = train_range is not None and not (
-                train_range["x_min"] <= best["x"] <= train_range["x_max"]
-            )
+            best = min(candidates, key=lambda c: _loo_key(c["metrics"]))
             conn.execute(
                 "DELETE FROM scores WHERE model_id = ? AND version_id = ?"
                 " AND source = 'gapfilled'",
@@ -89,21 +169,15 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
             )
             conn.execute(
                 "INSERT INTO scores (model_id, version_id, value, source, mapping_id,"
-                " prediction_json)"
-                " VALUES (?, ?, ?, 'gapfilled', ?, ?)",
+                " multi_mapping_id, prediction_json)"
+                " VALUES (?, ?, ?, 'gapfilled', ?, ?, ?)",
                 (
                     model["id"],
                     target_id,
-                    value,
-                    mp["id"],
-                    json.dumps(
-                        {
-                            "input_version_id": mp["from_version_id"],
-                            "input_score": best["x"],
-                            "method": mp["method"],
-                            "extrapolated": extrapolated,
-                        }
-                    ),
+                    best["value"],
+                    best.get("mapping_id"),
+                    best.get("multi_mapping_id"),
+                    best["prediction_json"],
                 ),
             )
             filled.append(
@@ -112,18 +186,11 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
                     "slug": model["slug"],
                     "target_version_id": target_id,
                     "target": labels[target_id],
-                    "value": value,
-                    "method": mp["method"],
-                    "extrapolated": extrapolated,
+                    "value": best["value"],
+                    "method": best["label"],
+                    "kind": json.loads(best["prediction_json"])["kind"],
+                    "extrapolated": json.loads(best["prediction_json"])["extrapolated"],
                 }
             )
     conn.commit()
     return filled
-
-
-def _cand_key(cand: dict) -> tuple:
-    loo = cand["loo"]
-    rmse = cand["rmse"]
-    loo = loo if loo is not None and loo == loo else float("inf")
-    rmse = rmse if rmse is not None and rmse == rmse else float("inf")
-    return (loo, rmse)

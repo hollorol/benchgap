@@ -31,12 +31,13 @@ Deterministic least-squares today; probabilistic fitters later - see
 │   └── benchgap.db          # generated SQLite database
 ├── scripts/build_seed.py    # regenerates data/seed/scores.csv from aa_scores.json
 ├── src/benchgap/
-│   ├── db.py                # schema + data access (capability, unit)
+│   ├── db.py                # schema + data access (capability, unit, multi-mappings)
 │   ├── ingest.py            # seed CSV -> database
-│   ├── fitting.py           # monotone mapping candidates, fit, LOO-CV, selection
+│   ├── fitting.py           # monotone univariate candidates, fit, LOO-CV, selection
 │   ├── fit.py               # capability-aware mapping fits + quality gate
+│   ├── multivariate.py      # multivariate mappings (ridge + multivariate MM)
 │   ├── gapfill.py           # predict + store missing scores (source='gapfilled')
-│   ├── report.py            # mapping summary, score matrix
+│   ├── report.py            # mapping summaries, score matrix
 │   ├── html_report.py       # self-contained HTML report (matplotlib, base64 PNGs)
 │   └── cli.py               # command-line interface
 └── tests/
@@ -48,10 +49,11 @@ Deterministic least-squares today; probabilistic fitters later - see
 uv venv && uv pip install -e ".[dev]"     # or: pip install -e ".[dev]"
 benchgap init                              # create data/benchgap.db
 benchgap ingest                            # load data/seed/scores.csv
-benchgap fit -v                            # fit mappings (shows all candidates)
-benchgap gapfill                           # fill missing scores
+benchgap fit -v                            # fit univariate mappings per version pair
+benchgap multifit                          # fit multivariate mappings per target
+benchgap gapfill                           # fill missing scores (prefers multi where it wins)
 benchgap report                            # mapping summary + score matrix (terminal)
-benchgap html                              # self-contained HTML report -> data/report.html
+benchgap html                               # self-contained HTML report -> data/report.html
 benchgap predict terminal-bench/4.0 terminal-bench/2.1 59.6
 pytest                                      # run the test suite
 ```
@@ -88,14 +90,27 @@ directory); pass `--db` to use a different database file.
 
 ## Fitting and selection
 
-Candidates (see `fitting.py`): linear, Michaelis-Menten, Michaelis-Menten
-with offset, and the **inverse Michaelis-Menten form** - the analytic
-inverse of the MM+offset curve, fitted by least squares in the target
-space. All candidates are monotone; the quadratic is deliberately absent (a
-non-monotone fit eventually predicts that a better model scores worse). The
-inverse form handles convex directions: a saturating curve read backwards
-is convex, and inverting the forward fit's point predictions naively
-amplifies error near the ceiling, so the inverse family is fitted directly.
+Univariate candidates (see `fitting.py`): linear, Michaelis-Menten,
+Michaelis-Menten with offset, the **inverse Michaelis-Menten form** (the
+analytic inverse of the MM+offset curve, fitted by least squares in the
+target space, for convex directions), **Hill** (generalizes MM+offset with
+a cooperativity exponent; nests it at n=1), and an **offset logistic**. All
+candidates are monotone; the quadratic is deliberately absent (a
+non-monotone fit eventually predicts that a better model scores worse).
+
+Multivariate gapfill (see `multivariate.py`, `benchgap multifit`): for each
+target benchmark, greedy forward selection picks up to three same-capability
+source benchmarks whose measured scores together predict the target best by
+leave-one-out CV. Two families compete per feature set: ridge regression
+(`linear_mv`, alpha chosen by inner LOO) and a **multivariate
+Michaelis-Menten** (`mm_mv`) that combines sources into a weighted
+aggregate capability index mapped through y = y0 + Vmax*s/(K + s),
+monotone in every source. A multi-mapping is stored only if it uses at
+least two features, passes the quality gate, and beats the target's best
+univariate mapping. Gapfill prefers a multi-mapping when the model is
+measured on all its feature benchmarks and its LOO RMSE is lower;
+otherwise the univariate path applies - so a model missing one source
+benchmark simply falls back, and a capability gap stays a gap.
 
 Selection is by leave-one-out CV RMSE (capped at 40 folds for large pairs),
 which penalizes overfitting. A pair keeps a mapping only if the best fit
@@ -131,6 +146,10 @@ the deterministic one without migration:
   in `prediction_json`.
 - Model selection can move from LOO-CV RMSE to out-of-sample log score once
   predictions are distributions.
+- The multivariate mappings are the deterministic precursor of a joint
+  model: a Bayesian network over benchmark scores would replace the greedy
+  per-target feature selection and the per-direction calibrations with one
+  coherent posterior, imputing every missing score with uncertainty.
 
 ## Sources
 

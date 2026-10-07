@@ -52,5 +52,10 @@ def test_html_report(built_db, tmp_path):
     # capability grouping present in the matrix header
     assert "rowhead cap" in html
     assert "capability" in html
+    # multivariate mappings section reflects the database
+    n_multi = built_db.execute("SELECT COUNT(*) FROM multi_mappings").fetchone()[0]
+    if n_multi:
+        assert "Multivariate mappings" in html
+        assert html.count("<tr><td>") >= n_multi  # multi rows among the tables
     # gaps are visible as dashes
     assert html.count('class="missing">') > 0

@@ -61,18 +61,31 @@ CREATE TABLE IF NOT EXISTS mapping_points (
     PRIMARY KEY (mapping_id, model_id)
 );
 
+CREATE TABLE IF NOT EXISTS multi_mappings (
+    id                     INTEGER PRIMARY KEY,
+    to_version_id          INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    method                 TEXT NOT NULL,
+    feature_version_ids_json TEXT NOT NULL,
+    params_json           TEXT NOT NULL,
+    metrics_json          TEXT NOT NULL,
+    n_points              INTEGER NOT NULL,
+    train_ranges_json     TEXT,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS scores (
-    id              INTEGER PRIMARY KEY,
-    model_id        INTEGER NOT NULL REFERENCES models(id),
-    version_id      INTEGER NOT NULL REFERENCES benchmark_versions(id),
-    value           REAL NOT NULL,
-    source          TEXT NOT NULL CHECK (source IN ('measured', 'gapfilled')),
-    mapping_id      INTEGER REFERENCES mappings(id),
-    prediction_json TEXT,
-    ci95_lo         REAL,
-    ci95_hi         REAL,
+    id               INTEGER PRIMARY KEY,
+    model_id         INTEGER NOT NULL REFERENCES models(id),
+    version_id       INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    value            REAL NOT NULL,
+    source           TEXT NOT NULL CHECK (source IN ('measured', 'gapfilled')),
+    mapping_id       INTEGER REFERENCES mappings(id),
+    multi_mapping_id INTEGER REFERENCES multi_mappings(id) ON DELETE SET NULL,
+    prediction_json  TEXT,
+    ci95_lo          REAL,
+    ci95_hi          REAL,
     retrieved_at    TEXT,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (model_id, version_id, source, mapping_id)
 );
 
@@ -92,6 +105,7 @@ def connect(path: str | Path) -> sqlite3.Connection:
 MIGRATIONS = [
     ("benchmarks", "capability", "ALTER TABLE benchmarks ADD COLUMN capability TEXT NOT NULL DEFAULT 'general'"),
     ("benchmark_versions", "unit", "ALTER TABLE benchmark_versions ADD COLUMN unit TEXT NOT NULL DEFAULT 'fraction'"),
+    ("scores", "multi_mapping_id", "ALTER TABLE scores ADD COLUMN multi_mapping_id INTEGER REFERENCES multi_mappings(id) ON DELETE SET NULL"),
 ]
 
 

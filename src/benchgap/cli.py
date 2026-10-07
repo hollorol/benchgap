@@ -12,7 +12,7 @@ from .db import connect, init_db, parse_version_spec
 from .fit import fit_mappings
 from .gapfill import gapfill
 from .ingest import ingest_csv
-from .report import mapping_summary, render_matrix
+from .report import mapping_summary, multi_mapping_summary, render_matrix
 from .fitting import predict as predict_with
 
 DEFAULT_DB = Path("data") / "benchgap.db"
@@ -75,6 +75,25 @@ def cmd_gapfill(args: argparse.Namespace) -> None:
     print(f"gapfilled {len(filled)} missing scores")
 
 
+def cmd_multifit(args: argparse.Namespace) -> None:
+    from .fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2
+    from .multivariate import fit_multimappings
+
+    conn = _conn(args)
+    summary = fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
+    if not summary:
+        print("no targets with enough same-capability overlap for multivariate fits")
+        return
+    for s in summary:
+        if s.get("rejected"):
+            print(f"{s['target']} <- {s['features']}: rejected ({s['rejected']})")
+            continue
+        print(
+            f"{s['target']} <- {s['features']}: {s['method']}"
+            f" (n={s['n']}, R2={s['R2']:.3f}, LOO RMSE {s['LOO_RMSE'] * 100:.2f} pp)"
+        )
+
+
 def cmd_report(args: argparse.Namespace) -> None:
     conn = _conn(args)
     summary = mapping_summary(conn)
@@ -86,6 +105,17 @@ def cmd_report(args: argparse.Namespace) -> None:
                 f" (n={s['n_pairs']}, R2={s['R2']:.3f},"
                 f" LOO RMSE={s['LOO_RMSE_pp']:.2f} pp,"
                 f" {s['candidates']} candidate fits)"
+            )
+        print()
+    multi = multi_mapping_summary(conn)
+    if multi:
+        print("multivariate mappings:")
+        for s in multi:
+            feats = ", ".join(s["features"])
+            print(
+                f"  {s['target']} <- [{feats}]: {s['method']}"
+                f" (n={s['n_pairs']}, R2={s['R2']:.3f},"
+                f" LOO RMSE={s['LOO_RMSE_pp']:.2f} pp)"
             )
         print()
     print(render_matrix(conn))
@@ -155,6 +185,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("gapfill", help="fill missing scores using fitted mappings").set_defaults(
         func=cmd_gapfill
     )
+
+    sub.add_parser(
+        "multifit",
+        help="fit multivariate mappings (several benchmarks -> one)"
+        " per target; gapfill prefers them when available",
+    ).set_defaults(func=cmd_multifit)
 
     sub.add_parser("report", help="show mappings and the score matrix").set_defaults(
         func=cmd_report

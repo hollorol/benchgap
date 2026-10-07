@@ -9,7 +9,9 @@ Candidates:
 - linear:       y = a*x + b
 - mm:           y = Vmax*x / (K + x)             Michaelis-Menten through origin
 - mm_offset:    y = y0 + Vmax*x / (K + x)         Michaelis-Menten with offset
-- mm_offset_inv: the analytic inverse of a forward mm_offset fit
+- mm_offset_inv: the analytic inverse of the mm_offset form (convex directions)
+- hill:         y = y0 + (A - y0)*x^n / (K^n + x^n)   Hill (generalizes MM)
+- logistic:     y = y0 + (A - y0) / (1 + exp(-k*(x - xmid)))   offset sigmoid
 
 mm_offset is monotone with a ceiling, so its inverse exists in closed form;
 for the reverse direction of a fitted pair we use that inverse instead of an
@@ -47,6 +49,14 @@ def _mm_offset(x, y0, vmax, k):
     return y0 + vmax * x / (k + x)
 
 
+def _hill(x, y0, a, k, n):
+    return y0 + (a - y0) * x**n / (k**n + x**n)
+
+
+def _logistic(x, y0, a, k, xmid):
+    return y0 + (a - y0) / (1.0 + np.exp(-k * (x - xmid)))
+
+
 @dataclass(frozen=True)
 class Candidate:
     method: str
@@ -65,8 +75,16 @@ def _lsq_candidate(method, fn, param_names, p0_fn, equation, bounds=None) -> Can
     def fit(x, y):
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
-        kwargs = {"bounds": bounds} if bounds is not None else {}
-        popt, _ = curve_fit(fn, x, y, p0=p0_fn(x, y), maxfev=20000, **kwargs)
+        kwargs = {}
+        if bounds is not None:
+            kwargs["bounds"] = bounds
+            p0 = [
+                float(np.clip(v, lo, hi))
+                for v, lo, hi in zip(p0_fn(x, y), bounds[0], bounds[1])
+            ]
+        else:
+            p0 = p0_fn(x, y)
+        popt, _ = curve_fit(fn, x, y, p0=p0, maxfev=20000, **kwargs)
         return {n: float(v) for n, v in zip(param_names, popt)}
 
     def predict(params, x):
@@ -93,6 +111,20 @@ def _mm_offset_p0(x, y):
         float(np.max(y) - np.min(y)),
         float(np.median(x) * 0.1) + 1e-6,
     ]
+
+
+def _hill_p0(x, y):
+    return [
+        float(np.min(y)),
+        min(float(np.max(y)) + 0.02, 1.1),
+        max(float(np.median(x)) * 0.5, 1e-3),
+        1.0,
+    ]
+
+
+def _logistic_p0(x, y):
+    span = max(float(np.max(x) - np.min(x)), 1e-3)
+    return [float(np.min(y)), min(float(np.max(y)) + 0.02, 1.1), 20.0 / span, float(np.median(x))]
 
 
 # Bounds keep the saturating fits physical in fraction space: non-negative
@@ -185,6 +217,16 @@ CANDIDATES: dict[str, Candidate] = {
         _mm_offset_inv_fit,
         lambda params, x: _mm_offset_inv_fn(x, params["y0"], params["vmax"], params["k"]),
         "y = {k:.5f}·(x − {y0:.4f}) / ({y0:.4f} + {vmax:.4f} − x)",
+    ),
+    "hill": _lsq_candidate(
+        "hill", _hill, ("y0", "a", "k", "n"), _hill_p0,
+        "y = {y0:.4f} + ({a:.4f} − {y0:.4f})·x^{n:.2f} / ({k:.5f}^{n:.2f} + x^{n:.2f})",
+        ([0.0, 0.0, 1e-9, 0.2], [1.0, 1.2, 5.0, 6.0]),
+    ),
+    "logistic": _lsq_candidate(
+        "logistic", _logistic, ("y0", "a", "k", "xmid"), _logistic_p0,
+        "y = {y0:.4f} + ({a:.4f} − {y0:.4f}) / (1 + exp(−{k:.2f}·(x − {xmid:.4f})))",
+        ([0.0, 0.0, 1e-6, -2.0], [1.0, 1.2, 200.0, 3.0]),
     ),
 }
 
