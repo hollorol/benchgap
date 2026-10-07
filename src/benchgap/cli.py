@@ -45,8 +45,14 @@ def cmd_fit(args: argparse.Namespace) -> None:
         print("no version pairs with enough paired models to fit")
         return
     for s in summary:
+        if s.get("rejected"):
+            print(
+                f"{s['from']} -> {s['to']}: n={s['n_pairs']}"
+                f" rejected (quality gate: {s['rejected']})"
+            )
+            continue
         print(
-            f"{s['from']} -> {s['to']}: n={s['n_pairs']}"
+            f"{s['from']} -> {s['to']} [{s['capability']}]: n={s['n_pairs']}"
             f" best={s['best_method']} (LOO RMSE {s['best_LOO_RMSE'] * 100:.2f} pp)"
         )
         if args.verbose:

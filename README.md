@@ -11,11 +11,12 @@ scores onto the v2.1 scale and found that a Michaelis-Menten curve with offset
 y = y0 + Vmax * x / (K + x)
 ```
 
-fits far better (R2 = 0.954, LOO-CV RMSE = 3.5 pp on 20 paired models) than
-linear or quadratic alternatives. benchgap generalizes that: any number of
-benchmarks and versions, mapping candidates fitted per version pair, model
-selection by leave-one-out cross-validation, and gapfilled scores stored with
-full provenance (which mapping produced them, from which input score).
+fits far better (LOO-CV RMSE ~4 pp on the paired models) than linear or
+quadratic alternatives. benchgap generalizes that to a multi-benchmark
+database (24 Artificial Analysis evaluation leaderboards at seed time),
+with mapping candidates fitted per version pair, model selection by
+leave-one-out cross-validation, and gapfilled scores stored with full
+provenance.
 
 Deterministic least-squares today; probabilistic fitters later - see
 "Probabilistic roadmap".
@@ -24,15 +25,16 @@ Deterministic least-squares today; probabilistic fitters later - see
 
 ```
 ├── data/
-│   ├── raw/                 # source extracts (Artificial Analysis harness), provenance
-│   ├── seed/scores.csv      # canonical long-format seed (built by scripts/build_seed.py)
+│   ├── raw/                 # source extracts from the original analysis session (provenance)
+│   ├── aa_scores.json       # Artificial Analysis leaderboard snapshot (24 evaluations, 85 models)
+│   ├── seed/scores.csv      # canonical long-format seed (scripts/build_seed.py)
 │   └── benchgap.db          # generated SQLite database
-├── scripts/build_seed.py    # regenerates data/seed/scores.csv from data/raw
+├── scripts/build_seed.py    # regenerates data/seed/scores.csv from aa_scores.json
 ├── src/benchgap/
-│   ├── db.py                # schema + data access
+│   ├── db.py                # schema + data access (capability, unit)
 │   ├── ingest.py            # seed CSV -> database
-│   ├── fitting.py           # mapping candidates, fit, LOO-CV, selection
-│   ├── fit.py               # fit mappings for all version pairs with paired data
+│   ├── fitting.py           # monotone mapping candidates, fit, LOO-CV, selection
+│   ├── fit.py               # capability-aware mapping fits + quality gate
 │   ├── gapfill.py           # predict + store missing scores (source='gapfilled')
 │   ├── report.py            # mapping summary, score matrix
 │   ├── html_report.py       # self-contained HTML report (matplotlib, base64 PNGs)
@@ -66,7 +68,14 @@ directory); pass `--db` to use a different database file.
 
 ## Data model
 
-- All scores are stored as fractions in `[0, 1]`; reports render percent.
+- All fraction-scale scores are stored as fractions in `[0, 1]`; reports
+  render percent. (Versions can declare other units; Elo-based benchmarks
+  are stored but excluded from fitting.)
+- Every benchmark declares a **capability** (agentic-terminal, agentic-tool,
+  coding, math, knowledge, instruction-following, vision, ...). Mappings are
+  only fitted between versions of the same capability - a model that was
+  never run on a vision benchmark keeps that gap rather than inheriting a
+  score from text benchmarks.
 - `scores.source` is `measured` or `gapfilled`; gapfilled rows carry the
   `mapping_id` that produced them and a `prediction_json` with the input
   score, input version, method, and an extrapolation flag.
@@ -79,26 +88,34 @@ directory); pass `--db` to use a different database file.
 
 ## Fitting and selection
 
-Candidates (see `fitting.py`): linear, quadratic, Michaelis-Menten, and
-Michaelis-Menten with offset. Selection is by leave-one-out CV RMSE, which
-penalizes overfitting; on the seed data this picks `mm_offset` in both
-directions. The MM+offset form is monotone with a ceiling, so predictions stay
-physical (a better v4 score never maps to a worse v2 score) where a quadratic
-eventually turns down.
+Candidates (see `fitting.py`): linear, Michaelis-Menten, Michaelis-Menten
+with offset, and the **inverse Michaelis-Menten form** - the analytic
+inverse of the MM+offset curve, fitted by least squares in the target
+space. All candidates are monotone; the quadratic is deliberately absent (a
+non-monotone fit eventually predicts that a better model scores worse). The
+inverse form handles convex directions: a saturating curve read backwards
+is convex, and inverting the forward fit's point predictions naively
+amplifies error near the ceiling, so the inverse family is fitted directly.
+
+Selection is by leave-one-out CV RMSE (capped at 40 folds for large pairs),
+which penalizes overfitting. A pair keeps a mapping only if the best fit
+passes a quality gate (R2 >= 0.3 and LOO RMSE <= 15 pp) - weak pairs keep
+no mapping, so their gaps stay gaps instead of being filled with noise.
 
 Warnings the pipeline tracks: predictions outside the training x-range are
-flagged `extrapolated` in `prediction_json` and in the `predict` CLI output.
-Mapping coefficients are harness-specific - the seed pairs come from the
-Artificial Analysis harness, not the official tbench.ai leaderboards, so
-calibrating official scores needs pairs measured on the official harness.
+flagged `extrapolated` in `prediction_json` and in the `predict` CLI
+output. Mapping coefficients are harness-specific - the seed comes from the
+Artificial Analysis harness, not the official leaderboards.
 
 ## Adding benchmarks
 
 Append rows to `data/seed/scores.csv` (or ingest any CSV with the same
-columns): `model_slug, model_name, release, benchmark, version, harness,
-score, source_url, retrieved_at`. Then rerun `fit` and `gapfill` - mappings
-are fitted automatically for every version pair with at least 5 paired
-models.
+columns): `model_slug, model_name, benchmark, version, capability, unit,
+harness, score, source_url, retrieved_at`. Then rerun `fit` and `gapfill` -
+mappings are fitted automatically for every same-capability version pair
+with at least 5 paired models. To refresh the Artificial Analysis snapshot,
+re-fetch the evaluation pages listed in `scripts/build_seed.py` and update
+`data/aa_scores.json`.
 
 ## Probabilistic roadmap
 
@@ -117,8 +134,16 @@ the deterministic one without migration:
 
 ## Sources
 
-- Artificial Analysis, Terminal-Bench 2.1 and 4.0 evaluations
-  (https://artificialanalysis.ai/evaluations/terminalbench-2-1,
-  https://artificialanalysis.ai/evaluations/terminalbench-4-0)
-- Official leaderboards: https://www.tbench.ai/
-- Raw extracts and the original analysis artifacts live in `data/raw/`.
+- Artificial Analysis evaluation leaderboards
+  (https://artificialanalysis.ai/evaluations/...), retrieved 2026-10-07:
+  Terminal-Bench 2.1/4.0/Hard/Science, GPQA Diamond, MMLU-Pro,
+  Global-MMLU-Lite, Humanity's Last Exam, CritPt, MATH-500, AIME 2025,
+  LiveCodeBench, SciCode, tau-Bench (telecom + banking), AutomationBench,
+  APEX-Agents, AA-AnalystAgent, EnterpriseOps-Gym, Harvey LAB, ITBench,
+  IFBench, MMMU-Pro, GDP.pdf - 24 benchmark versions, 85 models, 396
+  measured scores. Snapshot: `data/aa_scores.json`.
+- Elo-based AA benchmarks (GDPval-AA, AA-Briefcase) and login-gated ones
+  (Omniscience, CyberGym, MLCR) are excluded: their values are not in the
+  public page content.
+- Official Terminal-Bench leaderboards: https://www.tbench.ai/ (different
+  harness; see data/raw/ for the original session's extracts).

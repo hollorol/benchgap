@@ -1,55 +1,397 @@
-model_slug,model_name,release,benchmark,version,harness,score,source_url,retrieved_at
-claude-fable-5-1,"Claude Fable 5.1 (Max, Default Fallback)",claude-fable-5-1,terminal-bench,2.1,artificial-analysis,0.913858,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-claude-fable-5-1,"Claude Fable 5.1 (Max, Default Fallback)",claude-fable-5-1,terminal-bench,4.0,artificial-analysis,0.520202,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-fable-5-1-high,"Claude Fable 5.1 (High, Default Fallback)",claude-fable-5-1,terminal-bench,2.1,artificial-analysis,0.898876,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-claude-fable-5-1-high,"Claude Fable 5.1 (High, Default Fallback)",claude-fable-5-1,terminal-bench,4.0,artificial-analysis,0.520202,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-fable-5-1-xhigh,"Claude Fable 5.1 (Xhigh, Default Fallback)",claude-fable-5-1,terminal-bench,2.1,artificial-analysis,0.910112,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-claude-fable-5-1-xhigh,"Claude Fable 5.1 (Xhigh, Default Fallback)",claude-fable-5-1,terminal-bench,4.0,artificial-analysis,0.550505,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-opus-5-5,"Claude Opus 5.5 (Max, Default Fallback)",claude-opus-5-5,terminal-bench,4.0,artificial-analysis,0.595960,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-opus-5-5-high,"Claude Opus 5.5 (High, Default Fallback)",claude-opus-5-5,terminal-bench,4.0,artificial-analysis,0.565657,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-opus-5-5-xhigh,"Claude Opus 5.5 (Xhigh, Default Fallback)",claude-opus-5-5,terminal-bench,4.0,artificial-analysis,0.595960,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-sonnet-5-5,"Claude Sonnet 5.5 (Max, Default Fallback)",claude-sonnet-5-5,terminal-bench,4.0,artificial-analysis,0.636364,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-claude-sonnet-5-5-xhigh,"Claude Sonnet 5.5 (Xhigh, Default Fallback)",claude-sonnet-5-5,terminal-bench,4.0,artificial-analysis,0.570707,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-deepseek-v4-1-flash,DeepSeek V4.1 Flash (Max),deepseek-v4-1-flash,terminal-bench,4.0,artificial-analysis,0.267677,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gemini-3-8-flash,Gemini 3.8 Flash (High),gemini-3-8-flash,terminal-bench,2.1,artificial-analysis,0.876404,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-gemini-3-8-flash,Gemini 3.8 Flash (High),gemini-3-8-flash,terminal-bench,4.0,artificial-analysis,0.196970,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gemini-4-argon,Gemini 4 Argon (High),gemini-4-argon,terminal-bench,4.0,artificial-analysis,0.570707,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-glm-5-3,GLM-5.3 (Max),glm-5-3,terminal-bench,2.1,artificial-analysis,0.838951,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-glm-5-3,GLM-5.3 (Max),glm-5-3,terminal-bench,4.0,artificial-analysis,0.419192,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-glm-5-3-flash,GLM 5.3 Flash,glm-5-3-flash,terminal-bench,2.1,artificial-analysis,0.842697,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-glm-5-3-flash,GLM 5.3 Flash,glm-5-3-flash,terminal-bench,4.0,artificial-analysis,0.328283,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-5-6-sol-xhigh,GPT-5.6 Sol (Xhigh),gpt-5-6-sol,terminal-bench,2.1,artificial-analysis,0.895131,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-gpt-5-6-sol-xhigh,GPT-5.6 Sol (Xhigh),gpt-5-6-sol,terminal-bench,4.0,artificial-analysis,0.247475,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-1-sol,GPT-6.1 Sol (Max),gpt-6-1-sol,terminal-bench,4.0,artificial-analysis,0.560606,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-astra,GPT-6 Astra (Max),gpt-6-astra,terminal-bench,2.1,artificial-analysis,0.883895,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-gpt-6-astra,GPT-6 Astra (Max),gpt-6-astra,terminal-bench,4.0,artificial-analysis,0.590909,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-astra-high,GPT-6 Astra (High),gpt-6-astra,terminal-bench,2.1,artificial-analysis,0.898876,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-gpt-6-astra-high,GPT-6 Astra (High),gpt-6-astra,terminal-bench,4.0,artificial-analysis,0.540404,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-astra-medium,GPT-6 Astra (Medium),gpt-6-astra,terminal-bench,2.1,artificial-analysis,0.895131,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-gpt-6-astra-medium,GPT-6 Astra (Medium),gpt-6-astra,terminal-bench,4.0,artificial-analysis,0.494949,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-astra-xhigh,GPT-6 Astra (Xhigh),gpt-6-astra,terminal-bench,2.1,artificial-analysis,0.891386,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-gpt-6-astra-xhigh,GPT-6 Astra (Xhigh),gpt-6-astra,terminal-bench,4.0,artificial-analysis,0.595960,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-luna,GPT-6 Luna (Max),gpt-6-luna,terminal-bench,4.0,artificial-analysis,0.126263,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-gpt-6-sol,GPT-6 Sol (Max),gpt-6-sol,terminal-bench,4.0,artificial-analysis,0.439394,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-grok-4-7,Grok 4.7 (Xhigh),grok-4-7,terminal-bench,4.0,artificial-analysis,0.257576,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-inkling,Inkling (Xhigh),inkling,terminal-bench,2.1,artificial-analysis,0.550562,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-inkling,Inkling (Xhigh),inkling,terminal-bench,4.0,artificial-analysis,0.010101,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-k2-horizon-375b-a23b,K2 Horizon 375B A23B,k2-horizon-375b-a23b,terminal-bench,2.1,artificial-analysis,0.719101,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-k2-horizon-375b-a23b,K2 Horizon 375B A23B,k2-horizon-375b-a23b,terminal-bench,4.0,artificial-analysis,0.015152,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-kimi-k3,Kimi K3 (Max),kimi-k3,terminal-bench,2.1,artificial-analysis,0.850187,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-kimi-k3,Kimi K3 (Max),kimi-k3,terminal-bench,4.0,artificial-analysis,0.126263,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-mimo-v2-6-pro,MiMo-V2.6-Pro,mimo-v2-6-pro,terminal-bench,4.0,artificial-analysis,0.348485,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-minimax-m3,MiniMax-M3,minimax-m3,terminal-bench,2.1,artificial-analysis,0.651685,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-minimax-m3,MiniMax-M3,minimax-m3,terminal-bench,4.0,artificial-analysis,0.020202,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-mistral-large-4,Mistral Large 4 Preview,mistral-large-4,terminal-bench,4.0,artificial-analysis,0.267677,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-muse-glimmer,Muse Glimmer (High),muse-glimmer,terminal-bench,2.1,artificial-analysis,0.516854,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-muse-glimmer,Muse Glimmer (High),muse-glimmer,terminal-bench,4.0,artificial-analysis,0.005051,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-muse-spark-1-3,Muse Spark 1.3 (Max),muse-spark-1-3,terminal-bench,2.1,artificial-analysis,0.842697,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-muse-spark-1-3,Muse Spark 1.3 (Max),muse-spark-1-3,terminal-bench,4.0,artificial-analysis,0.333333,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-nvidia-nemotron-3-ultra-550b-a55b,Nemotron 3 Ultra 550B A55B (Reasoning),nemotron-3-ultra-550b-a55b,terminal-bench,2.1,artificial-analysis,0.539326,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-nvidia-nemotron-3-ultra-550b-a55b,Nemotron 3 Ultra 550B A55B (Reasoning),nemotron-3-ultra-550b-a55b,terminal-bench,4.0,artificial-analysis,0.005051,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-qwen3-8-27b,Qwen3.8 27B (Xhigh),qwen3-8-27b,terminal-bench,2.1,artificial-analysis,0.797753,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-qwen3-8-27b,Qwen3.8 27B (Xhigh),qwen3-8-27b,terminal-bench,4.0,artificial-analysis,0.055556,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-qwen3-8-max,Qwen3.8 Max (0902),qwen3-8-max-0902,terminal-bench,2.1,artificial-analysis,0.887640,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
-qwen3-8-max,Qwen3.8 Max (0902),qwen3-8-max-0902,terminal-bench,4.0,artificial-analysis,0.388889,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
-step-5,Step 5 Preview,step-5-preview,terminal-bench,4.0,artificial-analysis,0.333333,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+model_slug,model_name,benchmark,version,capability,unit,harness,score,source_url,retrieved_at
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.914000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+claude-fable-5-1-xhigh-with-fallback,Claude Fable 5.1 (xhigh with fallback),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.910000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+claude-fable-5-1-high-with-fallback,Claude Fable 5.1 (high with fallback),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.899000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+gpt-6-astra-high,GPT-6 Astra (high),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.899000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+gpt-6-astra-medium,GPT-6 Astra (medium),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.895000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+gpt-5-6-sol-xhigh,GPT-5.6 Sol (xhigh),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.895000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.888000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.884000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.876000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+kimi-k3-max,Kimi K3 (max),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.850000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.843000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.843000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+glm-5-3-max,GLM-5.3 (max),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.839000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.798000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.719000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+minimax-m3,MiniMax-M3,terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.652000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+inkling-xhigh,Inkling (xhigh),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.551000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.539000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),terminal-bench,2.1,agentic-terminal,fraction,artificial-analysis,0.517000,https://artificialanalysis.ai/evaluations/terminalbench-2-1,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.636000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.596000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+claude-opus-5-5-xhigh-with-fallback,Claude Opus 5.5 (xhigh with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.596000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gpt-6-astra-xhigh,GPT-6 Astra (xhigh),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.596000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.591000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gemini-4-argon-high,Gemini 4 Argon (high),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.571000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+claude-sonnet-5-5-xhigh-with-fallback,Claude Sonnet 5.5 (xhigh with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.571000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+claude-opus-5-5-high-with-fallback,Claude Opus 5.5 (high with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.566000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.561000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+claude-fable-5-1-xhigh-with-fallback,Claude Fable 5.1 (xhigh with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.551000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.520000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.439000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+glm-5-3-max,GLM-5.3 (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.419000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.389000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.348000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.333000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+step-5-preview,Step 5 Preview,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.333000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.328000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.268000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.268000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.258000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.197000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+kimi-k3-max,Kimi K3 (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.126000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.126000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.056000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+minimax-m3,MiniMax-M3,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.020000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.015000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+inkling-xhigh,Inkling (xhigh),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.010000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.005000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),terminal-bench,4.0,agentic-terminal,fraction,artificial-analysis,0.005000,https://artificialanalysis.ai/evaluations/terminalbench-4-0,2026-10-07
+gpt-5-6-sol-max,GPT-5.6 Sol (max),terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.659000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.629000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+gpt-5-6-sol-medium,GPT-5.6 Sol (medium),terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.629000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+gpt-5-6-terra-xhigh,GPT-5.6 Terra (xhigh),terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.629000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+gpt-5-6-sol-high,GPT-5.6 Sol (high),terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.621000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+minimax-m3,MiniMax-M3,terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.424000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,terminal-bench-hard,1.0,agentic-terminal,fraction,artificial-analysis,0.364000,https://artificialanalysis.ai/evaluations/terminalbench-hard,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.633000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-opus-5-5-xhigh-with-fallback,Claude Opus 5.5 (xhigh with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.619000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.590000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.581000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.533000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-sonnet-5-5-xhigh-with-fallback,Claude Sonnet 5.5 (xhigh with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.524000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-opus-5-5-high-with-fallback,Claude Opus 5.5 (high with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.490000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.433000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-opus-5-5-medium-with-fallback,Claude Opus 5.5 (medium with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.433000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+claude-sonnet-5-5-high-with-fallback,Claude Sonnet 5.5 (high with fallback),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.343000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.300000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.119000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.110000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.100000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+glm-5-3-max,GLM-5.3 (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.095000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.090000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.086000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.057000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.048000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+step-5-preview,Step 5 Preview,terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.024000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.005000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+minimax-m3,MiniMax-M3,terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.005000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+inkling-xhigh,Inkling (xhigh),terminal-bench-science,0.1,agentic-terminal,fraction,artificial-analysis,0.000000,https://artificialanalysis.ai/evaluations/terminal-bench-science,2026-10-07
+gpt-6-astra-xhigh,GPT-6 Astra (xhigh),gpqa,diamond,knowledge,fraction,artificial-analysis,0.963000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),gpqa,diamond,knowledge,fraction,artificial-analysis,0.961000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),gpqa,diamond,knowledge,fraction,artificial-analysis,0.953000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+gpt-6-astra-high,GPT-6 Astra (high),gpqa,diamond,knowledge,fraction,artificial-analysis,0.949000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+grok-4-6-high,Grok 4.6 (high),gpqa,diamond,knowledge,fraction,artificial-analysis,0.949000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+gemini-3-7-flash-high,Gemini 3.7 Flash (high),gpqa,diamond,knowledge,fraction,artificial-analysis,0.945000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+gpt-5-6-sol-max,GPT-5.6 Sol (max),gpqa,diamond,knowledge,fraction,artificial-analysis,0.941000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),gpqa,diamond,knowledge,fraction,artificial-analysis,0.937000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),gpqa,diamond,knowledge,fraction,artificial-analysis,0.935000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+kimi-k3-max,Kimi K3 (max),gpqa,diamond,knowledge,fraction,artificial-analysis,0.935000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+minimax-m3,MiniMax-M3,gpqa,diamond,knowledge,fraction,artificial-analysis,0.929000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),gpqa,diamond,knowledge,fraction,artificial-analysis,0.928000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+glm-5-3-max,GLM-5.3 (max),gpqa,diamond,knowledge,fraction,artificial-analysis,0.917000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,gpqa,diamond,knowledge,fraction,artificial-analysis,0.912000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),gpqa,diamond,knowledge,fraction,artificial-analysis,0.905000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,gpqa,diamond,knowledge,fraction,artificial-analysis,0.873000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+inkling-xhigh,Inkling (xhigh),gpqa,diamond,knowledge,fraction,artificial-analysis,0.872000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,gpqa,diamond,knowledge,fraction,artificial-analysis,0.867000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),gpqa,diamond,knowledge,fraction,artificial-analysis,0.835000,https://artificialanalysis.ai/evaluations/gpqa-diamond,2026-10-07
+gemini-3-pro-preview-high,Gemini 3 Pro Preview (high),mmlu-pro,1.0,knowledge,fraction,artificial-analysis,0.898000,https://artificialanalysis.ai/evaluations/mmlu-pro,2026-10-07
+gemini-3-pro-preview-low,Gemini 3 Pro Preview (low),mmlu-pro,1.0,knowledge,fraction,artificial-analysis,0.895000,https://artificialanalysis.ai/evaluations/mmlu-pro,2026-10-07
+claude-opus-4-5,Claude Opus 4.5,mmlu-pro,1.0,knowledge,fraction,artificial-analysis,0.895000,https://artificialanalysis.ai/evaluations/mmlu-pro,2026-10-07
+gemini-3-flash,Gemini 3 Flash,mmlu-pro,1.0,knowledge,fraction,artificial-analysis,0.890000,https://artificialanalysis.ai/evaluations/mmlu-pro,2026-10-07
+claude-opus-4-5-non-reasoning,Claude Opus 4.5 (non-reasoning),mmlu-pro,1.0,knowledge,fraction,artificial-analysis,0.889000,https://artificialanalysis.ai/evaluations/mmlu-pro,2026-10-07
+gemini-3-1-pro-preview,Gemini 3.1 Pro Preview,global-mmlu-lite,1.0,knowledge,fraction,artificial-analysis,0.932000,https://artificialanalysis.ai/evaluations/global-mmlu-lite,2026-10-07
+gemini-3-flash-non-reasoning,Gemini 3 Flash (non-reasoning),global-mmlu-lite,1.0,knowledge,fraction,artificial-analysis,0.927000,https://artificialanalysis.ai/evaluations/global-mmlu-lite,2026-10-07
+gemini-3-pro-preview-high,Gemini 3 Pro Preview (high),global-mmlu-lite,1.0,knowledge,fraction,artificial-analysis,0.922000,https://artificialanalysis.ai/evaluations/global-mmlu-lite,2026-10-07
+claude-opus-4-6-max,Claude Opus 4.6 (max),global-mmlu-lite,1.0,knowledge,fraction,artificial-analysis,0.922000,https://artificialanalysis.ai/evaluations/global-mmlu-lite,2026-10-07
+gemini-3-flash,Gemini 3 Flash,global-mmlu-lite,1.0,knowledge,fraction,artificial-analysis,0.914000,https://artificialanalysis.ai/evaluations/global-mmlu-lite,2026-10-07
+gpt-5-high,GPT-5 (high),math-500,1.0,math,fraction,artificial-analysis,0.994000,https://artificialanalysis.ai/evaluations/math-500,2026-10-07
+o3,o3,math-500,1.0,math,fraction,artificial-analysis,0.992000,https://artificialanalysis.ai/evaluations/math-500,2026-10-07
+grok-3-mini-reasoning-high,Grok 3 mini Reasoning (high),math-500,1.0,math,fraction,artificial-analysis,0.992000,https://artificialanalysis.ai/evaluations/math-500,2026-10-07
+gpt-5-medium,GPT-5 (medium),math-500,1.0,math,fraction,artificial-analysis,0.991000,https://artificialanalysis.ai/evaluations/math-500,2026-10-07
+claude-4-sonnet,Claude 4 Sonnet,math-500,1.0,math,fraction,artificial-analysis,0.991000,https://artificialanalysis.ai/evaluations/math-500,2026-10-07
+gpt-5-2-xhigh,GPT-5.2 (xhigh),aime-2025,2025,math,fraction,artificial-analysis,0.990000,https://artificialanalysis.ai/evaluations/aime-2025,2026-10-07
+gpt-5-codex-high,GPT-5 Codex (high),aime-2025,2025,math,fraction,artificial-analysis,0.987000,https://artificialanalysis.ai/evaluations/aime-2025,2026-10-07
+gemini-3-flash,Gemini 3 Flash,aime-2025,2025,math,fraction,artificial-analysis,0.970000,https://artificialanalysis.ai/evaluations/aime-2025,2026-10-07
+gpt-5-2-medium,GPT-5.2 (medium),aime-2025,2025,math,fraction,artificial-analysis,0.967000,https://artificialanalysis.ai/evaluations/aime-2025,2026-10-07
+deepseek-v3-2-speciale,DeepSeek V3.2 Speciale,aime-2025,2025,math,fraction,artificial-analysis,0.967000,https://artificialanalysis.ai/evaluations/aime-2025,2026-10-07
+gemini-3-pro-preview-high,Gemini 3 Pro Preview (high),livecodebench,1.0,coding,fraction,artificial-analysis,0.917000,https://artificialanalysis.ai/evaluations/livecodebench,2026-10-07
+gemini-3-flash,Gemini 3 Flash,livecodebench,1.0,coding,fraction,artificial-analysis,0.908000,https://artificialanalysis.ai/evaluations/livecodebench,2026-10-07
+deepseek-v3-2-speciale,DeepSeek V3.2 Speciale,livecodebench,1.0,coding,fraction,artificial-analysis,0.896000,https://artificialanalysis.ai/evaluations/livecodebench,2026-10-07
+gpt-5-2-medium,GPT-5.2 (medium),livecodebench,1.0,coding,fraction,artificial-analysis,0.894000,https://artificialanalysis.ai/evaluations/livecodebench,2026-10-07
+glm-4-7,GLM-4.7,livecodebench,1.0,coding,fraction,artificial-analysis,0.894000,https://artificialanalysis.ai/evaluations/livecodebench,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.669000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+claude-opus-5-5-xhigh-with-fallback,Claude Opus 5.5 (xhigh with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.650000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.631000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gemini-4-argon-high,Gemini 4 Argon (high),scicode,1.0,coding,fraction,artificial-analysis,0.618000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.610000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.610000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+claude-fable-5-1-xhigh-with-fallback,Claude Fable 5.1 (xhigh with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.609000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,scicode,1.0,coding,fraction,artificial-analysis,0.609000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+claude-opus-5-5-high-with-fallback,Claude Opus 5.5 (high with fallback),scicode,1.0,coding,fraction,artificial-analysis,0.604000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gemini-3-7-flash-medium,Gemini 3.7 Flash (medium),scicode,1.0,coding,fraction,artificial-analysis,0.598000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+kimi-k3-max,Kimi K3 (max),scicode,1.0,coding,fraction,artificial-analysis,0.595000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+glm-5-3-max,GLM-5.3 (max),scicode,1.0,coding,fraction,artificial-analysis,0.590000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+step-5-preview,Step 5 Preview,scicode,1.0,coding,fraction,artificial-analysis,0.589000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),scicode,1.0,coding,fraction,artificial-analysis,0.588000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),scicode,1.0,coding,fraction,artificial-analysis,0.576000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),scicode,1.0,coding,fraction,artificial-analysis,0.574000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),scicode,1.0,coding,fraction,artificial-analysis,0.566000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),scicode,1.0,coding,fraction,artificial-analysis,0.565000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),scicode,1.0,coding,fraction,artificial-analysis,0.546000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),scicode,1.0,coding,fraction,artificial-analysis,0.542000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,scicode,1.0,coding,fraction,artificial-analysis,0.542000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),scicode,1.0,coding,fraction,artificial-analysis,0.521000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),scicode,1.0,coding,fraction,artificial-analysis,0.519000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,scicode,1.0,coding,fraction,artificial-analysis,0.516000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+minimax-m3,MiniMax-M3,scicode,1.0,coding,fraction,artificial-analysis,0.471000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+inkling-xhigh,Inkling (xhigh),scicode,1.0,coding,fraction,artificial-analysis,0.470000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),scicode,1.0,coding,fraction,artificial-analysis,0.466000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),scicode,1.0,coding,fraction,artificial-analysis,0.449000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,scicode,1.0,coding,fraction,artificial-analysis,0.429000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,scicode,1.0,coding,fraction,artificial-analysis,0.403000,https://artificialanalysis.ai/evaluations/scicode,2026-10-07
+gpt-5-6-sol-max,GPT-5.6 Sol (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.323000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),critpt,1.0,knowledge,fraction,artificial-analysis,0.317000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+claude-opus-5-5-xhigh-with-fallback,Claude Opus 5.5 (xhigh with fallback),critpt,1.0,knowledge,fraction,artificial-analysis,0.317000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.317000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.317000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-1-sol-xhigh,GPT-6.1 Sol (xhigh),critpt,1.0,knowledge,fraction,artificial-analysis,0.317000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),critpt,1.0,knowledge,fraction,artificial-analysis,0.314000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-astra-xhigh,GPT-6 Astra (xhigh),critpt,1.0,knowledge,fraction,artificial-analysis,0.314000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+claude-fable-5-1-xhigh-with-fallback,Claude Fable 5.1 (xhigh with fallback),critpt,1.0,knowledge,fraction,artificial-analysis,0.311000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.309000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),critpt,1.0,knowledge,fraction,artificial-analysis,0.297000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gemini-4-argon-high,Gemini 4 Argon (high),critpt,1.0,knowledge,fraction,artificial-analysis,0.271000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,critpt,1.0,knowledge,fraction,artificial-analysis,0.266000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.249000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+kimi-k3-max,Kimi K3 (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.234000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+step-5-preview,Step 5 Preview,critpt,1.0,knowledge,fraction,artificial-analysis,0.209000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.194000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+glm-5-3-max,GLM-5.3 (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.191000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),critpt,1.0,knowledge,fraction,artificial-analysis,0.183000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),critpt,1.0,knowledge,fraction,artificial-analysis,0.177000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),critpt,1.0,knowledge,fraction,artificial-analysis,0.177000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,critpt,1.0,knowledge,fraction,artificial-analysis,0.154000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),critpt,1.0,knowledge,fraction,artificial-analysis,0.143000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,critpt,1.0,knowledge,fraction,artificial-analysis,0.106000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),critpt,1.0,knowledge,fraction,artificial-analysis,0.054000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+inkling-xhigh,Inkling (xhigh),critpt,1.0,knowledge,fraction,artificial-analysis,0.054000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,critpt,1.0,knowledge,fraction,artificial-analysis,0.046000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+minimax-m3,MiniMax-M3,critpt,1.0,knowledge,fraction,artificial-analysis,0.037000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,critpt,1.0,knowledge,fraction,artificial-analysis,0.031000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),critpt,1.0,knowledge,fraction,artificial-analysis,0.026000,https://artificialanalysis.ai/evaluations/critpt,2026-10-07
+gpt-6-astra-xhigh,GPT-6 Astra (xhigh),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.322000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-1-sol-high,GPT-6.1 Sol (high),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.320000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-1-sol-xhigh,GPT-6.1 Sol (xhigh),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.318000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.310000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.310000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-astra-high,GPT-6 Astra (high),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.310000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-astra-medium,GPT-6 Astra (medium),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.304000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.266000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.262000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.262000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.258000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.252000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.228000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.228000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+kimi-k3-max,Kimi K3 (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.220000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gemini-4-argon-high,Gemini 4 Argon (high),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.218000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.210000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.200000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.192000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.186000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.166000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.154000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+step-5-preview,Step 5 Preview,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.148000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.128000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+inkling-xhigh,Inkling (xhigh),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.128000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+glm-5-3-max,GLM-5.3 (max),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.112000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),gdp-pdf,1.0,vision,fraction,artificial-analysis,0.100000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+minimax-m3,MiniMax-M3,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.098000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.074000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,gdp-pdf,1.0,vision,fraction,artificial-analysis,0.050000,https://artificialanalysis.ai/evaluations/gdp-pdf,2026-10-07
+qwen3-8-max,Qwen3.8 Max,tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.513000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+grok-4-6-high,Grok 4.6 (high),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.507000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.505000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+glm-5-3-max,GLM-5.3 (max),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.503000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+qwen3-8-2-4t-a95b,Qwen3.8 2.4T A95B,tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.491000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.480000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.478000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+qwen3-8-27b-medium,Qwen3.8 27B (medium),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.474000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.472000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+muse-spark-1-3-xhigh,Muse Spark 1.3 (xhigh),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.472000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.472000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+kimi-k3-max,Kimi K3 (max),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.460000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.449000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.414000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.342000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+inkling-xhigh,Inkling (xhigh),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.291000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.235000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+minimax-m3,MiniMax-M3,tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.153000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,tau-bank,3-banking,agentic-tool,fraction,artificial-analysis,0.142000,https://artificialanalysis.ai/evaluations/tau3-banking,2026-10-07
+grok-4-3-medium,Grok 4.3 (medium),ifbench,1.0,instruction-following,fraction,artificial-analysis,0.833000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+grok-4-20-0309,Grok 4.20 0309,ifbench,1.0,instruction-following,fraction,artificial-analysis,0.829000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+minimax-m3,MiniMax-M3,ifbench,1.0,instruction-following,fraction,artificial-analysis,0.829000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,ifbench,1.0,instruction-following,fraction,artificial-analysis,0.814000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+grok-4-3-high,Grok 4.3 (high),ifbench,1.0,instruction-following,fraction,artificial-analysis,0.813000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+grok-4-20-0309-v2,Grok 4.20 0309 v2,ifbench,1.0,instruction-following,fraction,artificial-analysis,0.812000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+grok-4-3-low,Grok 4.3 (low),ifbench,1.0,instruction-following,fraction,artificial-analysis,0.810000,https://artificialanalysis.ai/evaluations/ifbench,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.880000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.870000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+claude-opus-5-5-xhigh-with-fallback,Claude Opus 5.5 (xhigh with fallback),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.870000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gpt-6-astra-high,GPT-6 Astra (high),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.860000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gpt-6-astra-xhigh,GPT-6 Astra (xhigh),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.860000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.860000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+claude-opus-5-5-high-with-fallback,Claude Opus 5.5 (high with fallback),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.860000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+claude-opus-5-5-medium-with-fallback,Claude Opus 5.5 (medium with fallback),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.860000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.860000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.830000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.830000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+kimi-k3-max,Kimi K3 (max),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.810000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.800000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+minimax-m3,MiniMax-M3,mmmu-pro,1.0,vision,fraction,artificial-analysis,0.790000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.770000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,mmmu-pro,1.0,vision,fraction,artificial-analysis,0.760000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+step-5-preview,Step 5 Preview,mmmu-pro,1.0,vision,fraction,artificial-analysis,0.760000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.760000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.740000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+inkling-xhigh,Inkling (xhigh),mmmu-pro,1.0,vision,fraction,artificial-analysis,0.730000,https://artificialanalysis.ai/evaluations/mmmu-pro,2026-10-07
+gemini-3-7-flash-high,Gemini 3.7 Flash (high),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.600000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.575000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.575000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.563000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+claude-opus-5-max,Claude Opus 5 (max),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.538000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.512000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.500000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+gpt-5-5-xhigh,GPT-5.5 (xhigh),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.500000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.488000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+gpt-5-6-sol-max,GPT-5.6 Sol (max),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.475000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.450000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+kimi-k3-max,Kimi K3 (max),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.388000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+step-5-preview,Step 5 Preview,analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.350000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+inkling-xhigh,Inkling (xhigh),analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.238000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+minimax-m3,MiniMax-M3,analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.100000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,analyst-agent,1.0,agentic-tool,fraction,artificial-analysis,0.063000,https://artificialanalysis.ai/evaluations/aa-analyst-agent,2026-10-07
+muse-spark-1-3-xhigh,Muse Spark 1.3 (xhigh),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.955000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+kimi-k3-max,Kimi K3 (max),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.946000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.936000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.936000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-opus-5-max,Claude Opus 5 (max),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.935000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+step-5-preview,Step 5 Preview,harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.934000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-fable-5-1-xhigh-with-fallback,Claude Fable 5.1 (xhigh with fallback),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.933000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.931000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.930000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-fable-5-1-high-with-fallback,Claude Fable 5.1 (high with fallback),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.930000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.912000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+minimax-m3,MiniMax-M3,harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.884000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,harvey-lab,1.0,agentic-tool,fraction,artificial-analysis,0.817000,https://artificialanalysis.ai/evaluations/harvey-lab-aa,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.614000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.591000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-fable-5-1-xhigh-with-fallback,Claude Fable 5.1 (xhigh with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.587000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-opus-5-5-xhigh-with-fallback,Claude Opus 5.5 (xhigh with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.575000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gemini-4-argon-high,Gemini 4 Argon (high),hle,1.0,knowledge,fraction,artificial-analysis,0.571000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-fable-5-1-high-with-fallback,Claude Fable 5.1 (high with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.559000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-opus-5-5-high-with-fallback,Claude Opus 5.5 (high with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.556000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.555000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),hle,1.0,knowledge,fraction,artificial-analysis,0.550000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),hle,1.0,knowledge,fraction,artificial-analysis,0.547000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),hle,1.0,knowledge,fraction,artificial-analysis,0.529000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,hle,1.0,knowledge,fraction,artificial-analysis,0.494000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),hle,1.0,knowledge,fraction,artificial-analysis,0.487000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),hle,1.0,knowledge,fraction,artificial-analysis,0.479000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),hle,1.0,knowledge,fraction,artificial-analysis,0.478000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+kimi-k3-max,Kimi K3 (max),hle,1.0,knowledge,fraction,artificial-analysis,0.469000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+step-5-preview,Step 5 Preview,hle,1.0,knowledge,fraction,artificial-analysis,0.465000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),hle,1.0,knowledge,fraction,artificial-analysis,0.431000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),hle,1.0,knowledge,fraction,artificial-analysis,0.431000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+glm-5-3-max,GLM-5.3 (max),hle,1.0,knowledge,fraction,artificial-analysis,0.423000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,hle,1.0,knowledge,fraction,artificial-analysis,0.399000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),hle,1.0,knowledge,fraction,artificial-analysis,0.392000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+minimax-m3,MiniMax-M3,hle,1.0,knowledge,fraction,artificial-analysis,0.390000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),hle,1.0,knowledge,fraction,artificial-analysis,0.385000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,hle,1.0,knowledge,fraction,artificial-analysis,0.350000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),hle,1.0,knowledge,fraction,artificial-analysis,0.339000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,hle,1.0,knowledge,fraction,artificial-analysis,0.320000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+inkling-xhigh,Inkling (xhigh),hle,1.0,knowledge,fraction,artificial-analysis,0.319000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,hle,1.0,knowledge,fraction,artificial-analysis,0.284000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),hle,1.0,knowledge,fraction,artificial-analysis,0.220000,https://artificialanalysis.ai/evaluations/humanitys-last-exam,2026-10-07
+gemini-4-argon-high,Gemini 4 Argon (high),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.775000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+claude-sonnet-5-5-max-with-fallback,Claude Sonnet 5.5 (max with fallback),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.718000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.695000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.689000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.685000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-astra-xhigh,GPT-6 Astra (xhigh),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.672000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+grok-4-6-xhigh,Grok 4.6 (xhigh),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.670000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+grok-4-6-high,Grok 4.6 (high),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.667000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-astra-high,GPT-6 Astra (high),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.666000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-1-sol-xhigh,GPT-6.1 Sol (xhigh),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.666000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.656000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-1-sol-max,GPT-6.1 Sol (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.649000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+glm-5-3-max,GLM-5.3 (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.622000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.616000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.604000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.599000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+mistral-large-4-preview,Mistral Large 4 Preview,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.599000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.594000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+mimo-v2-6-pro,MiMo-V2.6-Pro,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.586000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+kimi-k3-max,Kimi K3 (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.583000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.579000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.562000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+gpt-6-luna-max,GPT-6 Luna (max),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.532000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+step-5-preview,Step 5 Preview,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.510000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.482000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+k2-horizon-375b-a23b,K2 Horizon 375B A23B,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.372000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+minimax-m3,MiniMax-M3,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.213000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.068000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+inkling-xhigh,Inkling (xhigh),automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.050000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,automationbench,1.0,agentic-tool,fraction,artificial-analysis,0.030000,https://artificialanalysis.ai/evaluations/automationbench-aa,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.511000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+gemini-3-7-flash-medium,Gemini 3.7 Flash (medium),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.504000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+gemini-3-5-flash-high,Gemini 3.5 Flash (high),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.501000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+deepseek-v4-pro-0813-max,DeepSeek V4 Pro 0813 (max),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.496000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+grok-4-6-high,Grok 4.6 (high),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.483000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.476000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+step-5-preview,Step 5 Preview,enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.472000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+kimi-k3-max,Kimi K3 (max),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.453000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+qwen3-8-27b-xhigh,Qwen3.8 27B (xhigh),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.442000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+inkling-xhigh,Inkling (xhigh),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.380000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+glm-5-3-max,GLM-5.3 (max),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.364000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+muse-glimmer-high,Muse Glimmer (high),enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.347000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.332000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+minimax-m3,MiniMax-M3,enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.321000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,enterprise-ops-gym,1.0,agentic-tool,fraction,artificial-analysis,0.289000,https://artificialanalysis.ai/evaluations/enterprise-ops-gym-aa,2026-10-07
+gemini-3-5-flash-high,Gemini 3.5 Flash (high),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.471000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.424000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+kimi-k3-max,Kimi K3 (max),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.413000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+gpt-5-6-terra-max,GPT-5.6 Terra (max),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.389000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+step-5-preview,Step 5 Preview,apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.380000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+gpt-5-5-xhigh,GPT-5.5 (xhigh),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.377000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+gpt-5-6-luna-max,GPT-5.6 Luna (max),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.358000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+glm-5-2-max,GLM-5.2 (max),apex-agents,1.0,agentic-tool,fraction,artificial-analysis,0.337000,https://artificialanalysis.ai/evaluations/apex-agents-aa,2026-10-07
+gpt-5-6-sol-max,GPT-5.6 Sol (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.562000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+step-5-preview,Step 5 Preview,itbench,sre,agentic-tool,fraction,artificial-analysis,0.556000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+gemini-3-8-flash-high,Gemini 3.8 Flash (high),itbench,sre,agentic-tool,fraction,artificial-analysis,0.525000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+glm-5-3-flash,GLM-5.3-Flash,itbench,sre,agentic-tool,fraction,artificial-analysis,0.512000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+gpt-5-6-terra-max,GPT-5.6 Terra (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.510000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+claude-fable-5-1-max-with-fallback,Claude Fable 5.1 (max with fallback),itbench,sre,agentic-tool,fraction,artificial-analysis,0.495000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+gpt-6-sol-max,GPT-6 Sol (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.494000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+gpt-6-astra-max,GPT-6 Astra (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.486000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+kimi-k3-max,Kimi K3 (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.477000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+deepseek-v4-1-flash-max,DeepSeek V4.1 Flash (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.469000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+claude-opus-4-7-max,Claude Opus 4.7 (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.467000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+glm-5-3-max,GLM-5.3 (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.461000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+gpt-5-5-xhigh,GPT-5.5 (xhigh),itbench,sre,agentic-tool,fraction,artificial-analysis,0.458000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+glm-5-2-max,GLM-5.2 (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.427000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+grok-4-7-xhigh,Grok 4.7 (xhigh),itbench,sre,agentic-tool,fraction,artificial-analysis,0.421000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+qwen3-8-max-0902,Qwen3.8 Max (0902),itbench,sre,agentic-tool,fraction,artificial-analysis,0.403000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+claude-opus-5-5-max-with-fallback,Claude Opus 5.5 (max with fallback),itbench,sre,agentic-tool,fraction,artificial-analysis,0.382000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+muse-spark-1-3-max,Muse Spark 1.3 (max),itbench,sre,agentic-tool,fraction,artificial-analysis,0.332000,https://artificialanalysis.ai/evaluations/itbench-aa,2026-10-07
+glm-5-2-max,GLM-5.2 (max),tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.991000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07
+jt-35b-flash,JT-35B-Flash,tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.991000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07
+glm-4-7-flash,GLM-4.7-Flash,tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.988000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07
+claude-fable-5-with-fallback,Claude Fable 5 (with fallback),tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.985000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07
+glm-5-turbo,GLM-5-Turbo,tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.985000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07
+minimax-m3,MiniMax-M3,tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.889000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07
+nemotron-3-ultra,Nemotron 3 Ultra,tau-bench,2-telecom,agentic-tool,fraction,artificial-analysis,0.833000,https://artificialanalysis.ai/evaluations/tau2-bench,2026-10-07

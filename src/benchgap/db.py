@@ -18,8 +18,9 @@ from typing import Any, Optional
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS benchmarks (
-    id   INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE,
+    capability TEXT NOT NULL DEFAULT 'general'
 );
 
 CREATE TABLE IF NOT EXISTS benchmark_versions (
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS benchmark_versions (
     benchmark_id INTEGER NOT NULL REFERENCES benchmarks(id),
     version      TEXT NOT NULL,
     harness      TEXT NOT NULL DEFAULT 'unknown',
+    unit         TEXT NOT NULL DEFAULT 'fraction',
     source_url   TEXT,
     UNIQUE (benchmark_id, version, harness)
 );
@@ -87,16 +89,35 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+MIGRATIONS = [
+    ("benchmarks", "capability", "ALTER TABLE benchmarks ADD COLUMN capability TEXT NOT NULL DEFAULT 'general'"),
+    ("benchmark_versions", "unit", "ALTER TABLE benchmark_versions ADD COLUMN unit TEXT NOT NULL DEFAULT 'fraction'"),
+]
+
+
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    for table, column, ddl in MIGRATIONS:
+        cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            conn.execute(ddl)
     conn.commit()
 
 
 # --- lookup / upsert helpers -------------------------------------------------
 
 
-def get_or_create_benchmark(conn: sqlite3.Connection, name: str) -> int:
-    conn.execute("INSERT OR IGNORE INTO benchmarks (name) VALUES (?)", (name,))
+def get_or_create_benchmark(
+    conn: sqlite3.Connection, name: str, capability: str = "general"
+) -> int:
+    conn.execute(
+        "INSERT OR IGNORE INTO benchmarks (name, capability) VALUES (?, ?)",
+        (name, capability),
+    )
+    conn.execute(
+        "UPDATE benchmarks SET capability = ? WHERE name = ? AND capability = 'general'",
+        (capability, name),
+    )
     return conn.execute(
         "SELECT id FROM benchmarks WHERE name = ?", (name,)
     ).fetchone()["id"]
@@ -108,12 +129,14 @@ def get_or_create_version(
     version: str,
     harness: str = "unknown",
     source_url: Optional[str] = None,
+    capability: str = "general",
+    unit: str = "fraction",
 ) -> int:
-    bid = get_or_create_benchmark(conn, benchmark)
+    bid = get_or_create_benchmark(conn, benchmark, capability)
     conn.execute(
         "INSERT OR IGNORE INTO benchmark_versions"
-        " (benchmark_id, version, harness, source_url) VALUES (?, ?, ?, ?)",
-        (bid, version, harness, source_url),
+        " (benchmark_id, version, harness, unit, source_url) VALUES (?, ?, ?, ?, ?)",
+        (bid, version, harness, unit, source_url),
     )
     return conn.execute(
         "SELECT id FROM benchmark_versions"

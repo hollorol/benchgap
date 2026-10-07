@@ -11,8 +11,8 @@ from .db import get_or_create_model, get_or_create_version, set_measured_score
 def ingest_csv(conn: sqlite3.Connection, path: str | Path) -> int:
     """Load seed CSV rows into the database. Returns the number of scores loaded.
 
-    Expected columns: model_slug, model_name, release, benchmark, version,
-    harness, score, source_url, retrieved_at
+    Expected columns: model_slug, model_name, benchmark, version, capability,
+    unit, harness, score, source_url, retrieved_at
     """
     n = 0
     with open(path, newline="") as fh:
@@ -26,6 +26,8 @@ def ingest_csv(conn: sqlite3.Connection, path: str | Path) -> int:
                 row["version"],
                 row["harness"],
                 row.get("source_url") or None,
+                row.get("capability") or "general",
+                row.get("unit") or "fraction",
             )
             set_measured_score(
                 conn,

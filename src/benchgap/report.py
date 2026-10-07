@@ -3,13 +3,31 @@ from __future__ import annotations
 
 import sqlite3
 
+# Display order for capability groups in the matrix.
+CAPABILITY_ORDER = [
+    "agentic-terminal",
+    "agentic-tool",
+    "coding",
+    "math",
+    "knowledge",
+    "instruction-following",
+    "vision",
+    "long-context",
+    "general",
+]
+
 
 def _version_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return conn.execute(
-        "SELECT v.id, v.version, v.harness, b.name AS benchmark"
+    rows = conn.execute(
+        "SELECT v.id, v.version, v.harness, v.unit, b.name AS benchmark,"
+        "       b.capability AS capability"
         " FROM benchmark_versions v JOIN benchmarks b ON b.id = v.benchmark_id"
-        " ORDER BY b.name, v.version, v.harness"
     ).fetchall()
+    cap_rank = {c: i for i, c in enumerate(CAPABILITY_ORDER)}
+    return sorted(
+        rows,
+        key=lambda r: (cap_rank.get(r["capability"], 99), r["benchmark"], r["version"]),
+    )
 
 
 def _labels(conn: sqlite3.Connection) -> dict[int, str]:
@@ -55,12 +73,23 @@ def mapping_summary(conn: sqlite3.Connection) -> list[dict]:
     ]
 
 
-def score_matrix(conn: sqlite3.Connection) -> tuple[list[str], list[dict]]:
-    """Models x versions matrix in percent; gapfilled cells marked 'g'."""
+def score_matrix(conn: sqlite3.Connection) -> tuple[list[dict], list[dict]]:
+    """Models x versions matrix; gapfilled cells marked 'g', missing '.'.
+
+    Columns are grouped by capability. Cell values are in the version's
+    native unit (fractions rendered as percent by callers).
+    """
     versions = _version_rows(conn)
-    version_ids = [v["id"] for v in versions]
-    version_labels = _labels(conn)
-    columns = [version_labels[vid] for vid in version_ids]
+    columns = []
+    for v in versions:
+        columns.append(
+            {
+                "id": v["id"],
+                "label": f"{v['benchmark']}/{v['version']}",
+                "capability": v["capability"],
+                "unit": v["unit"],
+            }
+        )
 
     # (model_id, version_id) -> (value, source); measured wins over gapfilled
     scores: dict[tuple[int, int], tuple[float, str]] = {}
@@ -72,14 +101,14 @@ def score_matrix(conn: sqlite3.Connection) -> tuple[list[str], list[dict]]:
     rows = []
     for m in conn.execute("SELECT id, slug, name FROM models ORDER BY slug"):
         cells = []
-        for vid in version_ids:
-            entry = scores.get((m["id"], vid))
+        for col in columns:
+            entry = scores.get((m["id"], col["id"]))
             if entry is None:
                 cells.append({"value": None, "kind": "missing"})
             else:
                 cells.append(
                     {
-                        "value": entry[0] * 100,
+                        "value": entry[0],
                         "kind": "g" if entry[1] == "gapfilled" else "m",
                     }
                 )
@@ -87,22 +116,37 @@ def score_matrix(conn: sqlite3.Connection) -> tuple[list[str], list[dict]]:
     return columns, rows
 
 
+def _format_cell(col: dict, cell: dict) -> str:
+    if cell["value"] is None:
+        return "-".ljust(8)
+    mark = "*" if cell["kind"] == "g" else ""
+    if col["unit"] == "fraction":
+        return f"{cell['value'] * 100:5.1f}{mark}".ljust(8)
+    return f"{cell['value']:5.1f}{mark}".ljust(8)
+
+
 def render_matrix(conn: sqlite3.Connection) -> str:
     """Plain-text matrix: measured values plain, gapfilled marked with *."""
     columns, rows = score_matrix(conn)
     name_w = max([len(r["slug"]) for r in rows] + [len("model")])
-    col_w = max([len(c) for c in columns] + [8])
-    lines = [" " * name_w + "  " + "  ".join(c.ljust(col_w) for c in columns)]
-    lines.append("-" * len(lines[0]))
+    lines = []
+    header_cells = []
+    last_cap = None
+    for col in columns:
+        cap_mark = col["capability"] if col["capability"] != last_cap else ""
+        last_cap = col["capability"]
+        header_cells.append(f"{cap_mark:>8.8}")
+    # capability header line + column header line
+    lines.append(" " * (name_w + 2) + " ".join(header_cells))
+    lines.append(
+        " " * (name_w + 2) + " ".join(c["label"][:8].ljust(8) for c in columns)
+    )
+    lines.append("-" * len(lines[-1]))
     for r in rows:
-        cells = []
-        for c in r["cells"]:
-            if c["value"] is None:
-                cells.append("-".ljust(col_w))
-            else:
-                mark = "*" if c["kind"] == "g" else ""
-                cells.append(f"{c['value']:5.1f}{mark}".ljust(col_w))
-        lines.append(r["slug"].ljust(name_w) + "  " + "  ".join(cells))
+        cells = " ".join(
+            _format_cell(c, cell) for c, cell in zip(columns, r["cells"])
+        )
+        lines.append(r["slug"].ljust(name_w) + "  " + cells)
     lines.append("")
     lines.append("* = gapfilled (fitted mapping, not a measured score)")
     return "\n".join(lines)

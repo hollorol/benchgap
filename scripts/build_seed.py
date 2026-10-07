@@ -1,86 +1,124 @@
-"""Build the canonical long-format seed CSV from the raw Artificial Analysis extracts.
+"""Build the canonical long-format seed CSV from the Artificial Analysis snapshot.
 
-Reads data/raw/aa_tb2_entries.csv and data/raw/aa_tb4_entries.csv (columns:
-slug,name,release,tb21,tb40) and writes data/seed/scores.csv in long format:
+Reads data/aa_scores.json (leaderboard extracts from AA evaluation pages) and
+writes data/seed/scores.csv in long format, one row per measured score:
 
-    model_slug,model_name,release,benchmark,version,harness,score,source_url,retrieved_at
+    model_slug,model_name,benchmark,version,capability,unit,harness,score,
+    source_url,retrieved_at
+
+Model slugs are derived deterministically from the AA display names so the
+same model on different benchmark pages maps to one database row.
 
 Run from the repo root:  python scripts/build_seed.py
 """
 from __future__ import annotations
 
-import csv
+import json
+import re
+import unicodedata
 from pathlib import Path
 
-RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
-SEED_DIR = Path(__file__).resolve().parent.parent / "data" / "seed"
-OUT = SEED_DIR / "scores.csv"
+REPO = Path(__file__).resolve().parent.parent
+SNAPSHOT = REPO / "data" / "aa_scores.json"
+OUT = REPO / "data" / "seed" / "scores.csv"
 
-BENCH = "terminal-bench"
 HARNESS = "artificial-analysis"
-RETRIEVED = "2026-10-07"
-URLS = {
-    "2.1": "https://artificialanalysis.ai/evaluations/terminalbench-2-1",
-    "4.0": "https://artificialanalysis.ai/evaluations/terminalbench-4-0",
+
+# Curated benchmark metadata: AA evaluation page slug ->
+# (benchmark name, version, capability)
+#
+# Capabilities group benchmarks whose scores plausibly calibrate each other;
+# cross-capability mappings are never fitted (a model without vision scores
+# keeps that gap rather than inheriting one from text benchmarks).
+AA_EVAL_META = {
+    "terminalbench-2-1": ("terminal-bench", "2.1", "agentic-terminal"),
+    "terminalbench-4-0": ("terminal-bench", "4.0", "agentic-terminal"),
+    "terminalbench-hard": ("terminal-bench-hard", "1.0", "agentic-terminal"),
+    "terminal-bench-science": ("terminal-bench-science", "0.1", "agentic-terminal"),
+    "gpqa-diamond": ("gpqa", "diamond", "knowledge"),
+    "mmlu-pro": ("mmlu-pro", "1.0", "knowledge"),
+    "global-mmlu-lite": ("global-mmlu-lite", "1.0", "knowledge"),
+    "humanitys-last-exam": ("hle", "1.0", "knowledge"),
+    "critpt": ("critpt", "1.0", "knowledge"),
+    "math-500": ("math-500", "1.0", "math"),
+    "aime-2025": ("aime-2025", "2025", "math"),
+    "livecodebench": ("livecodebench", "1.0", "coding"),
+    "scicode": ("scicode", "1.0", "coding"),
+    "tau3-banking": ("tau-bank", "3-banking", "agentic-tool"),
+    "tau2-bench": ("tau-bench", "2-telecom", "agentic-tool"),
+    "automationbench-aa": ("automationbench", "1.0", "agentic-tool"),
+    "apex-agents-aa": ("apex-agents", "1.0", "agentic-tool"),
+    "aa-analyst-agent": ("analyst-agent", "1.0", "agentic-tool"),
+    "enterprise-ops-gym-aa": ("enterprise-ops-gym", "1.0", "agentic-tool"),
+    "harvey-lab-aa": ("harvey-lab", "1.0", "agentic-tool"),
+    "itbench-aa": ("itbench", "sre", "agentic-tool"),
+    "ifbench": ("ifbench", "1.0", "instruction-following"),
+    "mmmu-pro": ("mmmu-pro", "1.0", "vision"),
+    "gdp-pdf": ("gdp-pdf", "1.0", "vision"),
 }
 
 
-def read_entries(path: Path) -> dict[str, dict]:
-    rows: dict[str, dict] = {}
-    with open(path, newline="") as fh:
-        for row in csv.DictReader(fh):
-            rows[row["slug"]] = row
-    return rows
+def slugify(name: str) -> str:
+    """Deterministic slug from an AA display name, stable across pages."""
+    s = unicodedata.normalize("NFKD", name)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    return s.strip("-")
 
 
 def main() -> None:
-    merged: dict[str, dict] = {}
-    for fname in ("aa_tb2_entries.csv", "aa_tb4_entries.csv"):
-        for slug, row in read_entries(RAW / fname).items():
-            rec = merged.setdefault(
-                slug,
-                {"name": row["name"], "release": row["release"], "scores": {}},
+    snapshot = json.loads(SNAPSHOT.read_text())
+    rows = []
+    skipped = []
+    for ev in snapshot["evaluations"]:
+        meta = AA_EVAL_META.get(ev["slug"])
+        if meta is None:
+            skipped.append(ev["slug"])
+            continue
+        benchmark, version, capability = meta
+        for m in ev["models"]:
+            if not 0.0 <= m["score"] <= 1.0:
+                continue
+            rows.append(
+                {
+                    "model_slug": slugify(m["name"]),
+                    "model_name": m["name"],
+                    "benchmark": benchmark,
+                    "version": version,
+                    "capability": capability,
+                    "unit": "fraction",
+                    "harness": HARNESS,
+                    "score": f"{m['score']:.6f}",
+                    "source_url": ev["url"],
+                    "retrieved_at": (ev.get("retrievedAt") or "")[:10],
+                }
             )
-            for col, ver in (("tb21", "2.1"), ("tb40", "4.0")):
-                if row.get(col):
-                    rec["scores"].setdefault(ver, float(row[col]))
+    if skipped:
+        print(f"warning: no metadata for {skipped}, skipped")
 
-    SEED_DIR.mkdir(parents=True, exist_ok=True)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    header = [
+        "model_slug",
+        "model_name",
+        "benchmark",
+        "version",
+        "capability",
+        "unit",
+        "harness",
+        "score",
+        "source_url",
+        "retrieved_at",
+    ]
     with open(OUT, "w", newline="") as fh:
-        w = csv.writer(fh)
-        w.writerow(
-            [
-                "model_slug",
-                "model_name",
-                "release",
-                "benchmark",
-                "version",
-                "harness",
-                "score",
-                "source_url",
-                "retrieved_at",
-            ]
-        )
-        for slug in sorted(merged):
-            rec = merged[slug]
-            for ver in ("2.1", "4.0"):
-                if ver in rec["scores"]:
-                    w.writerow(
-                        [
-                            slug,
-                            rec["name"],
-                            rec["release"],
-                            BENCH,
-                            ver,
-                            HARNESS,
-                            f"{rec['scores'][ver]:.6f}",
-                            URLS[ver],
-                            RETRIEVED,
-                        ]
-                    )
-    n_models = len(merged)
-    n_scores = sum(len(r["scores"]) for r in merged.values())
-    print(f"wrote {OUT}: {n_models} models, {n_scores} measured scores")
+        import csv
+
+        w = csv.DictWriter(fh, fieldnames=header)
+        w.writeheader()
+        w.writerows(rows)
+    n_models = len({r["model_slug"] for r in rows})
+    n_bench = len({(r["benchmark"], r["version"]) for r in rows})
+    print(f"wrote {OUT}: {len(rows)} scores, {n_models} models, {n_bench} benchmark versions")
 
 
 if __name__ == "__main__":

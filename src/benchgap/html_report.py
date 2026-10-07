@@ -20,8 +20,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-from .fitting import fit_all, predict, select_best  # noqa: E402
-from .report import mapping_summary, score_matrix  # noqa: E402
+from .fitting import CANDIDATES, fit_all, predict, select_best  # noqa: E402
+from .report import CAPABILITY_ORDER, mapping_summary, score_matrix  # noqa: E402
 
 COLORS = {
     "measured": "#2563eb",
@@ -31,12 +31,8 @@ COLORS = {
     "range": "#f3f4f6",
 }
 
-METHOD_EQUATIONS = {
-    "linear": "y = {slope:.4f}·x + {intercept:.4f}",
-    "quadratic": "y = {a:.4f}·x² + {b:.4f}·x + {c:.4f}",
-    "mm": "y = {vmax:.4f}·x / ({k:.5f} + x)",
-    "mm_offset": "y = {y0:.4f} + {vmax:.4f}·x / ({k:.5f} + x)",
-}
+# Maximum number of mapping figure cards rendered in the report.
+MAX_MAPPING_CARDS = 12
 
 
 def _labels(conn: sqlite3.Connection) -> dict[int, str]:
@@ -50,9 +46,12 @@ def _labels(conn: sqlite3.Connection) -> dict[int, str]:
     }
 
 
-def _best_mappings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    rows = conn.execute(
-        "SELECT m.* FROM mappings m"
+def _used_mappings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Best mappings that produced at least one gapfilled score, by usage."""
+    return conn.execute(
+        "SELECT m.*, (SELECT COUNT(*) FROM scores s"
+        "   WHERE s.mapping_id = m.id AND s.source = 'gapfilled') AS n_used"
+        " FROM mappings m"
         " WHERE m.id = ("
         "   SELECT m2.id FROM mappings m2"
         "    WHERE m2.from_version_id = m.from_version_id"
@@ -60,9 +59,11 @@ def _best_mappings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         "    ORDER BY COALESCE(json_extract(m2.metrics_json, '$.LOO_RMSE'), 1e9),"
         "             COALESCE(json_extract(m2.metrics_json, '$.RMSE'), 1e9)"
         "    LIMIT 1)"
-        " ORDER BY m.from_version_id, m.to_version_id"
+        "   AND EXISTS (SELECT 1 FROM scores s2 WHERE s2.mapping_id = m.id"
+        "               AND s2.source = 'gapfilled')"
+        " ORDER BY n_used DESC, m.from_version_id LIMIT ?",
+        (MAX_MAPPING_CARDS,),
     ).fetchall()
-    return rows
 
 
 def _fig_to_data_uri(fig: plt.Figure) -> str:
@@ -94,9 +95,7 @@ def _mapping_figure(
     params = json.loads(mapping["params_json"])
     train_range = json.loads(mapping["train_range_json"])
 
-    fig, (ax, ax_res) = plt.subplots(
-        1, 2, figsize=(11, 4.4), gridspec_kw={"width_ratios": [3, 2]}
-    )
+    fig, ax = plt.subplots(figsize=(6.2, 4.2))
 
     x_min, x_max = 0.0, max(1.05 * xs.max(), 1e-3)
     grid = np.linspace(0, x_max, 400)
@@ -114,30 +113,18 @@ def _mapping_figure(
     ax.plot(grid * 100, curve * 100, color=COLORS["best"], lw=2.0,
             label=f"{best.method} (LOO {best.metrics['LOO_RMSE'] * 100:.1f} pp)")
 
-    ax.scatter(xs * 100, ys * 100, s=42, color=COLORS["measured"], zorder=3,
+    ax.scatter(xs * 100, ys * 100, s=30, color=COLORS["measured"], zorder=3,
                label=f"paired models (n={len(xs)})")
     if gapfilled:
         gx = np.array([g["input"] for g in gapfilled])
         gy = np.array([g["value"] for g in gapfilled])
-        ax.scatter(gx * 100, gy * 100, s=46, facecolors="none", edgecolors=COLORS["gapfilled"],
-                   lw=1.6, zorder=3, label=f"gapfilled (n={len(gx)})")
+        ax.scatter(gx * 100, gy * 100, s=32, facecolors="none", edgecolors=COLORS["gapfilled"],
+                   lw=1.4, zorder=3, label=f"gapfilled (n={len(gx)})")
     ax.set_xlabel(f"{label_from} score (%)")
     ax.set_ylabel(f"{label_to} score (%)")
-    ax.set_title(f"{label_from} → {label_to}")
-    ax.legend(fontsize=7.5, loc="lower right", framealpha=0.9)
+    ax.set_title(f"{label_from} → {label_to}", fontsize=10)
+    ax.legend(fontsize=7, loc="lower right", framealpha=0.9)
     ax.grid(alpha=0.25)
-
-    # residuals of the best fit
-    pred = predict(best.method, params, xs)
-    ax_res.axhline(0, color="#d1d5db", lw=1)
-    ax_res.scatter(xs * 100, (ys - pred) * 100, s=34, color=COLORS["measured"])
-    for x, y0, y1 in zip(xs * 100, np.zeros_like(xs), (ys - pred) * 100):
-        ax_res.plot([x, x], [0, y1], color="#cbd5e1", lw=0.8, zorder=1)
-    ax_res.set_xlabel(f"{label_from} score (%)")
-    ax_res.set_ylabel("residual (pp)")
-    ax_res.set_title(f"residuals, {best.method}")
-    ax_res.grid(alpha=0.25)
-
     fig.tight_layout()
     return _fig_to_data_uri(fig)
 
@@ -145,7 +132,7 @@ def _mapping_figure(
 def _mapping_card(conn: sqlite3.Connection, mapping: sqlite3.Row, labels: dict[int, str]) -> str:
     params = json.loads(mapping["params_json"])
     metrics = json.loads(mapping["metrics_json"])
-    eq = METHOD_EQUATIONS.get(mapping["method"], json.dumps(params))
+    eq = CANDIDATES[mapping["method"]].equation
     label_from = labels[mapping["from_version_id"]]
     label_to = labels[mapping["to_version_id"]]
 
@@ -162,19 +149,19 @@ def _mapping_card(conn: sqlite3.Connection, mapping: sqlite3.Row, labels: dict[i
     ]
 
     fig_uri = _mapping_figure(conn, mapping, label_from, label_to, gapfilled)
-    row = (f"<tr><td>n (paired models)</td><td>{mapping['n_points']}</td></tr>"
-           f"<tr><td>R²</td><td>{metrics['R2']:.4f}</td></tr>"
-           f"<tr><td>adj. R²</td><td>{metrics['adj_R2']:.4f}</td></tr>"
-           f"<tr><td>RMSE</td><td>{metrics['RMSE'] * 100:.2f} pp</td></tr>"
-           f"<tr><td>LOO-CV RMSE</td><td><b>{metrics['LOO_RMSE'] * 100:.2f} pp</b></td></tr>"
-           f"<tr><td>gapfilled scores</td><td>{len(gapfilled)}</td></tr>")
+    metrics_rows = (
+        f"<tr><td>n (paired models)</td><td>{mapping['n_points']}</td></tr>"
+        f"<tr><td>R²</td><td>{metrics['R2']:.4f}</td></tr>"
+        f"<tr><td>LOO-CV RMSE</td><td><b>{metrics['LOO_RMSE'] * 100:.2f} pp</b></td></tr>"
+        f"<tr><td>gapfilled scores</td><td>{mapping['n_used']}</td></tr>"
+    )
     return f"""
     <section class="card">
-      <h2>{label_from} → {label_to}</h2>
+      <h2>{label_from} → {label_to} <span class="badge">{mapping['n_used']} gapfilled</span></h2>
       <p class="equation">selected method: <b>{mapping['method']}</b> &nbsp;|&nbsp;
          <code>{eq.format(**params)}</code> &nbsp;(scores as fractions)</p>
       <img src="{fig_uri}" alt="fit for {label_from} to {label_to}">
-      <table class="metrics">{row}</table>
+      <table class="metrics">{metrics_rows}</table>
     </section>"""
 
 
@@ -185,7 +172,17 @@ def _matrix_html(conn: sqlite3.Connection) -> str:
         key=lambda i: max((c["value"] or -1) for c in rows[i]["cells"]),
         reverse=True,
     )
-    head = "".join(f"<th>{c}</th>" for c in columns)
+    # capability header row with colspans
+    spans = []
+    for col in columns:
+        if spans and spans[-1][0] == col["capability"]:
+            spans[-1][1] += 1
+        else:
+            spans.append([col["capability"], 1])
+    cap_row = "".join(
+        f'<th class="cap" colspan="{n}">{cap}</th>' for cap, n in spans
+    )
+    head = "".join(f"<th>{c['label']}</th>" for c in columns)
     body = []
     for i in order:
         r = rows[i]
@@ -196,15 +193,34 @@ def _matrix_html(conn: sqlite3.Connection) -> str:
             elif c["kind"] == "g":
                 cells.append(
                     f'<td class="gapfilled" title="gapfilled: fitted mapping,'
-                    f' not a measured score">{c["value"]:.1f}</td>'
+                    f' not a measured score">{c["value"] * 100:.1f}</td>'
                 )
             else:
-                cells.append(f"<td>{c['value']:.1f}</td>")
+                cells.append(f"<td>{c['value'] * 100:.1f}</td>")
         body.append(f"<tr><th class='rowhead'>{r['slug']}</th>{''.join(cells)}</tr>")
     return (
-        "<table class='matrix'><tr><th class='rowhead'>model</th>"
-        f"{head}</tr>{''.join(body)}</table>"
+        "<table class='matrix'>"
+        f"<tr><th class='rowhead cap'>capability</th>{cap_row}</tr>"
+        f"<tr><th class='rowhead'>model</th>{head}</tr>{''.join(body)}</table>"
     )
+
+
+def _capability_stats(conn: sqlite3.Connection) -> list[tuple[str, int, int, int]]:
+    """(capability, n_benchmarks, n_measured, n_gapfilled) per capability."""
+    return [
+        (r["capability"], r["n_versions"], r["n_measured"], r["n_gapfilled"])
+        for r in conn.execute(
+            "SELECT b.capability AS capability,"
+            " COUNT(DISTINCT v.id) AS n_versions,"
+            " SUM(CASE WHEN s.source = 'measured' THEN 1 ELSE 0 END) AS n_measured,"
+            " SUM(CASE WHEN s.source = 'gapfilled' THEN 1 ELSE 0 END) AS n_gapfilled"
+            " FROM benchmarks b"
+            " JOIN benchmark_versions v ON v.benchmark_id = b.id"
+            " LEFT JOIN scores s ON s.version_id = v.id"
+            " GROUP BY b.capability"
+            " ORDER BY b.capability"
+        )
+    ]
 
 
 def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
@@ -221,13 +237,24 @@ def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
         ).fetchone()[0],
     }
     summary = mapping_summary(conn)
-    mappings = _best_mappings(conn)
+    mappings = _used_mappings(conn)
+    if not mappings:
+        # nothing gapfilled yet: show the single best-fitting mapping instead
+        row = conn.execute(
+            "SELECT m.* FROM mappings m ORDER BY"
+            " COALESCE(json_extract(m.metrics_json, '$.LOO_RMSE'), 1e9) LIMIT 1"
+        ).fetchone()
+        mappings = [row] if row is not None else []
     cards = "".join(_mapping_card(conn, m, labels) for m in mappings)
     summary_rows = "".join(
         f"<tr><td>{s['from']}</td><td>{s['to']}</td><td><b>{s['method']}</b></td>"
         f"<td>{s['n_pairs']}</td><td>{s['R2']:.3f}</td>"
         f"<td>{s['LOO_RMSE_pp']:.2f}</td></tr>"
         for s in summary
+    )
+    cap_rows = "".join(
+        f"<tr><td>{cap}</td><td>{nb}</td><td>{meas}</td><td>{gap}</td></tr>"
+        for cap, nb, meas, gap in _capability_stats(conn)
     )
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -240,7 +267,7 @@ def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
 <style>
   :root {{ --ink:#111827; --muted:#6b7280; --line:#e5e7eb; --bg:#f9fafb; }}
   body {{ font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink);
-         max-width: 1080px; margin: 2rem auto; padding: 0 1.5rem; background: #fff; }}
+         max-width: 1280px; margin: 2rem auto; padding: 0 1.5rem; background: #fff; }}
   h1 {{ margin-bottom: 0.2rem; }}
   .sub {{ color: var(--muted); margin-top: 0; }}
   .stats {{ display: flex; gap: 1.5rem; margin: 1.2rem 0; flex-wrap: wrap; }}
@@ -251,15 +278,25 @@ def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
   table {{ border-collapse: collapse; margin: 0.5rem 0 1.5rem; }}
   th, td {{ padding: .35rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }}
   thead th {{ border-bottom: 2px solid var(--ink); font-size: .85rem; }}
-  .card {{ border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.4rem;
-          margin: 1.5rem 0; }}
-  .card h2 {{ margin-top: 0; font-size: 1.05rem; }}
+  .cards {{ display: flex; flex-wrap: wrap; gap: 1.2rem; }}
+  .card {{ border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem;
+          margin: 0 0 1.2rem; flex: 1 1 460px; max-width: 620px; }}
+  .card h2 {{ margin-top: 0; font-size: .95rem; }}
   .card img {{ width: 100%; height: auto; }}
-  .equation {{ color: var(--muted); }}
-  code {{ background: var(--bg); padding: .1rem .35rem; border-radius: 4px; }}
+  .badge {{ background: #fffbeb; color: #b45309; border-radius: 6px;
+           font-size: .7rem; padding: .1rem .4rem; vertical-align: middle; }}
+  .equation {{ color: var(--muted); font-size: .8rem; }}
+  code {{ background: var(--bg); padding: .1rem .35rem; border-radius: 4px;
+         font-size: .75rem; }}
   .metrics td:first-child {{ color: var(--muted); }}
-  .matrix td, .matrix th {{ text-align: right; }}
-  .matrix .rowhead {{ text-align: left; font-weight: 500; }}
+  .metrics td, .metrics th {{ padding: .2rem .6rem; }}
+  .matrix td, .matrix th {{ text-align: right; padding: .25rem .45rem; font-size: .78rem;
+                           white-space: nowrap; }}
+  .matrix .rowhead {{ text-align: left; font-weight: 500; position: sticky; left: 0;
+                     background: #fff; }}
+  .matrix th.cap {{ background: var(--bg); font-size: .7rem; color: var(--muted);
+                   text-align: center; }}
+  .matrix-wrap {{ overflow-x: auto; }}
   .matrix td.gapfilled {{ color: #b45309; background: #fffbeb; }}
   .matrix td.missing {{ color: #d1d5db; }}
   .legend {{ color: var(--muted); font-size: .85rem; }}
@@ -278,30 +315,46 @@ def generate_html_report(conn: sqlite3.Connection, path: str | Path) -> Path:
   <div><div class="n">{stats['gapfilled']}</div><div class="k">gapfilled scores</div></div>
 </div>
 
+<h2>Capabilities</h2>
+<table>
+<thead><tr><th>capability</th><th>benchmark versions</th><th>measured</th>
+<th>gapfilled</th></tr></thead>
+<tbody>{cap_rows}</tbody>
+</table>
+<p class="legend">Mappings are only fitted between benchmark versions of the same
+capability. Cells for capabilities a model was never measured on (and has no
+same-capability source score) stay empty - the gap is kept, not invented.</p>
+
 <h2>Fitted mappings</h2>
+<div class="matrix-wrap">
 <table>
 <thead><tr><th>from</th><th>to</th><th>selected method</th><th>n pairs</th>
 <th>R²</th><th>LOO RMSE (pp)</th></tr></thead>
 <tbody>{summary_rows}</tbody>
 </table>
+</div>
 <p class="legend">Selection is by leave-one-out cross-validated RMSE among the fitted
-candidates (linear, quadratic, Michaelis–Menten, Michaelis–Menten with offset).
-Solid curves in the figures are the selected fit; gray curves are the alternatives.</p>
+candidates (linear, Michaelis–Menten, Michaelis–Menten with offset, and the
+inverse Michaelis–Menten form for convex directions). All candidates are
+monotone. Solid curves are the selected fit; gray curves are the alternatives.</p>
 
-{cards}
+<h2>Mapping detail (top {len(mappings)} by gapfill usage)</h2>
+<div class="cards">{cards}</div>
 
-<h2>Score matrix (percent)</h2>
+<h2>Score matrix (percent; amber = gapfilled, dash = kept gap)</h2>
+<div class="matrix-wrap">
 {_matrix_html(conn)}
+</div>
 <p class="legend">Amber cells are <b>gapfilled</b>: values predicted by the fitted
-mapping, not measured scores. Hover a cell for details. Models are ordered by
-their best score.</p>
+mapping, not measured scores. Dashes are kept gaps: no measured source score in
+the same capability to predict from. Models are ordered by their best score.</p>
 
 <footer>
-Coefficients are harness-specific: the seed pairs come from the Artificial
-Analysis harness (Terminal-Bench 2.1 vs 4.0), not the official tbench.ai
-leaderboards. Gapfilled values outside the fitted training range are flagged
-as extrapolated in the database. Probabilistic fits (credible intervals) are
-planned; the schema already carries ci95 columns.
+Scores from Artificial Analysis evaluation leaderboards (harness:
+artificial-analysis), retrieved 2026-10-07. Coefficients are harness-specific.
+Gapfilled values outside a mapping's training range are flagged as extrapolated
+in the database. Probabilistic fits (credible intervals) are planned; the
+schema already carries ci95 columns.
 </footer>
 </body>
 </html>"""
