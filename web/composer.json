@@ -1,0 +1,21 @@
+{
+    "name": "hollorol/benchgap-web",
+    "description": "benchgap.net backend: serves the site's pages, data and public API from the score database",
+    "license": "MIT",
+    "type": "project",
+    "require": {
+        "php": ">=8.4",
+        "ext-dom": "*",
+        "ext-pdo": "*",
+        "slim/http-cache": "^1",
+        "slim/psr7": "^1",
+        "slim/slim": "^4"
+    },
+    "autoload": {
+        "psr-4": { "Benchgap\\": "src/" }
+    },
+    "config": {
+        "platform": { "php": "8.4" },
+        "sort-packages": true
+    }
+}

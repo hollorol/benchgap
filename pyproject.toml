@@ -7,6 +7,7 @@ name = "benchgap"
 version = "0.1.0"
 description = "Benchmark score database with deterministic gapfilling of missing scores via fitted cross-version mappings"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",

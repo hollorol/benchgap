@@ -1,0 +1,117 @@
+<?php
+// benchgap.net backend (Slim 4): the site's pages (index.html filled in for
+// each path), the site data (data/benchgap.json), the public API (api/v1/...)
+// and llms.txt, computed on request from the score database. .htaccess sends
+// every request that is not a static file here.
+//
+// The database is set in config.php (see config.example.php). Local preview:
+//   php -S localhost:8000 -t web web/serve.php
+declare(strict_types=1);
+
+use Benchgap\Api;
+use Benchgap\Pages;
+use Benchgap\Snapshot;
+use Psr\Http\Message\ResponseInterface as Response;
+use Psr\Http\Message\ServerRequestInterface as Request;
+use Psr\Http\Server\RequestHandlerInterface as Handler;
+use Slim\Exception\HttpNotFoundException;
+use Slim\Factory\AppFactory;
+use Slim\HttpCache\Cache;
+use Slim\HttpCache\CacheProvider;
+use Slim\Routing\RouteCollectorProxy;
+
+// PHP's built-in dev server: static files as they are (like .htaccess)
+if (PHP_SAPI === 'cli-server' && is_file(__DIR__ . parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH))) {
+    return false;
+}
+
+require __DIR__ . '/vendor/autoload.php';
+
+function database(): PDO
+{
+    $config = require __DIR__ . '/config.php';
+    return new PDO($config['dsn'], $config['username'] ?? null, $config['password'] ?? null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]);
+}
+
+// the API over the database, built once per request
+function api(): Api
+{
+    static $api;
+    return $api ??= new Api(Snapshot::build(database()));
+}
+
+// a document with an ETag; the Cache middleware answers a matching If-None-Match with 304
+function send(Response $response, array|string $document, string $type = 'application/json'): Response
+{
+    $body = is_string($document) ? $document : json_encode($document, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    $response->getBody()->write($body);
+    return (new CacheProvider())->withEtag($response->withHeader('Content-Type', "$type; charset=utf-8"), sha1($body));
+}
+
+// throws a 404 for unknown benchmarks, models and mappings
+function found(?array $document, Request $request): array
+{
+    return $document ?? throw new HttpNotFoundException($request);
+}
+
+// index.html filled in with one of the site's pages (see Pages)
+function html(Pages $pages, array $page, Request $request): string
+{
+    return $pages->html(file_get_contents(__DIR__ . '/index.html'), $page, $request->getUri()->getPath());
+}
+
+// the page $build makes with Pages
+function page(Request $request, Response $response, Closure $build): Response
+{
+    $pages = new Pages(api());
+    return send($response, html($pages, found($build($pages), $request), $request), 'text/html');
+}
+
+$app = AppFactory::create();
+$app->add(new Cache('public', 0));  // Cache-Control: public, no-cache (always revalidate)
+$errors = $app->addErrorMiddleware(false, true, true);
+$errors->getDefaultErrorHandler()->forceContentType('application/json');
+// a missing page is the site's 404 page (noindex); the API and the data answer JSON
+$errors->setErrorHandler(HttpNotFoundException::class, function (Request $request, Throwable $error) use ($app, $errors): Response {
+    if (preg_match('#^/(api/v1|data)(/|$)#', $request->getUri()->getPath())) {
+        return $errors->getDefaultErrorHandler()($request, $error, false, false, false);
+    }
+    $pages = new Pages(api());
+    $response = $app->getResponseFactory()->createResponse(404);
+    $response->getBody()->write(html($pages, $pages->notFound(), $request));
+    return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
+});
+
+$app->get('/data/benchgap.json', fn (Request $rq, Response $rs) => send($rs, Snapshot::build(database())));
+$app->get('/sitemap.xml', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->sitemap(), 'application/xml'));
+$app->get('/llms.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llms(), 'text/markdown'));
+$app->get('/llms-full.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llmsFull(), 'text/markdown'));
+
+// the site's pages (keep in step with app.js PAGES)
+$app->get('/', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->board(Pages::DEFAULT_BENCH)));
+$app->get('/b/{key:.+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->board($a['key'])));
+$app->get('/model/{slug:.+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->model($a['slug'])));
+$app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->matrix()));
+$app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->calibration()));
+$app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id'])));
+$app->get('/method', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->methodPage()));
+$app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage()));
+
+$app->group('/api/v1', function (RouteCollectorProxy $v1) {
+    $v1->get('[/[index.json]]', fn (Request $rq, Response $rs) => send($rs, api()->index()));
+    $v1->get('/benchmarks.json', fn (Request $rq, Response $rs) => send($rs, api()->benchmarks()));
+    $v1->get('/benchmarks/{name}/{version}.json', fn (Request $rq, Response $rs, array $a) =>
+        send($rs, found(api()->benchmark("{$a['name']}/{$a['version']}"), $rq)));
+    $v1->get('/models.json', fn (Request $rq, Response $rs) => send($rs, api()->models()));
+    $v1->get('/models/{slug}.json', fn (Request $rq, Response $rs, array $a) => send($rs, found(api()->model($a['slug']), $rq)));
+    $v1->get('/scores.json', fn (Request $rq, Response $rs) => send($rs, api()->scores()));
+    $v1->get('/scores.csv', fn (Request $rq, Response $rs) => send($rs, api()->scoresCsv(), 'text/csv'));
+    $v1->get('/mappings.json', fn (Request $rq, Response $rs) => send($rs, api()->mappings()));
+    $v1->get('/mappings/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
+        send($rs, found(api()->mapping((int) $a['id']), $rq)));
+})->add(fn (Request $request, Handler $handler) => $handler->handle($request)->withHeader('Access-Control-Allow-Origin', '*'));
+
+$app->run();

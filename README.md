@@ -1,8 +1,27 @@
-# benchgap
+<h1 align="center">bench<i>gap</i></h1>
 
-A benchmark score database that gapfills missing scores. Models are measured
-on some benchmarks but not others; benchgap fits a mapping between benchmark
-versions from the models measured on both, then predicts the missing values.
+<p align="center"><b>Mind the gap.</b><br>
+The missing half of every LLM leaderboard.</p>
+
+<p align="center">
+  <a href="https://github.com/hollorol/benchgap/actions/workflows/deploy.yml"><img alt="Deploy" src="https://github.com/hollorol/benchgap/actions/workflows/deploy.yml/badge.svg"></a>
+  <a href="https://benchgap.net"><img alt="Live: benchgap.net" src="https://img.shields.io/badge/live-benchgap.net-c2410c"></a>
+  <a href="https://benchgap.net/api"><img alt="API: OpenAPI 3.1" src="https://img.shields.io/badge/API-OpenAPI%203.1-0f7b55"></a>
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+Most language models are only ever run on a handful of benchmarks, so every
+leaderboard is mostly empty cells. benchgap fills them, carefully. It
+calibrates benchmarks against each other on the models measured on both,
+predicts each missing score from that model's own measured results, and
+attaches the cross-validated error and a confidence level to every estimate.
+Estimates are never used to make other estimates, calibrations never cross
+capabilities, and a gap that can't be filled honestly stays a gap.
+
+**See it live at [benchgap.net](https://benchgap.net)**: leaderboards, the
+full score matrix, every calibration curve and a public JSON API
+([docs](https://benchgap.net/api)).
 
 Bootstrapped from a prior analysis session that calibrated Terminal-Bench v4.0
 scores onto the v2.1 scale and found that a Michaelis-Menten curve with offset
@@ -29,7 +48,7 @@ benchgap/
 │   ├── raw/                 # source extracts from the original analysis session (provenance)
 │   ├── aa_scores.json       # Artificial Analysis leaderboard snapshot (24 evaluations, 85 models)
 │   ├── seed/scores.csv      # canonical long-format seed (scripts/build_seed.py)
-│   └── benchgap.db          # generated SQLite database
+│   └── benchgap.db          # the database the pipeline builds (init … gapfill)
 ├── scripts/build_seed.py    # regenerates data/seed/scores.csv from aa_scores.json
 ├── src/benchgap/
 │   ├── db.py                # schema + data access (capability, unit, multi-mappings)
@@ -41,6 +60,12 @@ benchgap/
 │   ├── report.py            # mapping summaries, score matrix
 │   ├── html_report.py       # self-contained HTML report (matplotlib, base64 PNGs)
 │   └── cli.py               # command-line interface
+├── web/                     # benchgap.net (see "Website")
+│   ├── index.html, assets/  # vanilla JS front-end
+│   ├── serve.php            # Slim 4 backend: pages, site data, public API, llms.txt
+│   ├── src/                 # Snapshot.php (site data, confidence levels), Api.php, Pages.php, Curves.php
+│   └── api/v1/openapi.json  # OpenAPI 3.1 description of the API
+├── .github/workflows/       # tests, then upload web/ to benchgap.net on every push to main
 └── tests/
 ```
 
@@ -81,6 +106,52 @@ file works offline and can be shared as-is.
 
 Run `benchgap` from the repository root (paths are relative to the working
 directory); pass `--db` to use a different database file.
+
+## Website (benchgap.net)
+
+[benchgap.net](https://benchgap.net) lives in `web/`: a vanilla JS front-end
+and a small [Slim 4](https://www.slimframework.com/) backend (`serve.php`)
+that computes the site's data and the public API from the benchgap database.
+Every push to `main` runs the tests and deploys `web/`
+(`.github/workflows/deploy.yml`).
+
+Pages: per-benchmark leaderboards, the full score matrix, a page per
+model, the calibration (predictability) matrix with a scatter + fitted
+curve per mapping, and the methodology. Each page has its own URL
+(`/matrix`, `/model/<slug>`, `/b/<name>/<version>`, ...) and is listed in the
+generated `sitemap.xml`. The backend serves each page with its own title,
+description and a plain-HTML summary of its content (`web/src/Pages.php`) for
+readers without JavaScript, such as search and AI crawlers, and the same content
+as Markdown in `llms.txt` and `llms-full.txt`.
+
+Every estimate carries a **confidence level** computed in `web/src/Snapshot.php`:
+high (LOO RMSE <= 5 pp), medium (<= 10 pp) or low (above), demoted
+one level each for an extrapolated input, a mapping fitted on fewer than
+8 models, or R2 < 0.5. Measured bars are solid; estimates are hatched and
+italic with a +/- error whisker; low-confidence estimates get a dashed red
+outline, a "low conf." flag on leaderboards and a red corner in the matrix.
+Hovering any estimate shows its source score, curve and the reasons for its
+level, and the "Show" toggle can hide low-confidence estimates or all of
+them.
+
+### Public API
+
+The same data is published as a read-only JSON API (`web/src/Api.php`,
+documented on the site at `/api` and in `api/v1/openapi.json`, OpenAPI 3.1),
+with ETags and open CORS:
+
+| Path | Returns |
+| --- | --- |
+| `index.json` | build metadata, endpoint templates, confidence thresholds |
+| `benchmarks.json`, `benchmarks/{name}/{version}.json` | benchmark versions; one with all its scores |
+| `models.json`, `models/{slug}.json` | models; one with all its scores |
+| `scores.json`, `scores.csv` | every score, measured and estimated |
+| `mappings.json`, `mappings/{id}.json` | calibrations; one with points and sampled curve |
+| `openapi.json` | the OpenAPI 3.1 description of all of the above |
+
+Benchmarks are addressed by `name/version` and models by slug (stable across
+rebuilds). Scores are fractions; estimated scores carry `estimate` with
+`confidence`, `error_pp`, `reasons` and the measured `inputs` they came from.
 
 ## Data model
 
@@ -180,3 +251,10 @@ the deterministic one without migration:
   public page content.
 - Official Terminal-Bench leaderboards: https://www.tbench.ai/ (different
   harness; see data/raw/ for the original session's extracts).
+
+## License
+
+The code is licensed under the [MIT License](LICENSE). The benchmark data is
+collected from public leaderboards (mainly Artificial Analysis; each
+benchmark's `source_url` points to its origin) and remains under its
+sources' terms; the MIT License covers only the code.

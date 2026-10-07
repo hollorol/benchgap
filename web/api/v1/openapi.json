@@ -1,0 +1,775 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "benchgap API",
+    "version": "1.0.0",
+    "summary": "LLM benchmark scores, measured and estimated, as JSON.",
+    "description": "Read-only API over the benchgap score database. Every resource is regenerated whenever the data is rebuilt and revalidated with an ETag; there is no authentication, no rate limit beyond the host's, and CORS is open. Scores are fractions in [0, 1]. Each score is either `measured` (taken from a public leaderboard) or `estimated` (predicted from the same model's measured score on a calibrated benchmark), and every estimate carries its cross-validated error and a confidence level.",
+    "contact": {
+      "url": "https://github.com/hollorol/benchgap"
+    }
+  },
+  "externalDocs": {
+    "description": "Human-readable documentation",
+    "url": "https://benchgap.net/api"
+  },
+  "servers": [
+    {
+      "url": "https://benchgap.net/api/v1"
+    }
+  ],
+  "paths": {
+    "/index.json": {
+      "get": {
+        "summary": "API entry point",
+        "description": "Build metadata, endpoint templates, confidence thresholds and capabilities.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/About"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/benchmarks.json": {
+      "get": {
+        "summary": "List benchmarks",
+        "description": "All benchmark versions.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "benchmarks"
+                      ],
+                      "properties": {
+                        "benchmarks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Benchmark"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/benchmarks/{name}/{version}.json": {
+      "get": {
+        "summary": "Get a benchmark",
+        "description": "One benchmark version with all its scores, highest first.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "benchmark",
+                        "scores"
+                      ],
+                      "properties": {
+                        "benchmark": {
+                          "$ref": "#/components/schemas/Benchmark"
+                        },
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Score"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Benchmark name",
+            "schema": {
+              "type": "string"
+            },
+            "example": "terminal-bench"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "description": "Benchmark version",
+            "schema": {
+              "type": "string"
+            },
+            "example": "4.0"
+          }
+        ]
+      }
+    },
+    "/models.json": {
+      "get": {
+        "summary": "List models",
+        "description": "All models.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "models"
+                      ],
+                      "properties": {
+                        "models": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Model"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/models/{slug}.json": {
+      "get": {
+        "summary": "Get a model",
+        "description": "One model with all its scores.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "model",
+                        "scores"
+                      ],
+                      "properties": {
+                        "model": {
+                          "$ref": "#/components/schemas/Model"
+                        },
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Score"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        },
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "description": "Model slug",
+            "schema": {
+              "type": "string"
+            },
+            "example": "gpt-6-astra-high"
+          }
+        ]
+      }
+    },
+    "/scores.json": {
+      "get": {
+        "summary": "List all scores",
+        "description": "Every measured and estimated score.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "scores"
+                      ],
+                      "properties": {
+                        "scores": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Score"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/scores.csv": {
+      "get": {
+        "summary": "All scores as CSV",
+        "description": "The scores list flattened to CSV; columns: model, model_name, provider, benchmark, benchmark_label, capability, score, source, confidence, error_pp, extrapolated, method, inputs.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/mappings.json": {
+      "get": {
+        "summary": "List calibrations",
+        "description": "The selected fitted mapping for every calibrated benchmark pair.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "mappings"
+                      ],
+                      "properties": {
+                        "mappings": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Mapping"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/mappings/{id}.json": {
+      "get": {
+        "summary": "Get a calibration",
+        "description": "One mapping with its training points, sampled curve and the estimates it produced.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "mapping",
+                        "estimates"
+                      ],
+                      "properties": {
+                        "mapping": {
+                          "$ref": "#/components/schemas/MappingDetail"
+                        },
+                        "estimates": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Score"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Mapping id (from mappings.json)",
+            "schema": {
+              "type": "string"
+            },
+            "example": "30"
+          }
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "summary": "This specification",
+        "description": "The OpenAPI 3.1 description of the API.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "About": {
+        "type": "object",
+        "description": "Present on every JSON document.",
+        "required": [
+          "api_version",
+          "generated_at"
+        ],
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "example": "v1"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data_retrieved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "harnesses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "counts": {
+            "type": "object"
+          }
+        }
+      },
+      "Benchmark": {
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "version",
+          "label",
+          "capability"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "terminal-bench/4.0",
+            "description": "Stable identifier: name/version."
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "example": "Terminal-Bench 4.0"
+          },
+          "capability": {
+            "type": "string",
+            "example": "agentic-terminal",
+            "description": "Benchmarks are only calibrated within a capability."
+          },
+          "harness": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "n_measured": {
+            "type": "integer"
+          },
+          "n_estimated": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "page": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": [
+          "slug",
+          "name",
+          "provider"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "example": "gpt-6-astra-high"
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "example": "openai"
+          },
+          "provider_name": {
+            "type": "string",
+            "example": "OpenAI"
+          },
+          "n_measured": {
+            "type": "integer"
+          },
+          "n_estimated": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "page": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "Score": {
+        "type": "object",
+        "required": [
+          "model",
+          "benchmark",
+          "score",
+          "source",
+          "estimate"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model slug."
+          },
+          "benchmark": {
+            "type": "string",
+            "description": "Benchmark key."
+          },
+          "score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Fraction in [0, 1]; multiply by 100 for percent."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "measured",
+              "estimated"
+            ]
+          },
+          "estimate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Estimate"
+              }
+            ],
+            "description": "null for measured scores."
+          }
+        }
+      },
+      "Estimate": {
+        "type": "object",
+        "required": [
+          "confidence",
+          "error_pp",
+          "inputs"
+        ],
+        "properties": {
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "error_pp": {
+            "type": "number",
+            "description": "Leave-one-out cross-validated RMSE of the mapping, percentage points."
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Why the confidence is not high (empty when it is)."
+          },
+          "extrapolated": {
+            "type": "boolean"
+          },
+          "method": {
+            "type": "string",
+            "example": "mm_offset"
+          },
+          "method_name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "univariate",
+              "multivariate"
+            ]
+          },
+          "mapping_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "inputs": {
+            "type": "array",
+            "description": "The model's measured scores the estimate was computed from.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "benchmark": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "Mapping": {
+        "type": "object",
+        "required": [
+          "id",
+          "from",
+          "to",
+          "method"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "from": {
+            "type": "string",
+            "description": "Source benchmark key."
+          },
+          "to": {
+            "type": "string",
+            "description": "Target benchmark key."
+          },
+          "method": {
+            "type": "string"
+          },
+          "method_name": {
+            "type": "string"
+          },
+          "equation": {
+            "type": "string",
+            "description": "Fitted curve, x and y as fractions."
+          },
+          "n_models": {
+            "type": "integer"
+          },
+          "r2": {
+            "type": "number"
+          },
+          "rmse_pp": {
+            "type": "number"
+          },
+          "loo_rmse_pp": {
+            "type": "number"
+          },
+          "train_range": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "description": "[min, max] of source scores it was fitted on."
+          },
+          "n_estimates": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "page": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "MappingDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Mapping"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "points": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string"
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
+                }
+              },
+              "curve": {
+                "type": "array",
+                "description": "Sampled fitted curve as [x, y] pairs.",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

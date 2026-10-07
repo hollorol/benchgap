@@ -129,7 +129,7 @@ def mapping_summary(conn: sqlite3.Connection) -> list[dict]:
 def best_mappings(conn: sqlite3.Connection) -> list[dict]:
     """Best mapping per ordered version pair, with version ids for matrices."""
     rows = conn.execute(
-        "SELECT m.from_version_id, m.to_version_id, m.method, m.n_points,"
+        "SELECT m.id, m.from_version_id, m.to_version_id, m.method, m.n_points,"
         "       json_extract(m.metrics_json, '$.R2') AS r2,"
         "       json_extract(m.metrics_json, '$.LOO_RMSE') AS loo_rmse"
         " FROM mappings m"
@@ -143,6 +143,7 @@ def best_mappings(conn: sqlite3.Connection) -> list[dict]:
     ).fetchall()
     return [
         {
+            "id": r["id"],
             "from_version_id": r["from_version_id"],
             "to_version_id": r["to_version_id"],
             "method": r["method"],
