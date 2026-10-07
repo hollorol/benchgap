@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 data/benchgap.db
 data/*.db
+data/report.html

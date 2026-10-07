@@ -35,6 +35,7 @@ Deterministic least-squares today; probabilistic fitters later - see
 │   ├── fit.py               # fit mappings for all version pairs with paired data
 │   ├── gapfill.py           # predict + store missing scores (source='gapfilled')
 │   ├── report.py            # mapping summary, score matrix
+│   ├── html_report.py       # self-contained HTML report (matplotlib, base64 PNGs)
 │   └── cli.py               # command-line interface
 └── tests/
 ```
@@ -47,10 +48,18 @@ benchgap init                              # create data/benchgap.db
 benchgap ingest                            # load data/seed/scores.csv
 benchgap fit -v                            # fit mappings (shows all candidates)
 benchgap gapfill                           # fill missing scores
-benchgap report                            # mapping summary + score matrix
+benchgap report                            # mapping summary + score matrix (terminal)
+benchgap html                              # self-contained HTML report -> data/report.html
 benchgap predict terminal-bench/4.0 terminal-bench/2.1 59.6
 pytest                                      # run the test suite
 ```
+
+The HTML report (`benchgap html`, needs the `report` extra: `pip install
+".[report]"`) is a single self-contained file: database stats, mapping
+summary, per-mapping fit figures (paired scores, all candidate curves,
+residuals, gapfilled points marked), and the full score matrix with
+gapfilled cells highlighted. Charts are embedded as base64 PNGs, so the
+file works offline and can be shared as-is.
 
 Run `benchgap` from the repository root (paths are relative to the working
 directory); pass `--db` to use a different database file.

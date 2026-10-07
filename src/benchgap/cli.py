@@ -85,6 +85,14 @@ def cmd_report(args: argparse.Namespace) -> None:
     print(render_matrix(conn))
 
 
+def cmd_html(args: argparse.Namespace) -> None:
+    from .html_report import generate_html_report
+
+    conn = _conn(args)
+    out = generate_html_report(conn, args.output)
+    print(f"wrote {out}")
+
+
 def cmd_predict(args: argparse.Namespace) -> None:
     conn = _conn(args)
     src = parse_version_spec(conn, args.from_version)
@@ -145,6 +153,12 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("report", help="show mappings and the score matrix").set_defaults(
         func=cmd_report
     )
+
+    html = sub.add_parser("html", help="write a self-contained HTML report")
+    html.add_argument(
+        "output", default="data/report.html", nargs="?", help="output HTML path"
+    )
+    html.set_defaults(func=cmd_html)
 
     pred = sub.add_parser(
         "predict", help="map a score between two versions (fractions or percent)"
