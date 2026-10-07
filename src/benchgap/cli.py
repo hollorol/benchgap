@@ -33,6 +33,8 @@ def _conn(args: argparse.Namespace) -> sqlite3.Connection:
 
 
 JOBS_HELP = "processes to fit on (default 0: every core; 1: no parallelism)"
+CACHE_HELP = "directory to keep fit results in between runs; unchanged fits are reused"
+
 
 def cmd_init(args: argparse.Namespace) -> None:
     conn = connect(args.db)
@@ -47,8 +49,12 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 
 
 def cmd_fit(args: argparse.Namespace) -> None:
+    from .cache import FitCache
+
     conn = _conn(args)
-    summary = fit_mappings(conn, keep=args.keep, jobs=args.jobs)
+    cache = FitCache(args.cache, "fit")
+    summary = fit_mappings(conn, keep=args.keep, jobs=args.jobs, cache=cache)
+    cache.save()
     if not summary:
         print("no version pairs with enough paired models to fit")
         return
@@ -69,6 +75,8 @@ def cmd_fit(args: argparse.Namespace) -> None:
                     f"    {method:<10} R2={m['R2']:.3f}"
                     f" LOO RMSE={m['LOO_RMSE'] * 100:.2f} pp"
                 )
+    kept = sum(1 for s in summary if not s.get("rejected"))
+    print(f"fitted {len(summary)} version pairs, kept {kept} mappings" + (f" ({cache.stats()})" if args.cache else ""))
 
 
 def cmd_gapfill(args: argparse.Namespace) -> None:
@@ -84,11 +92,14 @@ def cmd_gapfill(args: argparse.Namespace) -> None:
 
 
 def cmd_multifit(args: argparse.Namespace) -> None:
+    from .cache import FitCache
     from .fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2
     from .multivariate import fit_multimappings
 
     conn = _conn(args)
-    summary = fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE, jobs=args.jobs)
+    cache = FitCache(args.cache, "multifit")
+    summary = fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE, jobs=args.jobs, cache=cache)
+    cache.save()
     if not summary:
         print("no targets with enough same-capability overlap for multivariate fits")
         return
@@ -100,6 +111,8 @@ def cmd_multifit(args: argparse.Namespace) -> None:
             f"{s['target']} <- {s['features']}: {s['method']}"
             f" (n={s['n']}, R2={s['R2']:.3f}, LOO RMSE {s['LOO_RMSE'] * 100:.2f} pp)"
         )
+    kept = sum(1 for s in summary if not s.get("rejected"))
+    print(f"searched {len(summary)} targets, kept {kept} multivariate mappings" + (f" ({cache.stats()})" if args.cache else ""))
 
 
 def cmd_report(args: argparse.Namespace) -> None:
@@ -215,6 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     fit.add_argument("-v", "--verbose", action="store_true", help="show all candidates")
     fit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
+    fit.add_argument("--cache", metavar="DIR", help=CACHE_HELP)
     fit.set_defaults(func=cmd_fit)
 
     sub.add_parser("gapfill", help="fill missing scores using fitted mappings").set_defaults(
@@ -227,6 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
         " per target; gapfill prefers them when available",
     )
     mfit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
+    mfit.add_argument("--cache", metavar="DIR", help=CACHE_HELP)
     mfit.set_defaults(func=cmd_multifit)
 
     rep = sub.add_parser("report", help="show mappings and the score matrix")
@@ -259,8 +274,8 @@ def build_parser() -> argparse.ArgumentParser:
     pred = sub.add_parser(
         "predict", help="map a score between two versions (fractions or percent)"
     )
-    pred.add_argument("from_version", help="e.g. terminal-bench/4.0")
-    pred.add_argument("to_version", help="e.g. terminal-bench/2.1")
+    pred.add_argument("from_version", help="e.g. terminal-bench-4/current")
+    pred.add_argument("to_version", help="e.g. aa-terminal-bench4/current")
     pred.add_argument("value", type=float, help="score on the source version")
     pred.set_defaults(func=cmd_predict)
     return p

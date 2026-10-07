@@ -17,6 +17,7 @@
 
   const DATA_URL = "/data/benchgap.json";
   const REPO_URL = "https://github.com/hollorol/benchgap";
+  // the home page's leaderboard (src/Pages.php DEFAULT_BENCH); ix.home falls back if the data has no such listed benchmark
   const DEFAULT_BENCH = "terminal-bench-4/current";
   // the ledes below are also on the pages serve.php renders (src/Pages.php): keep the two in step
   const ABOUT = "benchgap is an LLM benchmark leaderboard that fills in the missing scores. Most models are only "
@@ -68,6 +69,8 @@
     ix.byModel = groupBy(D.scores, (s) => s.m);
     // the site shows only what the backend lists (Snapshot::LISTED); counts come listed already
     ix.listed = D.benchmarks.filter((b) => b.listed);
+    ix.home = ix.listed.some((b) => b.key === DEFAULT_BENCH) || !ix.listed.length
+      ? DEFAULT_BENCH : ix.listed.reduce((x, y) => (y.n_measured > x.n_measured ? y : x)).key;
     ix.benchesByCap = D.capabilities
       .map((c) => ({ cap: c, benches: ix.listed.filter((b) => b.capability === c.id) }))
       .filter(({ benches }) => benches.length);
@@ -403,7 +406,7 @@
   function renderBoard(key) {
     const b = ix.benchByKey.get(key);
     if (!b) return renderNotFound(`No benchmark “${esc(key)}”.`);
-    if (key === DEFAULT_BENCH) setMeta("LLM Benchmark Leaderboard with Estimated Scores",
+    if (key === ix.home) setMeta("LLM Benchmark Leaderboard with Estimated Scores",
       "LLM benchmark scores: measured where available, estimated where missing, with every estimate's error and confidence.", "/");
     else setMeta(`${b.label} leaderboard`, `${b.label} leaderboard: ${b.n_measured} measured and ${b.n_estimated} estimated LLM scores, each estimate with its error and confidence.`);
     if ($("#board-sec")) {
@@ -1050,7 +1053,7 @@
   const API_FIELDS = {
     Score: [
       ["model", "string", "Model slug, e.g. <code>gpt-6-astra</code>."],
-      ["benchmark", "string", `Benchmark key <code>name/version</code>, e.g. <code>${DEFAULT_BENCH}</code>.`],
+      ["benchmark", "string", `Benchmark key <code>name/version</code>, e.g. <code>${ix.home}</code>.`],
       ["score", "number", "Fraction in [0, 1]. Multiply by 100 for percent."],
       ["source", '"measured" | "estimated"', "Measured scores come from a public leaderboard; estimates are predictions."],
       ["estimate", "Estimate | null", "Present only for estimated scores."],
@@ -1122,10 +1125,10 @@
 
   function codeSamples(base) {
     return {
-      curl: `curl ${base}benchmarks/${DEFAULT_BENCH}.json`,
+      curl: `curl ${base}benchmarks/${ix.home}.json`,
       Python: `import requests
 
-data = requests.get("${base}benchmarks/${DEFAULT_BENCH}.json").json()
+data = requests.get("${base}benchmarks/${ix.home}.json").json()
 for s in data["scores"]:
     est = s["estimate"]
     if est and est["confidence"] == "low":
@@ -1154,7 +1157,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
       ["Models", D.models.map((m) => `models/${m.slug}.json`)],
       ["Calibrations", D.mappings.slice().sort((a, b) => a.id - b.id).map((m) => `mappings/${m.id}.json`)],
     ];
-    const tryDefault = `benchmarks/${DEFAULT_BENCH}.json`;
+    const tryDefault = `benchmarks/${ix.home}.json`;
     const fieldTable = (name) => `<div class="card api-obj"><h3 class="h3">${name}</h3><table class="list"><tbody>${API_FIELDS[name]
       .map(([f, t, d]) => `<tr><td class="mono">${f}</td><td class="mono muted">${esc(t)}</td><td>${d}</td></tr>`)
       .join("")}</tbody></table></div>`;
@@ -1275,7 +1278,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
   // the site's pages (keep in step with serve.php): path, nav item, renderer of the path's
   // argument; a renderer sets the page's meta and returns true if it updated the page in place
   const PAGES = [
-    [/^\/$/, "board", () => renderBoard(DEFAULT_BENCH)],
+    [/^\/$/, "board", () => renderBoard(ix.home)],
     [/^\/b\/(.+)$/, "board", renderBoard],
     [/^\/model\/(.+)$/, "", renderModel],
     [/^\/matrix$/, "matrix", renderMatrix],

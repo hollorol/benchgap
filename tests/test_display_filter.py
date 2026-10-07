@@ -42,13 +42,13 @@ def test_sparse_benchmarks_and_thin_models_hidden(gapfilled_db):
     shown_labels = {labels[v] for v in vids}
     # benchmarks with only a handful of measured models drop out
     for hidden in (
-        "mmlu-pro/1.0",
-        "global-mmlu-lite/1.0",
-        "math-500/1.0",
-        "aime-2025/2025",
-        "livecodebench/1.0",
-        "terminal-bench-hard/1.0",
-        "ifbench/1.0",
+        "aa-mmlu-pro/current",
+        "aa-global-mmlu-lite/current",
+        "aa-math500/current",
+        "aa-aime2025/current",
+        "aa-live-code-bench/current",
+        "terminal-bench-hard/current",
+        "terminal-bench-science/current",
     ):
         assert hidden not in shown_labels
     # models measured on very few benchmarks drop out
@@ -57,11 +57,11 @@ def test_sparse_benchmarks_and_thin_models_hidden(gapfilled_db):
         for r in gapfilled_db.execute("SELECT id, slug FROM models")
         if r["id"] in mids
     }
-    assert "claude-4-sonnet" not in shown_models
+    assert "claude-3-opus" not in shown_models
     # the dense frontier stays
-    assert "terminal-bench/4.0" in shown_labels
-    assert "hle/1.0" in shown_labels
-    assert "claude-fable-5-1-max-with-fallback" in shown_models
+    assert "aa-terminal-bench4/current" in shown_labels
+    assert "aa-hle/current" in shown_labels
+    assert "minimax-m3" in shown_models
 
 
 def test_zero_thresholds_show_everything(gapfilled_db):
@@ -77,7 +77,7 @@ def test_matrices_respect_the_filter(gapfilled_db):
     assert len(rows) == len(mids)
     # the unfiltered call still shows everything
     all_cols, all_rows = score_matrix(gapfilled_db)
-    assert len(all_cols) == 24 and len(all_rows) == 85
+    assert len(all_cols) == 20 and len(all_rows) == 206
 
     vers, cells = predictability_matrix(gapfilled_db, vids)
     assert len(vers) == len(vids)

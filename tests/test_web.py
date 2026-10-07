@@ -1,6 +1,6 @@
 """Tests for the website backend (web/serve.php) on the test database.
 
-They need PHP with pdo_sqlite and web/vendor (composer install in web/);
+They need PHP (with PDO SQLite, for the test database) and web/vendor (composer install in web/);
 without them they are skipped.
 """
 from __future__ import annotations
@@ -132,18 +132,27 @@ def test_curves_match_python():
         assert equation == CANDIDATES[method].equation.format(**p), method
 
 
-def test_site_data_matches_database(server, gapfilled_db):
+def test_site_data_matches_database(server, gapfilled_db, writable_db):
     headers, body = get(server, "/data/benchgap.json")
     assert headers["Content-Type"].startswith("application/json")
     data = json.loads(body)
     c = data["meta"]["counts"]
+    # the site lists the benchmarks with an estimate and enough models; its counts are of those
+    listed = {b["id"] for b in data["benchmarks"] if b["listed"]}
+    assert listed and listed == {
+        b["id"] for b in data["benchmarks"] if b["n_estimated"] >= 1 and b["n_measured"] + b["n_estimated"] >= 10
+    }
+    assert c["benchmarks"] == len(listed)
+    marks = ",".join("?" * len(listed))
     count = lambda source: gapfilled_db.execute(
-        "SELECT COUNT(*) FROM scores WHERE source = ?", (source,)
+        f"SELECT COUNT(*) FROM scores WHERE source = ? AND version_id IN ({marks})", (source, *listed)
     ).fetchone()[0]
     assert c["measured"] == count("measured")
     assert c["estimated"] == count("gapfilled") == sum(c["confidence"].values()) > 0
     assert c["confidence"]["high"] > 0 and c["confidence"]["low"] > 0
-    dense_versions, dense_models = report.display_filter(gapfilled_db)
+    # the dense core is the display filter's, over the listed benchmarks' scores
+    writable_db.execute(f"DELETE FROM scores WHERE version_id NOT IN ({marks})", tuple(listed))
+    dense_versions, dense_models = report.display_filter(writable_db)
     assert {b["id"] for b in data["benchmarks"] if b["dense"]} == dense_versions
     assert {m["id"] for m in data["models"] if m["dense"]} == dense_models
     best = {m["id"] for m in report.best_mappings(gapfilled_db)}
@@ -166,7 +175,8 @@ def test_api(server):
     assert detail["mapping"]["points"] and detail["mapping"]["curve"]
     headers, csv_text = get(server, "/api/v1/scores.csv")
     assert headers["Content-Type"].startswith("text/csv")
-    assert len(csv_text.strip().splitlines()) == index["counts"]["measured"] + index["counts"]["estimated"] + 1
+    # the API serves every score, listed benchmark or not
+    assert len(csv_text.strip().splitlines()) == len(get_json(server, "/api/v1/scores.json")["scores"]) + 1
     for path in ["/api/v1/models/no-such-model.json", "/api/v1/mappings/999999.json", "/api/v1/nope"]:
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)
@@ -193,7 +203,7 @@ def test_pages_and_sitemap(server):
         "/api": "Public API",
         "/calibration": "LLM benchmark calibrations",
         f"/calibration/{mapping['id']}": "calibration",
-        "/b/terminal-bench/2.1": "Terminal-Bench 2.1 leaderboard",
+        "/b/aa-terminal-bench21/current": "AA Terminal-Bench 2.1 leaderboard",
         f"/model/{model['slug']}": f"{model['name']} benchmark scores",
     }
     for path, title in pages.items():
@@ -202,8 +212,8 @@ def test_pages_and_sitemap(server):
         assert re.search(rf"<title>[^<]*{re.escape(title)} · benchgap</title>", body), path
         assert f'<link rel="canonical" href="https://benchgap.net{path}">' in body, path
         assert '<main id="main" class="wrap" tabindex="-1"><div class="page">' in body, path
-    _, board = get(server, "/b/terminal-bench/2.1")
-    assert "the highest measured score on Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]
+    _, board = get(server, "/b/aa-terminal-bench21/current")
+    assert "the highest measured score on AA Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]
     assert model["page"] == f"https://benchgap.net/model/{model['slug']}"
     for path in ["/b/no-such/benchmark", "/model/no-such-model", "/calibration/999999", "/no-such-page"]:
         with pytest.raises(urllib.error.HTTPError) as err:
@@ -221,9 +231,10 @@ def test_pages_and_sitemap(server):
 def test_llms_txt(server):
     headers, llms = get(server, "/llms.txt")
     assert headers["Content-Type"].startswith("text/markdown") and llms.startswith("# benchgap\n\n> benchgap is")
-    benchmarks = get_json(server, "/api/v1/benchmarks.json")["benchmarks"]
+    benchmarks = [b for b in get_json(server, "/api/v1/benchmarks.json")["benchmarks"] if b["listed"]]
     assert all(f"]({b['page']})" in llms for b in benchmarks)
     _, full = get(server, "/llms-full.txt")
     assert all(f"\n## {b['label']}\n" in full for b in benchmarks)
-    scores = get_json(server, "/api/v1/scores.json")["scores"]
+    keys = {b["key"] for b in benchmarks}
+    scores = [s for s in get_json(server, "/api/v1/scores.json")["scores"] if s["benchmark"] in keys]
     assert full.count("\n| ") - full.count("\n| # |") == len(scores)

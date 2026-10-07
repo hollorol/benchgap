@@ -23,6 +23,7 @@ import sqlite3
 import numpy as np
 from scipy.optimize import curve_fit
 
+from .cache import FitCache, fit_key
 from .fitting import _loo_indices
 from .parallel import pmap
 
@@ -197,15 +198,41 @@ def _training_set(
 
 
 # what each worker's searches read: its own connection to the database (sqlite3 connections
-# can't be shared across processes), the benchmark versions and the minimum overlap
+# can't be shared across processes), the benchmark versions, the minimum overlap and the
+# earlier runs' fits (FitCache); "used" collects the fits of the target being searched
 _worker: dict = {}
 
 
-def _init(db: str | sqlite3.Connection, versions: list[dict], min_pairs: int) -> None:
+def _init(db: str | sqlite3.Connection, versions: list[dict], min_pairs: int, earlier: dict) -> None:
     """A worker's state: ``db`` is the database's path, or in this process its open connection."""
     from .db import connect  # local import to avoid a cycle
 
-    _worker.update(conn=connect(db, readonly=True) if isinstance(db, str) else db, versions=versions, min_pairs=min_pairs)
+    _worker.update(
+        conn=connect(db, readonly=True) if isinstance(db, str) else db,
+        versions=versions, min_pairs=min_pairs, earlier=earlier,
+    )
+
+
+def _fit_scored(method: str, X: np.ndarray, y: np.ndarray) -> list | None:
+    """[params, metrics] of ``method`` on (X, y), or None if it does not fit; from the cache if it has them."""
+    key = fit_key(method, X, y)
+    used = _worker["used"]
+    if key not in used:
+        if key in _worker["earlier"]:
+            used[key] = _worker["earlier"][key]
+        else:
+            try:
+                params = fit_mv(method, X, y)
+                used[key] = [params, mv_metrics(method, params, X, y)]
+            except (RuntimeError, np.linalg.LinAlgError, ValueError):
+                used[key] = None
+    return used[key]
+
+
+def _search_cached(target: dict) -> tuple[dict | None, dict]:
+    """_search's result and the fits it used (for the cache)."""
+    _worker["used"] = {}
+    return _search(target), _worker["used"]
 
 
 def _search(target: dict) -> dict | None:
@@ -233,11 +260,10 @@ def _search(target: dict) -> dict | None:
             if len(y) < _min_train(min_pairs, len(fids)):
                 continue
             for method in MV_CANDIDATES:
-                try:
-                    params = fit_mv(method, X, y)
-                    metrics = mv_metrics(method, params, X, y)
-                except (RuntimeError, np.linalg.LinAlgError, ValueError):
+                fitted = _fit_scored(method, X, y)
+                if fitted is None:
                     continue
+                params, metrics = fitted
                 loo = metrics.get("LOO_RMSE")
                 if loo is None or not np.isfinite(loo):
                     continue
@@ -266,11 +292,13 @@ def fit_multimappings(
     min_r2: float,
     max_loo_rmse: float,
     jobs: int | None = None,
+    cache: FitCache | None = None,
 ) -> list[dict]:
     """Greedy per-target multivariate fits; returns a summary list.
 
     The targets' feature searches run on ``jobs`` processes (default: every
-    core), each reading the database through its own connection.
+    core), each reading the database through its own connection; a fit whose
+    training data is in ``cache`` is reused.
     """
     versions = [
         dict(r)
@@ -284,7 +312,13 @@ def fit_multimappings(
     conn.commit()  # the workers read the committed database
     path = conn.execute("PRAGMA database_list").fetchone()[2]
     # an in-memory database (no path) exists only in this process
-    searched = pmap(_search, versions, jobs if path else 1, _init, (path or conn, versions, min_pairs))
+    cache = cache or FitCache(None, "multifit")
+    searched = []
+    for best, used in pmap(
+        _search_cached, versions, jobs if path else 1, _init, (path or conn, versions, min_pairs, cache.earlier)
+    ):
+        searched.append(best)
+        cache.used.update(used)
     summary = []
     for target, best in zip(versions, searched):
         if best is None or len(best["features"]) < 2:

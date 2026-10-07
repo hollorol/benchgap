@@ -91,7 +91,7 @@ $app->get('/llms.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(ap
 $app->get('/llms-full.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llmsFull(), 'text/markdown'));
 
 // the site's pages (keep in step with app.js PAGES)
-$app->get('/', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->board(Pages::DEFAULT_BENCH)));
+$app->get('/', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->board($p->home())));
 $app->get('/b/{key:.+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->board($a['key'])));
 $app->get('/model/{slug:.+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->model($a['slug'])));
 $app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->matrix()));

@@ -5,6 +5,7 @@ The missing half of every LLM leaderboard.</p>
 
 <p align="center">
   <a href="https://github.com/hollorol/benchgap/actions/workflows/deploy.yml"><img alt="Deploy" src="https://github.com/hollorol/benchgap/actions/workflows/deploy.yml/badge.svg"></a>
+  <a href="https://github.com/hollorol/benchgap/actions/workflows/update-data.yml"><img alt="Update the data" src="https://github.com/hollorol/benchgap/actions/workflows/update-data.yml/badge.svg"></a>
   <a href="https://benchgap.net"><img alt="Live: benchgap.net" src="https://img.shields.io/badge/live-benchgap.net-c2410c"></a>
   <a href="https://benchgap.net/api"><img alt="API: OpenAPI 3.1" src="https://img.shields.io/badge/API-OpenAPI%203.1-0f7b55"></a>
   <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
@@ -32,10 +33,10 @@ y = y0 + Vmax * x / (K + x)
 
 fits far better (LOO-CV RMSE ~4 pp on the paired models) than linear or
 quadratic alternatives. benchgap generalizes that to a multi-benchmark
-database (24 Artificial Analysis evaluation leaderboards at seed time),
-with mapping candidates fitted per version pair, model selection by
-leave-one-out cross-validation, and gapfilled scores stored with full
-provenance.
+database (every percentage-scale benchmark in the [BenchLM.ai](https://benchlm.ai/data)
+data, refreshed daily), with mapping candidates fitted per version pair, model
+selection by leave-one-out cross-validation, and gapfilled scores stored with
+full provenance.
 
 Deterministic least-squares today; probabilistic fitters later - see
 "Probabilistic roadmap".
@@ -45,17 +46,20 @@ Deterministic least-squares today; probabilistic fitters later - see
 ```
 benchgap/
 ├── data/
-│   ├── raw/                 # source extracts from the original analysis session (provenance)
-│   ├── aa_scores.json       # Artificial Analysis leaderboard snapshot (24 evaluations, 85 models)
-│   ├── seed/scores.csv      # canonical long-format seed (scripts/build_seed.py)
+│   ├── benchlm/             # BenchLM's data files (downloaded, not committed)
+│   ├── seed/scores.csv      # long-format seed (scripts/build_seed.py; not committed)
 │   └── benchgap.db          # the database the pipeline builds (init … gapfill)
-├── scripts/build_seed.py    # regenerates data/seed/scores.csv from aa_scores.json
+├── scripts/
+│   ├── build_seed.py        # downloads BenchLM's data, writes data/seed/scores.csv
+│   └── load_database.sh     # publishes a build on the server (update-data.yml)
 ├── src/benchgap/
 │   ├── db.py                # schema + data access (capability, unit, multi-mappings)
 │   ├── ingest.py            # seed CSV -> database
 │   ├── fitting.py           # monotone univariate candidates, fit, LOO-CV, selection
 │   ├── fit.py               # capability-aware mapping fits + quality gate
 │   ├── multivariate.py      # multivariate mappings (ridge + multivariate MM)
+│   ├── parallel.py          # independent fits on every core
+│   ├── cache.py             # fit results reused between runs (--cache)
 │   ├── gapfill.py           # predict + store missing scores (source='gapfilled')
 │   ├── report.py            # mapping summaries, score matrix
 │   ├── html_report.py       # self-contained HTML report (matplotlib, base64 PNGs)
@@ -65,31 +69,32 @@ benchgap/
 │   ├── serve.php            # Slim 4 backend: pages, site data, public API, llms.txt
 │   ├── src/                 # Snapshot.php (site data, confidence levels), Api.php, Pages.php, Curves.php
 │   └── api/v1/openapi.json  # OpenAPI 3.1 description of the API
-├── .github/workflows/       # upload web/ to benchgap.net on every push to main
-└── tests/
+├── .github/workflows/       # deploy web/ on every push to main; refresh the data daily
+└── tests/                   # pytest; data/seed.csv is a fixed BenchLM subset
 ```
 
 ## Usage
 
 ```bash
 uv venv && uv pip install -e ".[dev]"     # or: pip install -e ".[dev]"
+python scripts/build_seed.py --fetch       # download BenchLM's newest results -> data/seed/scores.csv
 benchgap init                              # create data/benchgap.db
 benchgap ingest                            # load data/seed/scores.csv
-benchgap fit -v                            # fit univariate mappings per version pair
+benchgap fit -v                            # fit univariate mappings per version pair (every core; -j N)
 benchgap multifit                          # fit multivariate mappings per target
+benchgap fit --cache .fit-cache            # reuse the fits whose data did not change since the last run
 benchgap gapfill                           # fill missing scores (prefers multi where it wins)
 benchgap report                            # dense-core score matrix (terminal)
 benchgap html                               # self-contained HTML report -> data/report.html
-benchgap predict terminal-bench/4.0 terminal-bench/2.1 59.6
+benchgap predict terminal-bench-4/current aa-terminal-bench4/current 59.6
 benchgap report --min-models 12 --min-benchmarks 5   # denser view (0 disables filtering)
-pytest                                      # run the test suite
+pytest                                      # run the tests (~20 s; tests/data/seed.csv)
 ```
 
 The matrices show a **dense-core view** by default: benchmark versions with
 fewer than `--min-models` (default 8) measured models and models measured on
 fewer than `--min-benchmarks` (default 3) benchmarks are peeled iteratively
-until both thresholds hold, which minimizes empty cells (12% dashes at the
-defaults, ~60% unfiltered). This is display-only - the database, mappings,
+until both thresholds hold, which minimizes empty cells. This is display-only - the database, mappings,
 gapfill, and all other report sections keep the full dataset; pass 0 for
 either threshold to see everything.
 
@@ -104,6 +109,11 @@ residuals, gapfilled points marked), and the full score matrix with
 gapfilled cells highlighted. Charts are embedded as base64 PNGs, so the
 file works offline and can be shared as-is.
 
+The tests run on `tests/data/seed.csv`, a fixed 20-benchmark subset of the
+BenchLM data, so they stay fast and do not change with the daily data; the
+web tests need PHP and `web/vendor` (`composer install --working-dir web`).
+The deploy workflow runs them before every upload.
+
 Run `benchgap` from the repository root (paths are relative to the working
 directory); pass `--db` to use a different database file.
 
@@ -113,7 +123,10 @@ directory); pass `--db` to use a different database file.
 and a small [Slim 4](https://www.slimframework.com/) backend (`serve.php`)
 that computes the site's data and the public API from the benchgap database.
 Every push to `main` deploys `web/`
-(`.github/workflows/deploy.yml`).
+(`.github/workflows/deploy.yml`), and every day `.github/workflows/update-data.yml`
+downloads BenchLM's newest results, recomputes every calibration and estimate,
+and publishes them; pages, the API and llms.txt show the new data and its
+dates right away. Run it by hand with `gh workflow run update-data.yml`.
 
 Pages: per-benchmark leaderboards, the full score matrix, a page per
 model, the calibration (predictability) matrix with a scatter + fitted
@@ -204,18 +217,18 @@ no mapping, so their gaps stay gaps instead of being filled with noise.
 
 Warnings the pipeline tracks: predictions outside the training x-range are
 flagged `extrapolated` in `prediction_json` and in the `predict` CLI
-output. Mapping coefficients are harness-specific - the seed comes from the
-Artificial Analysis harness, not the official leaderboards.
+output. Mapping coefficients are harness-specific: each benchmark version
+records whose run it is (`artificial-analysis`, `vals-ai` or `published`).
 
 ## Adding benchmarks
 
-Append rows to `data/seed/scores.csv` (or ingest any CSV with the same
-columns): `model_slug, model_name, benchmark, version, capability, unit,
-harness, score, source_url, retrieved_at`. Then rerun `fit` and `gapfill` -
-mappings are fitted automatically for every same-capability version pair
-with at least 5 paired models. To refresh the Artificial Analysis snapshot,
-re-fetch the evaluation pages listed in `scripts/build_seed.py` and update
-`data/aa_scores.json`.
+New BenchLM benchmarks arrive with the daily update; `scripts/build_seed.py`
+sets each one's capability (`CAPABILITIES`) and which ones the leaderboard
+picker shows first (`FEATURED`). Any CSV with the seed's columns can be
+ingested too: `model_slug, model_name, release, benchmark, version, label,
+featured, capability, unit, harness, score, source_url, retrieved_at`. Then
+rerun `fit`, `multifit` and `gapfill`: mappings are fitted automatically for
+every same-capability version pair with at least 5 paired models.
 
 ## Probabilistic roadmap
 
@@ -238,23 +251,13 @@ the deterministic one without migration:
 
 ## Sources
 
-- Artificial Analysis evaluation leaderboards
-  (https://artificialanalysis.ai/evaluations/...), retrieved 2026-10-07:
-  Terminal-Bench 2.1/4.0/Hard/Science, GPQA Diamond, MMLU-Pro,
-  Global-MMLU-Lite, Humanity's Last Exam, CritPt, MATH-500, AIME 2025,
-  LiveCodeBench, SciCode, tau-Bench (telecom + banking), AutomationBench,
-  APEX-Agents, AA-AnalystAgent, EnterpriseOps-Gym, Harvey LAB, ITBench,
-  IFBench, MMMU-Pro, GDP.pdf - 24 benchmark versions, 85 models, 396
-  measured scores. Snapshot: `data/aa_scores.json`.
-- Elo-based AA benchmarks (GDPval-AA, AA-Briefcase) and login-gated ones
-  (Omniscience, CyberGym, MLCR) are excluded: their values are not in the
-  public page content.
-- Official Terminal-Bench leaderboards: https://www.tbench.ai/ (different
-  harness; see data/raw/ for the original session's extracts).
+- [BenchLM.ai](https://benchlm.ai/data) (CC BY-NC 4.0, "Data from BenchLM.ai"):
+  the measured scores of every model on every benchmark it tracks, including
+  the runs of Artificial Analysis and Vals AI and published results; each
+  benchmark's `source_url` points to its origin.
 
 ## License
 
 The code is licensed under the [MIT License](LICENSE). The benchmark data is
-collected from public leaderboards (mainly Artificial Analysis; each
-benchmark's `source_url` points to its origin) and remains under its
-sources' terms; the MIT License covers only the code.
+from BenchLM.ai under CC BY-NC 4.0 and remains under its terms; the MIT
+License covers only the code.

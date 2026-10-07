@@ -50,8 +50,8 @@ def test_html_report(gapfilled_db, tmp_path):
     assert "Predictability matrix" in html
     assert html.count('style="background:rgb(') == len(shown_maps)
     assert html.count('class="pm diag') == len(vids)
-    # the flagship mapping appears with its method tooltip
-    assert 'title="mm_offset: n=15' in html
+    # the Terminal-Bench mapping appears with its method tooltip
+    assert 'title="hill: n=12' in html
 
 
 def test_html_report_unfiltered(gapfilled_db, tmp_path):

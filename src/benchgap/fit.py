@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import asdict
 from typing import Optional
 
-from .fitting import fit_all, select_best
+from .cache import FitCache, fit_key
+from .fitting import FitResult, fit_all, select_best
 from .parallel import pmap
 
 # Minimum number of paired models required to fit a mapping.
@@ -81,8 +83,12 @@ def _store_mapping(
     return mapping_id
 
 
+def _xy(pairs: list[tuple[int, float, float]]) -> tuple[list[float], list[float]]:
+    return [p[1] for p in pairs], [p[2] for p in pairs]
+
+
 def _fit_pair(pairs: list[tuple[int, float, float]]):
-    return fit_all([p[1] for p in pairs], [p[2] for p in pairs])
+    return fit_all(*_xy(pairs))
 
 
 def fit_mappings(
@@ -90,6 +96,7 @@ def fit_mappings(
     min_pairs: int = MIN_PAIRS,
     keep: Optional[str] = "best",
     jobs: Optional[int] = None,
+    cache: Optional[FitCache] = None,
 ) -> list[dict]:
     """Fit mappings for every eligible ordered version pair.
 
@@ -101,7 +108,8 @@ def fit_mappings(
 
     ``keep`` controls what is stored: 'best' keeps only the LOO-CV-selected
     mapping per pair, 'all' keeps every candidate fit. The pairs are fitted on
-    ``jobs`` processes (default: every core). Returns a summary list.
+    ``jobs`` processes (default: every core); a pair whose paired scores are
+    in ``cache`` reuses its earlier fits. Returns a summary list.
     """
     versions = [v for v in _versions(conn) if v["unit"] == "fraction"]
     tasks = []
@@ -112,7 +120,13 @@ def fit_mappings(
             pairs = _paired_scores(conn, src["id"], dst["id"])
             if len(pairs) >= min_pairs:
                 tasks.append((src, dst, pairs))
-    fitted = pmap(_fit_pair, [t[2] for t in tasks], jobs)
+    cache = cache or FitCache(None, "fit")
+    keys = [fit_key(*_xy(t[2])) for t in tasks]
+    todo = {k: t[2] for k, t in zip(keys, tasks) if k not in cache.earlier}
+    fresh = dict(zip(todo, pmap(_fit_pair, todo.values(), jobs)))
+    fitted = [fresh[k] if k in fresh else [FitResult(**r) for r in cache.earlier[k]] for k in keys]
+    for k, results in zip(keys, fitted):
+        cache.used[k] = [asdict(r) for r in results]
 
     summary = []
     for (src, dst, pairs), results in zip(tasks, fitted):

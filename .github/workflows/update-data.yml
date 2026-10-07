@@ -1,0 +1,90 @@
+# Rebuild benchgap.net's data from BenchLM every day, or by hand from the
+# Actions tab / `gh workflow run update-data.yml`.
+#
+# Downloads BenchLM's newest results, recomputes every calibration and
+# estimate, and replaces all of the site's data on the server in one swap
+# (scripts/load_database.sh): visitors never see a half-loaded site, and every
+# page, the API and llms.txt show the new data and dates right away.
+# Fits whose training data did not change since the last run come from the fit
+# cache (identical results), so a normal day takes a minute or two instead of
+# the ~13 minutes of a cold build.
+# Repository secrets: SSH_HOST, SSH_USER, SSH_PASSWORD.
+name: Update the data
+
+on:
+  schedule:
+    - cron: "23 5 * * *"  # daily, 05:23 UTC
+  workflow_dispatch:
+
+# one update at a time; never cut one off halfway through loading
+concurrency:
+  group: update-benchgap-data
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONWARNINGS: ignore
+  # the server's SSH host key: the job refuses any other
+  HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIAAIvuWmvxKADGHRtm69C8x1WFRCW+b0Tr1kL7aX+mx
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install benchgap
+        run: uv venv --python 3.12 && uv pip install .
+
+      - name: Download BenchLM's results
+        run: .venv/bin/python scripts/build_seed.py --fetch
+
+      # the fit cache holds as long as the fitting code is unchanged
+      - name: Restore the fit cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .fit-cache
+          key: fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}-${{ github.run_id }}
+          restore-keys: fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}-
+
+      - name: Compute every calibration and estimate
+        run: |
+          db="$RUNNER_TEMP/benchgap.db"
+          bg() { .venv/bin/benchgap --db "$db" "$@"; }
+          bg init
+          bg ingest
+          bg fit --cache .fit-cache | tail -1
+          bg multifit --cache .fit-cache | tail -1
+          bg gapfill | tail -1
+          bg sql "$RUNNER_TEMP/benchgap.sql"
+          gzip -1 "$RUNNER_TEMP/benchgap.sql"
+
+      - name: Save the fit cache
+        uses: actions/cache/save@v4
+        with:
+          path: .fit-cache
+          key: fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}-${{ github.run_id }}
+
+      - name: Load it on the server
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+        # the server takes a password only; ssh asks the askpass script for it
+        run: |
+          echo "$SSH_HOST $HOST_KEY" > "$RUNNER_TEMP/known_hosts"
+          printf '#!/bin/sh\nprintf "%%s\\n" "$SSHPASS"\n' > "$RUNNER_TEMP/askpass"
+          chmod 700 "$RUNNER_TEMP/askpass"
+          SSH_ASKPASS="$RUNNER_TEMP/askpass" SSH_ASKPASS_REQUIRE=force \
+            ssh -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" -o StrictHostKeyChecking=yes \
+            -o PubkeyAuthentication=no -o PreferredAuthentications=keyboard-interactive,password \
+            "$SSH_USER@$SSH_HOST" "bash -c $(printf %q "$(cat scripts/load_database.sh)")" \
+            < "$RUNNER_TEMP/benchgap.sql.gz"

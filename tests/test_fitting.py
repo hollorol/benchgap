@@ -1,13 +1,11 @@
 """Tests for the fitting module against the reference Terminal-Bench fit.
 
-The reference values are the current seed's fitted MM+offset parameters on
-the models measured on both Terminal-Bench 2.1 and 4.0 (Artificial Analysis
-harness).
+The reference values are the test seed's fitted MM+offset parameters on the
+models measured on both Terminal-Bench 2.1 and 4.0 (Artificial Analysis's runs).
 """
 from __future__ import annotations
 
 import csv
-from pathlib import Path
 
 import numpy as np
 import pytest
@@ -22,11 +20,10 @@ from benchgap.fitting import (
     select_best,
 )
 
-REPO = Path(__file__).resolve().parent.parent
-SEED = REPO / "data" / "seed" / "scores.csv"
+from conftest import SEED
 
-# Reference fit (fraction scale) on the seed's 15 paired TB models.
-REF_MM_OFFSET = {"y0": 0.39021899226781753, "vmax": 0.5037632668567648, "k": 0.014054323955429493}
+# Reference fit (fraction scale) on the test seed's 12 paired TB models.
+REF_MM_OFFSET = {"y0": 0.4185705344255654, "vmax": 0.47644055312891176, "k": 0.01918231807066238}
 
 
 @pytest.fixture(scope="module")
@@ -34,14 +31,14 @@ def pairs():
     by_model: dict[str, dict[str, float]] = {}
     with open(SEED, newline="") as fh:
         for row in csv.DictReader(fh):
-            if row["benchmark"] == "terminal-bench":
-                by_model.setdefault(row["model_slug"], {})[row["version"]] = float(row["score"])
+            if row["benchmark"] in ("aa-terminal-bench4", "aa-terminal-bench21"):
+                by_model.setdefault(row["model_slug"], {})[row["benchmark"]] = float(row["score"])
     xs, ys = [], []
     for m in by_model.values():
-        if "2.1" in m and "4.0" in m:
-            xs.append(m["4.0"])
-            ys.append(m["2.1"])
-    assert len(xs) == 15
+        if len(m) == 2:
+            xs.append(m["aa-terminal-bench4"])
+            ys.append(m["aa-terminal-bench21"])
+    assert len(xs) == 12
     return np.array(xs), np.array(ys)
 
 
@@ -64,7 +61,7 @@ def test_hill_generalizes_mm_offset(pairs):
     hill = fit_candidate("hill", xs, ys)
     mm = fit_candidate("mm_offset", xs, ys)
     assert hill.metrics["R2"] >= mm.metrics["R2"] - 1e-9
-    assert hill.metrics["R2"] >= 0.94
+    assert hill.metrics["R2"] >= 0.97
 
 
 def test_hill_and_logistic_are_monotone_and_bounded(pairs):
@@ -95,19 +92,23 @@ def test_mm_offset_reproduces_reference(pairs):
     assert r.params["y0"] == pytest.approx(REF_MM_OFFSET["y0"], abs=5e-3)
     assert r.params["vmax"] == pytest.approx(REF_MM_OFFSET["vmax"], abs=5e-3)
     assert r.params["k"] == pytest.approx(REF_MM_OFFSET["k"], abs=5e-3)
-    assert r.metrics["R2"] == pytest.approx(0.9495, abs=1e-3)
+    assert r.metrics["R2"] == pytest.approx(0.9720, abs=1e-3)
 
 
-def test_selection_forward_picks_mm_offset(pairs):
+def test_selection_picks_lowest_loo_rmse(pairs):
     xs, ys = pairs
-    assert select_best(fit_all(xs, ys)).method == "mm_offset"
+    results = fit_all(xs, ys)
+    best = select_best(results)
+    assert best.method == "hill"
+    assert best.metrics["LOO_RMSE"] == min(r.metrics["LOO_RMSE"] for r in results)
 
 
-def test_selection_reverse_picks_inverse_mm(pairs):
-    """The reverse direction uses the inverted MM form, not an independent
-    polynomial fit."""
+def test_reverse_prefers_inverse_mm_to_mm(pairs):
+    """In the convex (reverse) direction the inverted MM form fits better than
+    a saturating MM curve."""
     xs, ys = pairs
-    assert select_best(fit_all(ys, xs)).method == "mm_offset_inv"
+    loo = {r.method: r.metrics["LOO_RMSE"] for r in fit_all(ys, xs)}
+    assert loo["mm_offset_inv"] < loo["mm_offset"]
 
 
 def test_mm_forms_are_monotone(pairs):

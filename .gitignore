@@ -7,9 +7,12 @@ __pycache__/
 
 # pipeline outputs (the database is built from data/seed; see README)
 data/*.db
-# BenchLM's data files: scripts/build_seed.py --fetch downloads them
+# BenchLM's data files and the seed built from them: scripts/build_seed.py --fetch
 data/benchlm/
+data/seed/
 data/report.html
+# fit results reused between runs (benchgap fit/multifit --cache .fit-cache)
+.fit-cache/
 dist/
 
 # website: Composer installs vendor/ (CI does it before deploying); config.php holds the MySQL credentials

@@ -2,21 +2,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
 import numpy as np
 import pytest
 
-from benchgap.db import connect, init_db
-from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2, fit_mappings
+from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2
 from benchgap.gapfill import gapfill
-from benchgap.ingest import ingest_csv
 from benchgap.multivariate import fit_multimappings, fit_mv, mv_metrics, predict_mv
 from benchgap.report import mapping_summary, multi_mapping_summary
-
-REPO = Path(__file__).resolve().parent.parent
-SEED = REPO / "data" / "seed" / "scores.csv"
-
 
 # --- model-level ---------------------------------------------------------------
 
@@ -54,71 +46,59 @@ def test_linear_mv_is_ridge_with_loo_chosen_alpha():
 
 # --- pipeline-level -------------------------------------------------------------
 
-
-@pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    conn = connect(tmp_path_factory.mktemp("mv") / "mv.db")
-    init_db(conn)
-    ingest_csv(conn, SEED)
-    fit_mappings(conn)
-    fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
-    gapfill(conn)
-    yield conn
-    conn.close()
+GDP = "aa-gdp-pdf/current@artificial-analysis"
 
 
-def test_multi_mappings_stored(built):
-    multi = multi_mapping_summary(built)
+def test_multi_mappings_stored(gapfilled_db):
+    multi = multi_mapping_summary(gapfilled_db)
     # every stored multi-mapping uses at least two source benchmarks and
-    # beat the best univariate alternative (TB 4.0's multi is rejected
-    # because hill from tb-science is better; HLE's two-feature fit wins)
+    # beat the best univariate alternative; in the test seed, GDP.pdf is
+    # predicted best from EnterpriseOps-Gym and AutomationBench together
     assert all(len(s["features"]) >= 2 for s in multi)
     by_target = {s["target"]: s for s in multi}
-    assert "hle/1.0@artificial-analysis" in by_target
-    hle = by_target["hle/1.0@artificial-analysis"]
-    assert hle["method"] == "linear_mv"
-    assert set(hle["features"]) == {
-        "critpt/1.0@artificial-analysis",
-        "gpqa/diamond@artificial-analysis",
+    gdp = by_target[GDP]
+    assert gdp["method"] == "mm_mv"
+    assert set(gdp["features"]) == {
+        "aa-enterprise-ops-gym/current@artificial-analysis",
+        "aa-automation-bench/current@artificial-analysis",
     }
 
 
-def test_multi_beats_univariate_alternatives(built):
-    multi = multi_mapping_summary(built)
-    uni = mapping_summary(built)
+def test_multi_beats_univariate_alternatives(gapfilled_db):
+    multi = multi_mapping_summary(gapfilled_db)
+    uni = mapping_summary(gapfilled_db)
     for s in multi:
         uni_loos = [u["LOO_RMSE_pp"] for u in uni if u["to"] == s["target"]]
         assert uni_loos, f"no univariate mapping for {s['target']}"
         assert s["LOO_RMSE_pp"] <= min(uni_loos) + 1e-6
 
 
-def test_gapfill_uses_multi_when_features_available(built):
-    multi_rows = built.execute(
+def test_gapfill_uses_multi_when_features_available(gapfilled_db):
+    multi_rows = gapfilled_db.execute(
         "SELECT * FROM scores WHERE source = 'gapfilled' AND multi_mapping_id IS NOT NULL"
     ).fetchall()
-    assert len(multi_rows) >= 2
+    assert multi_rows
     for r in multi_rows:
         meta = json.loads(r["prediction_json"])
         assert meta["kind"] == "multi"
         assert len(meta["input_scores"]) >= 2
         assert r["mapping_id"] is None
     # models missing a feature fall back to the univariate path even for a
-    # target that has a multi-mapping (hle has one)
-    fallback = built.execute(
+    # target that has a multi-mapping
+    fallback = gapfilled_db.execute(
         "SELECT COUNT(*) FROM scores s"
-        " JOIN models m ON m.id = s.model_id"
         " WHERE s.source = 'gapfilled' AND s.multi_mapping_id IS NULL"
-        " AND s.version_id = (SELECT id FROM benchmark_versions WHERE version = '1.0'"
-        "   AND benchmark_id = (SELECT id FROM benchmarks WHERE name = 'hle'))"
+        " AND s.version_id = (SELECT v.id FROM benchmark_versions v"
+        "   JOIN benchmarks b ON b.id = v.benchmark_id WHERE b.name = 'aa-gdp-pdf')"
     ).fetchone()[0]
-    assert fallback > 0, "expected univariate fallback predictions for hle"
+    assert fallback > 0, "expected univariate fallback predictions for GDP.pdf"
 
 
-def test_multifit_rerun_after_gapfill(built):
+def test_multifit_rerun_after_gapfill(writable_db):
     # re-running the multivariate fit must not break foreign keys: it drops
     # dependent gapfilled rows first, and gapfill re-fills afterwards
-    fit_multimappings(built, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
-    filled = gapfill(built)
+    fit_multimappings(writable_db, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
+    filled = gapfill(writable_db)
     assert len(filled) > 100
     n_multi = sum(1 for f in filled if f["kind"] == "multi")
-    assert n_multi >= 2
+    assert n_multi >= 1

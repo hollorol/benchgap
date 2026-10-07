@@ -5,5 +5,3 @@ return [
     'username' => 'benchgap',
     'password' => '',
 ];
-// or the pipeline's database file directly:
-// return ['dsn' => 'sqlite:/path/to/benchgap/data/benchgap.db'];
