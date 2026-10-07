@@ -4,7 +4,7 @@ A benchmark score database that gapfills missing scores. Models are measured
 on some benchmarks but not others; benchgap fits a mapping between benchmark
 versions from the models measured on both, then predicts the missing values.
 
-Boostrapped from a prior analysis session that calibrated Terminal-Bench v4.0
+Bootstrapped from a prior analysis session that calibrated Terminal-Bench v4.0
 scores onto the v2.1 scale and found that a Michaelis-Menten curve with offset
 
 ```
@@ -24,6 +24,7 @@ Deterministic least-squares today; probabilistic fitters later - see
 ## Layout
 
 ```
+benchgap/
 ├── data/
 │   ├── raw/                 # source extracts from the original analysis session (provenance)
 │   ├── aa_scores.json       # Artificial Analysis leaderboard snapshot (24 evaluations, 85 models)
@@ -66,7 +67,6 @@ until both thresholds hold, which minimizes empty cells (12% dashes at the
 defaults, ~60% unfiltered). This is display-only - the database, mappings,
 gapfill, and all other report sections keep the full dataset; pass 0 for
 either threshold to see everything.
-```
 
 The HTML report (`benchgap html`, needs the `report` extra: `pip install
 ".[report]"`) is a single self-contained file: database stats, mapping
