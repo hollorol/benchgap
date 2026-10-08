@@ -551,8 +551,10 @@ table.pm { border-collapse: separate; border-spacing: 2px; font: .72rem var(--mo
 .pm thead th { vertical-align: bottom; padding-bottom: .3rem; }
 .pm thead .colh { writing-mode: vertical-rl; transform: rotate(180deg); display: inline-block; max-height: 150px; }
 .pm tbody th { text-align: right; padding-right: .5rem; }
-.pm td { width: 38px; height: 30px; text-align: center; border-radius: 4px; }
-.pm td a { display: block; line-height: 30px; text-decoration: none; color: #17191e; font-weight: 600; }
+/* square cells: min-width too, or a wide table squeezes the columns with short values */
+.pm { --cell: 34px; }
+.pm td { width: var(--cell); min-width: var(--cell); height: var(--cell); padding: 0; text-align: center; border-radius: 4px; }
+.pm td a { display: block; line-height: var(--cell); text-decoration: none; color: #17191e; font-weight: 600; }
 .pm td.diag, .scale .sq.diag { background: repeating-linear-gradient(45deg, var(--rule-strong) 0 1px, transparent 1px 4px); }
 .pm td.none, .scale .sq.none { background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--rule-strong); }
 .pm td.cell:hover { outline: 2px solid var(--ink); }
@@ -574,8 +576,7 @@ table.pm { border-collapse: separate; border-spacing: 2px; font: .72rem var(--mo
   .pm-caps { flex-wrap: nowrap; margin-bottom: .9rem; }
   .pm thead th:first-child { white-space: normal; font-size: .66rem; }
   .pm tbody th { white-space: normal; max-width: 7.5rem; line-height: 1.2; }
-  .pm td { width: auto; min-width: 38px; height: 40px; }
-  .pm td a { line-height: 40px; }
+  .pm { --cell: 40px; }
   .list.maps thead { display: none; }
   /* name and error on the first line, curve · n · R² · estimates wrapping onto the second */
   .list.maps tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .4rem; padding: .65rem 0; border-bottom: 1px solid var(--rule); }

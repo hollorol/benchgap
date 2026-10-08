@@ -1,7 +1,8 @@
 """Fit results remembered between runs (``fit --cache DIR``, ``multifit --cache DIR``).
 
 A fit is a pure function of its method and its training data, so a result is
-stored under a hash of exactly those (the arrays' values, in order). A run
+stored under a hash of exactly those (the arrays' values, in order), and of
+what fits them: the fitting VERSION and numpy's and scipy's versions. A run
 whose data changed in a few places refits only those, and its results are the
 same as fitting everything again. Each run keeps only the entries it used, so
 the file never outgrows one build.
@@ -14,11 +15,16 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import scipy
+
+# bump when a change to the fitting gives different results (a refactoring keeps the cache)
+VERSION = 1
+_SEED = hashlib.sha256(f"v{VERSION} numpy {np.__version__} scipy {scipy.__version__}".encode())
 
 
 def fit_key(*parts) -> str:
     """The hash of a fit's inputs: strings (e.g. the method) and arrays of numbers."""
-    h = hashlib.sha256()
+    h = _SEED.copy()
     for p in parts:
         if isinstance(p, str):
             h.update(b"s" + p.encode())

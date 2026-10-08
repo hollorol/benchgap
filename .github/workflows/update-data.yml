@@ -7,7 +7,7 @@
 # page, the API and llms.txt show the new data and dates right away.
 # Fits whose training data did not change since the last run come from the fit
 # cache (identical results), so a normal day takes a minute or two instead of
-# the ~13 minutes of a cold build.
+# the ~20 minutes of a cold build.
 # Repository secrets: SSH_HOST, SSH_USER, SSH_PASSWORD.
 name: Update the data
 
@@ -32,7 +32,7 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
 
@@ -47,19 +47,17 @@ jobs:
       - name: Download BenchLM's results
         run: .venv/bin/python scripts/build_seed.py --fetch
 
-      # the fit cache holds as long as the fitting code is unchanged
-      - name: Name the fit cache
-        id: fit-cache
-        run: echo "key=fit-cache-${{ hashFiles('src/benchgap/fitting.py', 'src/benchgap/multivariate.py', 'src/benchgap/cache.py') }}" >> "$GITHUB_OUTPUT"
-
+      # the newest run's fits; results of another fitting version (cache.VERSION) are not reused
       - name: Restore the fit cache
         uses: actions/cache/restore@v4
         with:
           path: .fit-cache
-          key: ${{ steps.fit-cache.outputs.key }}-${{ github.run_id }}
-          restore-keys: ${{ steps.fit-cache.outputs.key }}-
+          key: fit-cache-${{ github.run_id }}
+          restore-keys: fit-cache-
 
+      # shorter than the job, so the fit cache is still saved when it runs out of time
       - name: Compute every calibration and estimate
+        timeout-minutes: 60
         run: |
           db="$RUNNER_TEMP/benchgap.db"
           bg() { .venv/bin/benchgap --db "$db" "$@"; }
@@ -71,11 +69,13 @@ jobs:
           bg sql "$RUNNER_TEMP/benchgap.sql"
           gzip -1 "$RUNNER_TEMP/benchgap.sql"
 
+      # also when a later stage fails or runs out of time: the fits done so far are kept
       - name: Save the fit cache
+        if: always() && hashFiles('.fit-cache/*.json') != ''
         uses: actions/cache/save@v4
         with:
           path: .fit-cache
-          key: ${{ steps.fit-cache.outputs.key }}-${{ github.run_id }}
+          key: fit-cache-${{ github.run_id }}
 
       - name: Load it on the server
         env:
