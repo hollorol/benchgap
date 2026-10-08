@@ -27,6 +27,7 @@ final class Pages
         '/' => ['Leaderboard', 'one benchmark at a time, measured and estimated scores ranked together'],
         '/matrix' => ['Score matrix', 'every model on every benchmark'],
         '/calibration' => ['Calibration', 'which benchmarks predict which, and how well'],
+        '/multivariate' => ['Multivariate', 'each benchmark predicted from several others together, with every model\'s cross-validated prediction'],
         '/method' => ['Method', 'how the missing scores are estimated, and when not to trust them'],
         '/api' => ['API', 'free JSON and CSV API, no key'],
     ];
@@ -248,6 +249,23 @@ final class Pages
             "/calibration/$id",
             $this->header('Calibration', "$f → $t", '<p class="lede">' . self::esc($lead) . '</p>')
             . ($rows ? $this->table(['Estimated model', $f, $t, 'Source'], $rows) : ''));
+    }
+
+    public function multivariate(): array
+    {
+        // of listed benchmarks from listed ones
+        $fits = array_filter($this->api->multivariate(), fn ($m) => isset($this->listed[$m['target']]) && !array_diff_key(array_flip($m['features']), $this->listed));
+        $rows = array_map(fn ($m) => [
+            $this->link($this->benchmarks[$m['target']]) . ' ~ ' . implode(' + ', array_map(fn ($f) => $this->link($this->benchmarks[$f]), $m['features'])),
+            self::esc($m['method_name']), $m['n_models'], number_format($m['loo_rmse_pp'], 1) . ' pp',
+            $m['alone_loo_rmse_pp'] === null ? '—' : number_format($m['alone_loo_rmse_pp'], 1) . ' pp',
+        ], $fits);
+        return $this->result('Multivariate LLM benchmark predictions',
+            'Each LLM benchmark predicted from several others together, of any capability: the fitted model, its cross-validated error and every prediction.', '/multivariate',
+            $this->header('Multivariate', 'Each benchmark from several others',
+                '<p class="lede">For each benchmark, two or three others of any capability are picked greedily by leave-one-out error '
+                . 'and combined in one fit. Shown for analysis: the estimates come from the calibrations.</p>')
+            . $this->table(['Model', 'Fit', 'Models', 'Error', 'Best one alone'], $rows));
     }
 
     public function methodPage(): array

@@ -152,6 +152,7 @@ $app->group('/data', function (RouteCollectorProxy $data) {
         send($rs, found(site()->score((int) $a['model'], (int) $a['benchmark']), $rq)));
     $data->get('/calibration.json', fn (Request $rq, Response $rs) => send($rs, site()->calibration()));
     $data->get('/cross.json', fn (Request $rq, Response $rs) => send($rs, site()->cross()));
+    $data->get('/multivariate.json', fn (Request $rq, Response $rs) => send($rs, site()->multivariate()));
     $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->mapping((int) $a['id']), $rq)));
 });
@@ -169,6 +170,7 @@ $app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages 
 $app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->calibration(), data('calibration')));
 $app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id']), data('calibration', $a['id'])));
+$app->get('/multivariate', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->multivariate(), data('multivariate')));
 $app->get('/method', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->methodPage()));
 $app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage(), data('calibration')));
 

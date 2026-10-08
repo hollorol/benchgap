@@ -11,6 +11,7 @@
  *   /model/<slug>           one model across all benchmarks
  *   /calibration            predictability matrix + list of mappings
  *   /calibration/<id>       one fitted mapping (scatter + curve)
+ *   /multivariate           each benchmark from several others (fit + predicted vs measured)
  *   /method                 methodology
  *   /api                    public API documentation (api/v1/)
  */
@@ -98,6 +99,7 @@
 
   const methodLabel = (k) => D.meta.methods[k] || k;
   const capLabel = (id) => (ix.cap.get(id) || {}).label || id;
+  const capOf = (id) => ix.bench.get(id).capability;   // a benchmark's capability
   const benchLabel = (id) => (ix.bench.get(id) || {}).label || "?";
 
   const visible = (s) =>
@@ -423,13 +425,13 @@
       .map((x) => benchChip(x, b))
       .join("")}</nav>`;
   }
-  // scrolls the rail (phones only) so the current benchmark's chip is in the middle
+  // scrolls a row of pills (phones only) so its current one is in the middle
   const phone = matchMedia("(max-width: 760px)");
-  function centerRail() {
-    if (!phone.matches) return;
-    const rail = $("#bench-rail .rail"), chip = rail && rail.querySelector('[aria-current="true"]');
-    if (chip) rail.scrollLeft += chip.getBoundingClientRect().left - rail.getBoundingClientRect().left - (rail.clientWidth - chip.offsetWidth) / 2;
+  function centerIn(row, selector) {
+    const chip = phone.matches && row && row.querySelector(selector);
+    if (chip) row.scrollLeft += chip.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - chip.offsetWidth) / 2;
   }
+  const centerRail = () => centerIn($("#bench-rail .rail"), '[aria-current="true"]');
 
   // A leaderboard; data: its scores (data/b/...). Returns true when only the chart was swapped (already on the leaderboard).
   function renderBoard(key, data) {
@@ -534,10 +536,11 @@
   }
 
   // a 0..max axis for values up to hi, max rounded up to a tenth, with its ticks
-  function axis(hi) {
-    const max = Math.min(1, Math.ceil(hi * 10) / 10), step = max > 0.5 ? 0.1 : 0.05, ticks = [];
-    for (let v = 0; v <= max + 1e-9; v += step) ticks.push(v);
-    return { max, ticks };
+  function axis(hi, lo = 0) {
+    const min = Math.max(0, Math.floor(lo * 10) / 10), max = Math.min(1, Math.ceil(hi * 10) / 10);
+    const step = max - min > 0.5 ? 0.1 : max - min > 0.2 ? 0.05 : 0.02, ticks = [];
+    for (let v = min; v <= max + 1e-9; v += step) ticks.push(v);
+    return { min, max, ticks };
   }
 
   // a leaderboard longer than TAIL.min_rows folds where the scores drop below TAIL.below (never
@@ -860,16 +863,29 @@
   }
 
   // data: the calibrations between listed benchmarks (data/calibration.json)
+  // a row of capability chips over items, All first: byCap (items by capability id, and
+  // "all"), caps ({ id, label, n }), html(current) and bind(onPick), which presses the clicked chip
+  function capFilter(items, capOfItem) {
+    const byCap = groupBy(items, capOfItem);
+    byCap.set("all", items);
+    const caps = [{ id: "all", label: "All" }, ...D.capabilities.filter((c) => byCap.has(c.id))].map((c) => ({ ...c, n: byCap.get(c.id).length }));
+    const html = (current) => `<div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
+      .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === current}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`).join("")}</div>`;
+    const bind = (onPick) => main.querySelectorAll(".pm-caps .chip").forEach((c) => c.addEventListener("click", () => {
+      main.querySelectorAll(".pm-caps .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
+      hideTip();
+      onPick(c.dataset.cap);
+    }));
+    return { byCap, caps, html, bind };
+  }
+
   function renderCalibration(_, data) {
     setMeta("LLM benchmark calibrations", "Which LLM benchmarks predict which: the fitted cross-benchmark calibrations behind every estimate, with their errors.");
     const gate = D.meta.quality_gate.max_loo_pp;
     // one capability at a time (the one with the most mappings first)
     const maps = data.mappings;
     const byPair = new Map(maps.map((m) => [m.from + ":" + m.to, m]));
-    const capOf = (id) => ix.bench.get(id).capability;
-    const nByCap = groupBy(maps, (m) => capOf(m.from));
-    nByCap.set("all", maps);   // the "All" chip: every capability at once
-    const caps = [{ id: "all", label: "All" }, ...D.capabilities.filter((c) => nByCap.has(c.id))].map((c) => ({ ...c, n: nByCap.get(c.id).length }));
+    const chips = capFilter(maps, (m) => capOf(m.from)), nByCap = chips.byCap, caps = chips.caps;
     const capOrder = new Map(D.capabilities.map((c, i) => [c.id, i]));
     const capName = (cap) => (cap === "all" ? "All capabilities" : capLabel(cap));
     // the cross-domain fits (data/cross.json), by "from:to"; loaded after the page
@@ -932,9 +948,7 @@
         (R² ≥ ${D.meta.quality_gate.min_r2}, error ≤ ${gate} pp). Cells show that error in percentage points: rows are the source, columns the target.
         Estimates come only from calibrations within a capability; pick one below, or All, which also shows the fits across capabilities (see Cross-domain predictability).`)}
       <section class="section">
-        <div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
-          .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === cap}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`)
-          .join("")}</div>
+        ${chips.html(cap)}
         <div class="pm-wrap" id="pm-wrap">${pairMap(cap)}</div>
         <div class="scale"><span>0 pp</span><span class="ramp" style="background:${LOSS_RAMP}"></span><span>${gate} pp (gate)</span>
           <span style="margin-left:1rem"><span class="sq none"></span>no usable mapping</span>
@@ -954,14 +968,12 @@
       </section></div>`;
 
     // a chip redraws the pair map and the list for its capability
-    main.querySelectorAll(".pm-caps .chip").forEach((c) => c.addEventListener("click", () => {
-      cap = c.dataset.cap;
-      main.querySelectorAll(".pm-caps .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
-      hideTip();
+    chips.bind((id) => {
+      cap = id;
       swapContent($("#pm-wrap"), pairMap(cap));
       swapContent($("#maps-cap"), esc(capName(cap)));
       swapContent($("#maps"), mapList(cap, false));
-    }));
+    });
     $("#maps").addEventListener("click", (e) => {
       if (e.target.closest(".more-maps")) swapContent($("#maps"), mapList(cap, true));
     });
@@ -1063,6 +1075,89 @@
           ${estRows ? `<div class="list-wrap" style="margin-top:1rem"><table class="list"><thead><tr><th>Estimated model</th><th style="text-align:right">${esc(f.label)}</th><th style="text-align:right">${esc(t.label)}</th><th>Confidence</th></tr></thead><tbody>${estRows}</tbody></table></div>` : ""}
         </div>
       </div></div>`;
+  }
+
+  // --- page: multivariate -----------------------------------------------------
+  // data: the multivariate view's fits (data/multivariate.json, Snapshot's compact rows)
+  function renderMultivariate(_, data) {   // its lede is also in src/Pages.php
+    setMeta("Multivariate LLM benchmark predictions", "Each LLM benchmark predicted from several others together, of any capability: the fitted model, its cross-validated error and every prediction.");
+    const gate = D.meta.quality_gate.max_loo_pp;
+    const fits = data.multivariate;
+    const chips = capFilter(fits, (f) => capOf(f.to));
+    const gain = (f) => (f.alone == null ? -Infinity : f.alone - f.loo);
+    // gain: over the best of its benchmarks alone
+    const SORTS = { gain: ["biggest gain", (a, b) => gain(b) - gain(a)], loo: ["lowest error", (a, b) => a.loo - b.loo] };
+    const LIST_ROWS = 20;  // fits shown before "Show all"
+    let cap = "all", sort = "gain";
+
+    const term = (id) => {
+      const b = ix.bench.get(id);
+      return `<span class="mv-term"><a href="${benchHref(b)}">${esc(b.label)}</a><small>${esc(capLabel(b.capability))}</small></span>`;
+    };
+    // measured (x) against leave-one-out predicted (y), on one scale, with the y = x line
+    function scatter(f) {
+      const W = 300, H = 300, L = 40, R = 10, T = 10, B = 38;
+      const pts = f.points.filter((p) => p[2] != null);
+      // zoomed to the scores, on round ticks
+      const vals = pts.flatMap((p) => [p[1], p[2]]);
+      const { min: lo, max: hi, ticks } = axis(Math.max(...vals) + 0.02, Math.min(...vals) - 0.02);
+      const clamp = (v) => Math.min(hi, Math.max(lo, v));
+      const px = (v) => L + ((clamp(v) - lo) / (hi - lo)) * (W - L - R), py = (v) => H - B - ((clamp(v) - lo) / (hi - lo)) * (H - T - B);
+      let grid = "";
+      for (const v of ticks) grid += `<line class="gl" x1="${px(v)}" x2="${px(v)}" y1="${T}" y2="${H - B}"/><text x="${px(v)}" y="${H - B + 16}" text-anchor="middle">${Math.round(v * 100)}</text>`
+        + `<line class="gl" x1="${L}" x2="${W - R}" y1="${py(v)}" y2="${py(v)}"/><text x="${L - 6}" y="${py(v) + 4}" text-anchor="end">${Math.round(v * 100)}</text>`;
+      const dots = pts.map(([m, obs, pred]) => {
+        const mod = ix.model.get(m);
+        return `<circle class="pt" cx="${px(obs).toFixed(1)}" cy="${py(pred).toFixed(1)}" data-tiptext="${esc(mod ? mod.name : "?")}: measured ${pct(obs)}%, predicted ${pct(pred)}% (${pred >= obs ? "+" : "−"}${pct(Math.abs(pred - obs))} pp)"/>`;
+      }).join("");
+      const t = ix.bench.get(f.to);
+      return `<svg class="plot mv-plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="Measured against cross-validated predicted ${esc(t.label)} scores">
+        ${grid}<line class="ax" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/><line class="ax" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
+        <line class="ideal" x1="${px(lo)}" y1="${py(lo)}" x2="${px(hi)}" y2="${py(hi)}"/>${dots}
+        <text class="lbl" x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">measured (%)</text>
+        <text class="lbl" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">predicted (%)</text></svg>`;
+    }
+    function card(f) {
+      const d = gain(f);
+      const vs = f.alone == null ? "" : `<dt>best one alone</dt><dd>${pct(f.alone)} pp <span class="${d > 0 ? "mv-better" : "muted"}">(${d > 0 ? "−" : "+"}${pct(Math.abs(d))} pp)</span></dd>`;
+      return `<article class="card mv-fit">
+        <div class="mv-info">
+          <div class="mv-formula">${term(f.to)}${f.from.map((id, i) => `<span class="mv-next"><span class="mv-op">${i ? "+" : "~"}</span>${term(id)}</span>`).join("")}</div>
+          <dl class="kv">
+            <dt>fit</dt><dd>${esc(methodLabel(f.method))}</dd>
+            <dt>models</dt><dd>${f.n}</dd>
+            <dt>R²</dt><dd>${f.r2.toFixed(3)}</dd>
+            <dt>LOO-CV error</dt><dd><span class="scale-dot" style="background:${lossColor(f.loo * 100, gate)}"></span><b>${pct(f.loo)} pp</b></dd>
+            ${vs}
+          </dl>
+          <p class="mv-flags">${f.passes ? "" : '<span class="flag low">fails the quality gate</span> '}${f.used ? `<span class="flag x" data-tiptext="The estimates of ${esc(ix.bench.get(f.to).label)} come from a combination of benchmarks of its own capability">estimates use a combination</span>` : ""}</p>
+        </div>
+        ${scatter(f)}
+      </article>`;
+    }
+    function list(all) {
+      const rows = chips.byCap.get(cap).slice().sort(SORTS[sort][1]);
+      return (all ? rows : rows.slice(0, LIST_ROWS)).map(card).join("")
+        + (!all && rows.length > LIST_ROWS ? `<button type="button" class="btn more-fits">Show all ${rows.length}</button>` : "");
+    }
+
+    main.innerHTML = `<div class="page">
+      ${pageHead("Multivariate", "Each benchmark from several others", `For each benchmark, two or three others of any capability are picked greedily by leave-one-out error
+        (from its best single predictors and the benchmarks sharing the most models with it) and combined in one fit: ridge regression or a multivariate Michaelis–Menten curve.
+        Each plot shows every model measured on all of them: its measured score against the prediction of the fit to the other models.
+        Shown for analysis: the estimates come from the <a href="/calibration">calibrations</a>.`)}
+      <section class="section">
+        ${chips.html(cap)}
+        <div class="mv-sort"><span class="ctl-label">Sort</span>${segHTML("Sort", Object.entries(SORTS).map(([k, [label]]) => [k, label]), sort)}</div>
+        <div class="mv-list" id="mv-list">${fits.length ? list(false) : '<p class="muted">No multivariate fits in this build yet.</p>'}</div>
+      </section></div>`;
+
+    const redraw = () => swapContent($("#mv-list"), list(false));
+    chips.bind((id) => { cap = id; redraw(); });
+    bindSeg($(".mv-sort .seg"), (k) => { sort = k; hideTip(); redraw(); });
+    $("#mv-list").addEventListener("click", (e) => {
+      if (e.target.closest(".more-fits")) swapContent($("#mv-list"), list(true));
+    });
   }
 
   // --- page: method -----------------------------------------------------------
@@ -1375,6 +1470,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     [/^\/matrix$/, "matrix", renderMatrix, () => "/data/matrix.json"],
     [/^\/calibration$/, "calibration", renderCalibration, () => "/data/calibration.json"],
     [/^\/calibration\/(\d+)$/, "calibration", renderMapping, (id) => `/data/calibration/${id}.json`],
+    [/^\/multivariate$/, "multivariate", renderMultivariate, () => "/data/multivariate.json"],
     [/^\/method$/, "method", renderMethod],
     [/^\/api$/, "api", renderApi, () => "/data/calibration.json"],
   ];
@@ -1426,6 +1522,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     const nav = page ? page[1] : "";
     const inPlace = page ? page[2](arg, data) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+    centerIn($(".nav"), '[aria-current="page"]');
     booted();
     if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }

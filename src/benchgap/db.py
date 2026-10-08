@@ -78,6 +78,23 @@ CREATE TABLE IF NOT EXISTS cross_mappings (
     UNIQUE (from_version_id, to_version_id)
 );
 
+-- each target's best fit from several benchmarks of any capability, with each model's
+-- leave-one-out prediction: for the multivariate view only, never used for estimates
+-- (multivariate.fit_cross_multimappings)
+CREATE TABLE IF NOT EXISTS cross_multi_mappings (
+    id                       INTEGER PRIMARY KEY,
+    to_version_id            INTEGER NOT NULL UNIQUE REFERENCES benchmark_versions(id),
+    method                   TEXT NOT NULL,
+    feature_version_ids_json TEXT NOT NULL,
+    params_json              TEXT NOT NULL,
+    metrics_json             TEXT NOT NULL,
+    n_points                 INTEGER NOT NULL,
+    points_json              TEXT NOT NULL,  -- [[model_id, measured, leave-one-out prediction], ...]
+    alone_loo                REAL,           -- LOO RMSE of the best of its features alone, on the same models
+    passes                   INTEGER NOT NULL,  -- 1 if it passes the quality gate
+    created_at               TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS multi_mappings (
     id                     INTEGER PRIMARY KEY,
     to_version_id          INTEGER NOT NULL REFERENCES benchmark_versions(id),

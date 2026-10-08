@@ -19,6 +19,8 @@ namespace Benchgap;
  * - calibration/{id}.json: one calibration with its points, curve and estimates
  * - cross.json: the cross-domain fits (Snapshot's compact rows) between listed benchmarks
  *   of different capabilities; never used for estimates
+ * - multivariate.json: the multivariate view's fits of listed benchmarks from listed ones;
+ *   never used for estimates
  *
  * Scores, benchmarks, models and mappings keep the Snapshot's shapes and ids.
  */
@@ -118,6 +120,14 @@ final class Site
         return ['cross' => array_values(array_filter(
             $this->data['cross_mappings'] ?? [],
             fn ($m) => isset($this->listed[$m[0]], $this->listed[$m[1]])
+        ))];
+    }
+
+    public function multivariate(): array
+    {
+        return ['multivariate' => array_values(array_filter(
+            $this->data['cross_multi_mappings'] ?? [],
+            fn ($m) => isset($this->listed[$m['to']]) && !array_diff_key(array_flip($m['from']), $this->listed)
         ))];
     }
 

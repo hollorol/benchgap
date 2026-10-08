@@ -7,7 +7,7 @@
 # page, the API and llms.txt show the new data and dates right away.
 # Fits whose training data did not change since the last run come from the fit
 # cache (identical results), so a normal day takes a minute or two instead of
-# the ~90 minutes of a cold build (most of it the cross-domain fits); a run cut
+# the ~2 hours of a cold build (most of it the fits across capabilities); a run cut
 # off midway keeps the fits it finished, and the next one carries on from them.
 # Repository secrets: SSH_HOST, SSH_USER, SSH_PASSWORD.
 name: Update the data
@@ -33,7 +33,7 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 200
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7
 
@@ -73,6 +73,11 @@ jobs:
         timeout-minutes: 120
         continue-on-error: true
         run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" crossfit --cache .fit-cache
+
+      - name: Fit each benchmark from several
+        timeout-minutes: 45
+        continue-on-error: true
+        run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" crossmultifit --cache .fit-cache
 
       - name: Write the database
         run: |

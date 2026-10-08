@@ -258,6 +258,27 @@ final class Snapshot
                 self::num($metrics['R2'] ?? null, 3), self::num($metrics['LOO_RMSE'] ?? null, 4), (bool) $m['passes']];
         }
 
+        // the multivariate view's fits (never used for estimates): alone is the LOO error of the
+        // best of its features alone, used whether the target's estimates come from a multivariate
+        // mapping, points [model, measured, leave-one-out prediction]
+        $usesMulti = array_fill_keys(array_column($multi, 'to_version_id'), true);
+        $multiView = [];
+        foreach (self::hasTable($db, 'cross_multi_mappings') ? $db->query('SELECT * FROM cross_multi_mappings ORDER BY id') : [] as $m) {
+            $metrics = json_decode($m['metrics_json'], true);
+            $multiView[] = [
+                'to' => (int) $m['to_version_id'],
+                'from' => json_decode($m['feature_version_ids_json'], true),
+                'method' => $m['method'],
+                'n' => (int) $m['n_points'],
+                'r2' => self::num($metrics['R2'] ?? null, 3),
+                'loo' => self::num($metrics['LOO_RMSE'] ?? null, 4),
+                'alone' => self::num($m['alone_loo'], 4),
+                'passes' => (bool) $m['passes'],
+                'used' => isset($usesMulti[$m['to_version_id']]),
+                'points' => array_map(fn ($p) => [(int) $p[0], self::num($p[1], 4), self::num($p[2], 4)], json_decode($m['points_json'], true)),
+            ];
+        }
+
         $harnesses = array_values(array_unique(array_column($benchmarks, 'harness')));
         sort($harnesses);
         $estimated = array_sum($tiers);
@@ -273,6 +294,7 @@ final class Snapshot
                     'estimated' => $estimated,
                     'mappings' => count($mappingDocs),
                     'cross_mappings' => count($cross),
+                    'cross_multi_mappings' => count($multiView),
                     'confidence' => $tiers,
                 ],
                 'quality_gate' => self::QUALITY_GATE + ['n_candidates' => count(Curves::EQUATIONS)],
@@ -289,6 +311,7 @@ final class Snapshot
             'scores' => $scores,
             'mappings' => $mappingDocs,
             'cross_mappings' => $cross,
+            'cross_multi_mappings' => $multiView,
         ];
     }
 

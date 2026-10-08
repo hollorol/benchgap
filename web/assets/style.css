@@ -110,7 +110,7 @@ button, input, select { font: inherit; color: inherit; }
 .brand-word { font-family: var(--serif); font-size: 1.6rem; letter-spacing: -.01em; line-height: 1; }
 .brand-word em { color: var(--accent); }
 .brand-word.small { font-size: 1.3rem; }
-.nav { display: flex; gap: .2rem; }
+.nav { display: flex; gap: .2rem; min-width: 0; overflow-x: auto; scrollbar-width: none; }   /* never pushes the tools out */
 .nav a {
   text-decoration: none; color: var(--muted); padding: .35rem .7rem; border-radius: 999px;
   font-size: .9rem; font-weight: 500; transition: color .15s, background .15s;
@@ -174,8 +174,9 @@ button, input, select { font: inherit; color: inherit; }
 .search-btn { display: none; width: 34px; height: 34px; padding: 0; place-items: center; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--card); color: var(--ink-2); cursor: pointer; }
 .search-btn:hover, .topbar.searching .search-btn { color: var(--ink); border-color: var(--ink); }
 .search-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
-@media (max-width: 960px) {
-  .topbar-in { position: relative; }
+@media (max-width: 1060px) {
+  .topbar-in { position: relative; gap: .8rem; }
+  .nav a { padding-inline: .5rem; }   /* the six pages fit beside the brand down to 761px */
   .search { display: none; }
   .search-btn { display: grid; }
   .topbar.searching .search {
@@ -621,6 +622,30 @@ table.list { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .plot .ept.medium { stroke: var(--conf-medium); }
 .plot .ept.low { stroke: var(--conf-low); stroke-dasharray: 2 1.5; }
 .plot .hit { fill: transparent; cursor: pointer; }
+/* the multivariate page: one fit per card, its formula and numbers beside its scatter */
+.mv-sort { display: flex; align-items: center; margin: 0 0 1.2rem; }
+.mv-list { display: grid; gap: 1rem; }
+.mv-fit { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 1.2rem; align-items: start; }
+.mv-formula { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .5rem; font: 600 1.05rem var(--sans); }
+.mv-term { display: inline-flex; flex-direction: column; }
+.mv-term a { text-decoration: none; }
+.mv-term a:hover { text-decoration: underline; }
+.mv-term small { font: 500 .66rem var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.mv-next { display: inline-flex; align-items: baseline; gap: .5rem; }   /* an operator wraps with its term */
+.mv-op { font: 400 1.2rem var(--mono); color: var(--muted); }
+.mv-better { color: var(--conf-high); }
+.mv-flags { margin: .7rem 0 0; }
+.mv-flags:empty { display: none; }
+.plot.mv-plot .pt { r: 3.4px; fill: color-mix(in srgb, var(--ink) 75%, transparent); stroke-width: 1; cursor: pointer; }
+.plot .ideal { stroke: var(--accent); stroke-width: 1.4; stroke-dasharray: 4 4; }
+@media (max-width: 1060px) { .mv-fit { grid-template-columns: minmax(0, 1fr) 260px; } }
+@media (max-width: 760px) {
+  .mv-fit { grid-template-columns: 1fr; }
+  .mv-plot { max-width: 360px; justify-self: center; }
+  .plot.mv-plot text { font-size: 11px; }
+  .plot.mv-plot .lbl { font-size: 12px; }
+}
+
 .eqn { font: .86rem var(--mono); background: var(--paper-2); padding: .55rem .8rem; border-radius: 8px; overflow-x: auto; white-space: nowrap; }
 
 /* --- method page ---------------------------------------------------------- */

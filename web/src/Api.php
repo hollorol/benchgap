@@ -130,6 +130,19 @@ final class Api
         return $this->about + ['mappings' => array_map(fn ($m) => $this->mappingObject($m), $this->data['mappings'])];
     }
 
+    /** The multivariate view's fits, by benchmark key (for its page; not part of the API). */
+    public function multivariate(): array
+    {
+        return array_map(fn ($m) => [
+            'target' => $this->bench[$m['to']]['key'],
+            'features' => array_map(fn ($f) => $this->bench[$f]['key'], $m['from']),
+            'method_name' => $this->methodName($m['method']),
+            'n_models' => $m['n'],
+            'loo_rmse_pp' => self::pp($m['loo']),
+            'alone_loo_rmse_pp' => self::pp($m['alone']),
+        ], $this->data['cross_multi_mappings'] ?? []);
+    }
+
     /** One mapping with its points, curve and the estimates it produced. */
     public function mapping(int $id): ?array
     {

@@ -14,11 +14,16 @@ families are fitted per candidate feature set:
 Training uses only measured scores. The same quality gate as the univariate
 fit applies; targets whose best multivariate fit fails the gate keep no
 multi-mapping and their gaps are filled (if at all) by the univariate path.
+
+fit_cross_multimappings runs the same search with sources of any capability,
+for the multivariate view only (cross_multi_mappings, never used for estimates): it
+always combines at least two, so the view can compare them with the best one alone.
 """
 from __future__ import annotations
 
 import json
 import sqlite3
+from functools import partial
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -31,6 +36,9 @@ MV_CANDIDATES = ("linear_mv", "mm_mv")
 
 # Feature-set size and minimum training size (grows with feature count).
 MAX_FEATURES = 3
+# the cross search picks from the target's CROSS_POOL best single sources (of any capability)
+# and the CROSS_POOL others that share the most models with it
+CROSS_POOL = 8
 RIDGE_ALPHAS = (1e-4, 1e-3, 1e-2, 1e-1, 1.0)
 
 
@@ -149,21 +157,26 @@ def mv_metrics(method: str, params: dict, X, y) -> dict:
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
     rmse = float(np.sqrt(ss_res / n))
 
-    loo_sq = 0.0
-    for i in _loo_indices(n):
-        mask = np.ones(n, dtype=bool)
+    idx = _loo_indices(n)
+    # NaN if any fold's fit fails
+    err = y[idx] - np.array(loo_predictions(method, X, y, idx))
+    return {"n": n, "R2": r2, "RMSE": rmse, "LOO_RMSE": float(np.sqrt(np.mean(err ** 2)))}
+
+
+def loo_predictions(method: str, X, y, indices=None) -> list[float]:
+    """The prediction of each point (of ``indices``, default all) by the fit to all the other
+    points; NaN where that fit fails."""
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y, dtype=float)
+    out = []
+    for i in range(len(y)) if indices is None else indices:
+        mask = np.ones(len(y), dtype=bool)
         mask[i] = False
         try:
-            params_i = fit_mv(method, X[mask], y[mask])
-            loo_sq += float((y[i] - predict_mv(method, params_i, X[i : i + 1])[0]) ** 2)
-        except (RuntimeError, np.linalg.LinAlgError):
-            return {"n": n, "R2": r2, "RMSE": rmse, "LOO_RMSE": float("nan")}
-    return {
-        "n": n,
-        "R2": r2,
-        "RMSE": rmse,
-        "LOO_RMSE": float(np.sqrt(loo_sq / len(_loo_indices(n)))),
-    }
+            out.append(float(predict_mv(method, fit_mv(method, X[mask], y[mask]), X[i : i + 1])[0]))
+        except (RuntimeError, np.linalg.LinAlgError, ValueError):
+            out.append(float("nan"))
+    return out
 
 
 # --- database side -------------------------------------------------------------
@@ -198,18 +211,25 @@ def _training_set(
 
 
 # what each worker's searches read: its own connection to the database (sqlite3 connections
-# can't be shared across processes), the benchmark versions, the minimum overlap and a
-# FitCache over the earlier runs' fits, whose "used" collects the fits of the target being searched
+# can't be shared across processes), the benchmark versions, the minimum overlap, a FitCache over
+# the earlier runs' fits (whose "used" collects the fits of the target being searched) and the
+# search's policy: where its sources come from and how many it combines at least
 _worker: dict = {}
 
 
-def _init(db: str | sqlite3.Connection, versions: list[dict], min_pairs: int, earlier: dict) -> None:
-    """A worker's state: ``db`` is the database's path, or in this process its open connection."""
+def _init(
+    db: str | sqlite3.Connection, versions: list[dict], min_pairs: int, earlier: dict,
+    sources=None, min_features: int = 1, singles: dict | None = None,
+) -> None:
+    """A worker's state: ``db`` is the database's path, or in this process its open connection;
+    ``sources(target)`` the versions its search picks from (default: _capability_sources);
+    ``singles`` what _cross_sources ranks by."""
     from .db import connect  # local import to avoid a cycle
 
     _worker.update(
         conn=connect(db, readonly=True) if isinstance(db, str) else db,
         versions=versions, min_pairs=min_pairs, cache=FitCache.of(earlier),
+        sources=sources or _capability_sources, min_features=min_features, singles=singles,
     )
 
 
@@ -232,55 +252,113 @@ def _search_cached(target: dict) -> tuple[dict | None, dict]:
     return _search(target), cache.used
 
 
-def _search(target: dict) -> dict | None:
-    """Greedy forward selection of the target's best feature set (None: no usable fit)."""
+def _capability_sources(target: dict) -> list[dict]:
+    """The versions of the target's capability with at least min_pairs models shared with it."""
     from .fit import _paired_scores  # local import to avoid a cycle
 
-    conn, versions, min_pairs = _worker["conn"], _worker["versions"], _worker["min_pairs"]
-    sources = [
+    conn, min_pairs = _worker["conn"], _worker["min_pairs"]
+    return [
         v
-        for v in versions
+        for v in _worker["versions"]
         if v["id"] != target["id"]
         and v["capability"] == target["capability"]
         and len(_paired_scores(conn, target["id"], v["id"])) >= min_pairs
     ]
-    selected: list[dict] = []
+
+
+def _single_fits(conn: sqlite3.Connection) -> dict[int, dict[int, tuple[float, int]]]:
+    """{target: {source: (LOO RMSE, shared models)}} of the stored single-source fits:
+    the mappings and the cross-capability fits."""
+    out: dict = {}
+    for to, frm, loo, n in conn.execute(
+        "SELECT to_version_id, from_version_id, MIN(json_extract(metrics_json, '$.LOO_RMSE')), MAX(n_points) FROM"
+        " (SELECT from_version_id, to_version_id, metrics_json, n_points FROM mappings"
+        "  UNION ALL SELECT from_version_id, to_version_id, metrics_json, n_points FROM cross_mappings)"
+        " GROUP BY to_version_id, from_version_id"
+    ):
+        if loo is not None:
+            out.setdefault(to, {})[frm] = (loo, n)
+    return out
+
+
+def _cross_sources(target: dict) -> list[dict]:
+    """The target's CROSS_POOL best single sources of any capability, and the CROSS_POOL others
+    sharing the most models with it (a combination needs models measured on all of its benchmarks)."""
+    singles = _worker["singles"].get(target["id"], {})
+    fitted = [v for v in _worker["versions"] if v["id"] in singles]
+    pool = sorted(fitted, key=lambda v: singles[v["id"]][0])[:CROSS_POOL]
+    return pool + [v for v in sorted(fitted, key=lambda v: -singles[v["id"]][1]) if v not in pool][:CROSS_POOL]
+
+
+def _step(target: dict, selected: list[dict], sources: list[dict]) -> dict | None:
+    """The best fit of the selected features plus one more of the sources (None: none fits)."""
+    conn, min_pairs = _worker["conn"], _worker["min_pairs"]
     best = None
-    while sources and len(selected) < MAX_FEATURES:
-        step_best = None
-        for s in sources:
-            if any(s["id"] == f["id"] for f in selected):
+    for s in sources:
+        if any(s["id"] == f["id"] for f in selected):
+            continue
+        feats = selected + [s]
+        X, y, models = _training_set(conn, target["id"], [f["id"] for f in feats])
+        if len(y) < _min_train(min_pairs, len(feats)):
+            continue
+        for method in MV_CANDIDATES:
+            fitted = _fit_scored(method, X, y)
+            if fitted is None:
                 continue
-            feats = selected + [s]
-            fids = [f["id"] for f in feats]
-            X, y, _ = _training_set(conn, target["id"], fids)
-            if len(y) < _min_train(min_pairs, len(fids)):
+            params, metrics = fitted
+            loo = metrics.get("LOO_RMSE")
+            if loo is None or not np.isfinite(loo):
                 continue
-            for method in MV_CANDIDATES:
-                fitted = _fit_scored(method, X, y)
-                if fitted is None:
-                    continue
-                params, metrics = fitted
-                loo = metrics.get("LOO_RMSE")
-                if loo is None or not np.isfinite(loo):
-                    continue
-                if step_best is None or loo < step_best["metrics"]["LOO_RMSE"]:
-                    step_best = {
-                        "features": feats,
-                        "method": method,
-                        "params": params,
-                        "metrics": metrics,
-                        "X": X,
-                        "y": y,
-                    }
-        if step_best is None:
-            break
-        if best is None or step_best["metrics"]["LOO_RMSE"] < best["metrics"]["LOO_RMSE"] - 1e-4:
-            best = step_best
-            selected = step_best["features"]
+            if best is None or loo < best["metrics"]["LOO_RMSE"]:
+                best = {"features": feats, "method": method, "params": params, "metrics": metrics,
+                        "X": X, "y": y, "models": models}
+    return best
+
+
+def _search(target: dict) -> dict | None:
+    """Greedy forward selection of the target's best feature set of at least the policy's
+    min_features (None: no usable fit)."""
+    sources, min_features = _worker["sources"](target), _worker["min_features"]
+    steps: list[dict] = []   # the best set of each size so far
+    while len(steps) < MAX_FEATURES:
+        step = _step(target, steps[-1]["features"] if steps else [], sources)
+        if step is None:
+            if not steps or len(steps) >= min_features:
+                break
+            # nothing more shares enough models with the last pick: carry on without it
+            dropped = steps.pop()["features"][-1]
+            sources = [v for v in sources if v["id"] != dropped["id"]]
+        elif len(steps) < min_features or step["metrics"]["LOO_RMSE"] < steps[-1]["metrics"]["LOO_RMSE"] - 1e-4:
+            steps.append(step)
         else:
             break
-    return best
+    return steps[-1] if steps else None
+
+
+def _fraction_versions(conn: sqlite3.Connection) -> list[dict]:
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT v.id, v.version, v.harness, b.name AS benchmark,"
+            "       b.capability AS capability"
+            " FROM benchmark_versions v JOIN benchmarks b ON b.id = v.benchmark_id"
+            " WHERE v.unit = 'fraction'"
+        )
+    ]
+
+
+def _run_searches(conn: sqlite3.Connection, fn, min_pairs: int, cache: FitCache, jobs: int | None, **policy):
+    """(target, fn(target)'s result) for every fraction version, searched on ``jobs`` processes
+    (default: every core) under ``policy`` (_init's); the fits they used go into ``cache``."""
+    versions = _fraction_versions(conn)
+    conn.commit()  # the workers read the committed database
+    path = conn.execute("PRAGMA database_list").fetchone()[2]
+    # an in-memory database (no path) exists only in this process
+    for target, (best, used) in zip(versions, pmap(
+        fn, versions, jobs if path else 1, partial(_init, **policy), (path or conn, versions, min_pairs, cache.earlier)
+    )):
+        cache.used.update(used)
+        yield target, best
 
 
 def fit_multimappings(
@@ -297,27 +375,10 @@ def fit_multimappings(
     core), each reading the database through its own connection; a fit whose
     training data is in ``cache`` is reused.
     """
-    versions = [
-        dict(r)
-        for r in conn.execute(
-            "SELECT v.id, v.version, v.harness, b.name AS benchmark,"
-            "       b.capability AS capability"
-            " FROM benchmark_versions v JOIN benchmarks b ON b.id = v.benchmark_id"
-            " WHERE v.unit = 'fraction'"
-        )
-    ]
-    conn.commit()  # the workers read the committed database
-    path = conn.execute("PRAGMA database_list").fetchone()[2]
-    # an in-memory database (no path) exists only in this process
-    cache = cache or FitCache(None, "multifit")
-    searched = []
-    for best, used in pmap(
-        _search_cached, versions, jobs if path else 1, _init, (path or conn, versions, min_pairs, cache.earlier)
-    ):
-        searched.append(best)
-        cache.used.update(used)
+    from .fit import gate_failure  # local import to avoid a cycle
+
     summary = []
-    for target, best in zip(versions, searched):
+    for target, best in list(_run_searches(conn, _search_cached, min_pairs, cache or FitCache(None, "multifit"), jobs)):
         if best is None or len(best["features"]) < 2:
             # a single-feature multivariate fit adds nothing over the
             # univariate mappings; only store genuinely multi-input fits
@@ -355,14 +416,13 @@ def fit_multimappings(
                 }
             )
             continue
-        if best["metrics"]["R2"] < min_r2 or best["metrics"]["LOO_RMSE"] > max_loo_rmse:
+        rejected = gate_failure(best["metrics"], min_r2, max_loo_rmse)
+        if rejected:
             summary.append(
                 {
                     "target": _label(target),
                     "method": None,
-                    "rejected": f"R2={best['metrics']['R2']:.2f},"
-                    f" LOO RMSE={best['metrics']['LOO_RMSE'] * 100:.1f}pp"
-                    " below quality gate",
+                    "rejected": rejected,
                     "n": int(best["metrics"]["n"]),
                     "features": [_label(f) for f in best["features"]],
                 }
@@ -406,6 +466,75 @@ def fit_multimappings(
                 "LOO_RMSE": best["metrics"]["LOO_RMSE"],
             }
         )
+    conn.commit()
+    return summary
+
+
+def _search_scored(target: dict) -> tuple[dict | None, dict]:
+    """_search_cached's, with every model's leave-one-out prediction by the best fit and the
+    LOO RMSE of the best of its features alone, on the same models."""
+    best, used = _search_cached(target)
+    if best is not None:
+        method, X, y = best["method"], best["X"], best["y"]
+        best["loo_pred"] = _worker["cache"].get(fit_key("loo_pred", method, X, y), lambda: loo_predictions(method, X, y))
+        alone = [
+            fitted[1]["LOO_RMSE"]
+            for j in range(X.shape[1])
+            for m in MV_CANDIDATES
+            if (fitted := _fit_scored(m, X[:, [j]], y)) is not None
+        ]
+        best["alone_loo"] = min((v for v in alone if np.isfinite(v)), default=None)
+    return best, used
+
+
+def fit_cross_multimappings(
+    conn: sqlite3.Connection,
+    min_pairs: int,
+    min_r2: float,
+    max_loo_rmse: float,
+    jobs: int | None = None,
+    cache: FitCache | None = None,
+) -> list[dict]:
+    """For the multivariate view only: each target's best fit from two or three source
+    benchmarks of any capability (_cross_sources), stored in cross_multi_mappings with each
+    model's leave-one-out prediction and whether it passes the quality gate. No estimate comes
+    from them. Replaces the earlier ones; returns a summary list.
+
+    Run after fit and crossfit: the sources are ranked by their fits.
+    """
+    from .db import version_label
+    from .fit import gate_failure  # local imports to avoid a cycle
+
+    singles = _single_fits(conn)
+    conn.execute("DELETE FROM cross_multi_mappings")
+    summary = []
+    for target, best in list(_run_searches(
+        conn, _search_scored, min_pairs, cache or FitCache(None, "crossmultifit"), jobs,
+        sources=_cross_sources, min_features=2, singles=singles,
+    )):
+        if best is None:
+            continue
+        m = best["metrics"]
+        rejected = gate_failure(m, min_r2, max_loo_rmse)
+        points = [[mid, float(obs), p if np.isfinite(p) else None] for mid, obs, p in zip(best["models"], best["y"], best["loo_pred"])]
+        conn.execute(
+            "INSERT INTO cross_multi_mappings (to_version_id, method, feature_version_ids_json,"
+            " params_json, metrics_json, n_points, points_json, alone_loo, passes)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (target["id"], best["method"], json.dumps([f["id"] for f in best["features"]]),
+             json.dumps(best["params"]), json.dumps(m), len(best["y"]), json.dumps(points),
+             best["alone_loo"], int(rejected is None)),
+        )
+        summary.append({
+            "target": version_label(target),
+            "method": best["method"],
+            "features": [version_label(f) for f in best["features"]],
+            "n": len(best["y"]),
+            "R2": m["R2"],
+            "LOO_RMSE": m["LOO_RMSE"],
+            "alone_LOO_RMSE": best["alone_loo"],
+            "rejected": rejected,
+        })
     conn.commit()
     return summary
 

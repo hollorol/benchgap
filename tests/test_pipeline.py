@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import math
 
 import pytest
 
 from benchgap.cache import FitCache
 from benchgap.db import connect, init_db
 from benchgap.fit import fit_cross_mappings
+from benchgap.fitting import MAX_LOO_FOLDS
 from benchgap.gapfill import gapfill
 from benchgap.ingest import ingest_csv
 from benchgap.report import mapping_summary, render_matrix, score_matrix
@@ -84,6 +86,30 @@ def test_fit_within_capability_and_quality_gate(build):
         " WHERE bf.capability != bt.capability"
     ).fetchone()[0]
     assert cross == 0
+
+
+def test_cross_multi_fits(build):
+    """Each multivariate-view fit combines several benchmarks; its points are every training
+    model's leave-one-out prediction; gapfill never uses it."""
+    conn, summary = build["conn"], build["crossmultifit"]
+    rows = conn.execute("SELECT * FROM cross_multi_mappings ORDER BY id").fetchall()
+    assert len(rows) == len(summary) == 7
+    assert [bool(r["passes"]) for r in rows] == [s["rejected"] is None for s in summary]
+    for r in rows:
+        features = json.loads(r["feature_version_ids_json"])
+        assert len(set(features)) == len(features) >= 2 and r["to_version_id"] not in features
+        points = json.loads(r["points_json"])
+        assert len(points) == r["n_points"] and r["alone_loo"] > 0
+        if r["n_points"] <= MAX_LOO_FOLDS:  # then LOO_RMSE uses every point too
+            err = [p[1] - p[2] for p in points]
+            assert math.isclose(math.sqrt(sum(e * e for e in err) / len(err)), json.loads(r["metrics_json"])["LOO_RMSE"])
+    # an aggregate across capabilities is among them
+    assert conn.execute(
+        "SELECT COUNT(*) FROM cross_multi_mappings c, json_each(c.feature_version_ids_json) f"
+        " JOIN benchmark_versions vf ON vf.id = f.value JOIN benchmarks bf ON bf.id = vf.benchmark_id"
+        " JOIN benchmark_versions vt ON vt.id = c.to_version_id JOIN benchmarks bt ON bt.id = vt.benchmark_id"
+        " WHERE bf.capability != bt.capability"
+    ).fetchone()[0]
 
 
 def test_cross_fits_only_across_capabilities(build):

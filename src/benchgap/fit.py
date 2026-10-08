@@ -129,12 +129,17 @@ def _selected(tasks: list[tuple], jobs: Optional[int], cache: FitCache):
             yield src, dst, pairs, results, best, _rejected(best)
 
 
+def gate_failure(metrics: dict, min_r2: float = MIN_R2, max_loo_rmse: float = MAX_LOO_RMSE) -> Optional[str]:
+    """Why a fit with these metrics fails the quality gate; None if it passes."""
+    loo = metrics["LOO_RMSE"]
+    if metrics["R2"] < min_r2 or (loo == loo and loo > max_loo_rmse):
+        return f"R2={metrics['R2']:.2f}, LOO RMSE={loo * 100:.1f}pp below quality gate"
+    return None
+
+
 def _rejected(best: FitResult) -> Optional[str]:
     """Why the selected fit fails the quality gate; None if it passes."""
-    loo = best.metrics["LOO_RMSE"]
-    if best.metrics["R2"] < MIN_R2 or (loo == loo and loo > MAX_LOO_RMSE):
-        return f"R2={best.metrics['R2']:.2f}, LOO RMSE={loo * 100:.1f}pp below quality gate"
-    return None
+    return gate_failure(best.metrics)
 
 
 def _summary(src, dst, pairs, best, rejected) -> dict:

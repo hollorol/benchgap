@@ -76,6 +76,13 @@ def php(code: str) -> str:
     ).stdout
 
 
+def test_app_js_names_each_function_once():
+    # a second function declaration of a name silently replaces the first in the whole file
+    # (they are hoisted), which breaks every page that used the first
+    names = re.findall(r"^\s*function (\w+)\(", (WEB / "assets" / "app.js").read_text(), re.M)
+    assert not {n for n in names if names.count(n) > 1}
+
+
 def test_reliability_tiers():
     cases = php(
         "foreach ([[0.03, 0.9, 20, false], [0.07, 0.9, 20, false], [0.12, 0.9, 20, false],"
@@ -199,6 +206,12 @@ def test_page_data_slices_the_site_data(server):
     assert cross and cross == [c for c in whole["cross_mappings"] if c[0] in listed and c[1] in listed]
     assert whole["meta"]["counts"]["cross_mappings"] == len(whole["cross_mappings"])
 
+    # the multivariate view's fits: of listed benchmarks from listed ones, each model's prediction
+    multi = get_json(server, "/data/multivariate.json")["multivariate"]
+    assert multi and multi == [m for m in whole["cross_multi_mappings"] if m["to"] in listed and set(m["from"]) <= listed]
+    assert all(len(m["from"]) >= 2 and len(m["points"]) == m["n"] for m in multi)
+    assert whole["meta"]["counts"]["cross_multi_mappings"] == len(whole["cross_multi_mappings"])
+
     for path in ["/data/b/no-such/bench.json", "/data/model/no-such-model.json", "/data/calibration/999999.json", "/data/score/0/0.json"]:
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)
@@ -246,6 +259,7 @@ def test_pages_and_sitemap(server):
         "/method": "How missing benchmark scores are estimated",
         "/api": "Public API",
         "/calibration": "LLM benchmark calibrations",
+        "/multivariate": "Multivariate LLM benchmark predictions",
         f"/calibration/{mapping['id']}": "calibration",
         "/b/aa-terminal-bench21/current": "AA Terminal-Bench 2.1 leaderboard",
         f"/model/{model['slug']}": f"{model['name']} benchmark scores",
@@ -274,7 +288,7 @@ def test_pages_and_sitemap(server):
     assert headers["Content-Type"].startswith("application/xml")
     index = get_json(server, "/api/v1/")
     n = index["counts"]
-    assert sitemap.count("<loc>") == 5 + n["benchmarks"] + n["models"] + n["mappings"]
+    assert sitemap.count("<loc>") == 6 + n["benchmarks"] + n["models"] + n["mappings"]
     assert f"<loc>{model['page']}</loc>" in sitemap and "<lastmod>" in sitemap
 
 
