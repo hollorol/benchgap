@@ -21,8 +21,8 @@ Estimates are never used to make other estimates, calibrations never cross
 capabilities, and a gap that can't be filled honestly stays a gap.
 
 **See it live at [benchgap.net](https://benchgap.net)**: leaderboards, the
-full score matrix, every calibration curve and a public JSON API
-([docs](https://benchgap.net/api)).
+full score matrix, every calibration curve, each benchmark predicted from
+several others, and a public JSON API ([docs](https://benchgap.net/api)).
 
 Bootstrapped from a prior analysis session that calibrated Terminal-Bench v4.0
 scores onto the v2.1 scale and found that a Michaelis-Menten curve with offset
@@ -46,51 +46,60 @@ Deterministic least-squares today; probabilistic fitters later - see
 ```
 benchgap/
 ├── data/
-│   ├── benchlm/             # BenchLM's data files (downloaded, not committed)
-│   ├── seed/scores.csv      # long-format seed (scripts/build_seed.py; not committed)
-│   └── benchgap.db          # the database the pipeline builds (init … gapfill)
+│   ├── benchlm/                 # BenchLM's data files (downloaded, not committed)
+│   ├── seed/scores.csv          # long-format seed (scripts/build_seed.py; not committed)
+│   └── benchgap.db              # the database the pipeline builds (init … gapfill)
 ├── scripts/
-│   ├── build_seed.py        # downloads BenchLM's data, writes data/seed/scores.csv
-│   └── load_database.sh     # publishes a build on the server (update-data.yml)
+│   ├── build_seed.py            # downloads BenchLM's data, writes data/seed/scores.csv
+│   └── load_database.sh         # publishes a build on the server (update-data.yml)
 ├── src/benchgap/
-│   ├── db.py                # schema + data access (capability, unit, multi-mappings)
-│   ├── ingest.py            # seed CSV -> database
-│   ├── fitting.py           # monotone univariate candidates, fit, LOO-CV, selection
-│   ├── fit.py               # capability-aware mapping fits + quality gate
-│   ├── multivariate.py      # multivariate mappings (ridge + multivariate MM)
-│   ├── parallel.py          # independent fits on every core
-│   ├── cache.py             # fit results reused between runs (--cache)
-│   ├── gapfill.py           # predict + store missing scores (source='gapfilled')
-│   ├── report.py            # mapping summaries, score matrix
-│   ├── html_report.py       # self-contained HTML report (matplotlib, base64 PNGs)
-│   └── cli.py               # command-line interface
-├── web/                     # benchgap.net (see "Website")
-│   ├── index.html, assets/  # vanilla JS front-end
-│   ├── serve.php            # Slim 4 backend: pages, site data, public API, llms.txt
-│   ├── src/                 # Snapshot.php (site data, confidence levels), Site.php (each page's data), Api.php, Pages.php, Curves.php
-│   └── api/v1/openapi.json  # OpenAPI 3.1 description of the API
-├── .github/workflows/       # deploy web/ on every push to main; refresh the data daily
-└── tests/                   # pytest; data/seed.csv is a fixed BenchLM subset
+│   ├── db.py                    # schema + data access (capability, unit, multi-mappings)
+│   ├── ingest.py                # seed CSV -> database
+│   ├── fitting.py               # monotone univariate candidates, fit, LOO-CV, selection
+│   ├── fit.py                   # mapping fits (within and across capabilities) + quality gate
+│   ├── multivariate.py          # multivariate mappings and the multivariate view's fits
+│   ├── parallel.py              # independent fits on every core
+│   ├── cache.py                 # fit results reused between runs (--cache)
+│   ├── gapfill.py               # predict + store missing scores (source='gapfilled')
+│   ├── report.py                # mapping summaries, score matrix
+│   ├── html_report.py           # self-contained HTML report (matplotlib, base64 PNGs)
+│   └── cli.py                   # command-line interface
+├── web/                         # benchgap.net (see "Website")
+│   ├── index.html, assets/      # vanilla JS front-end (app.js, style.css, fonts)
+│   ├── serve.php                # Slim 4 backend: pages, site data, public API, llms.txt
+│   ├── .htaccess                # Apache: routing to serve.php, cache headers
+│   ├── src/
+│   │   ├── Snapshot.php         # the site data, built once per data update; confidence levels
+│   │   ├── Site.php             # each page's data (/data/*.json)
+│   │   ├── Api.php              # the public API (/api/v1)
+│   │   ├── Pages.php            # each page's title, description and plain-HTML summary
+│   │   └── Curves.php           # the fitted curves' equations and samples, for display
+│   └── api/v1/openapi.json      # OpenAPI 3.1 description of the API
+├── compose.yaml                 # the local dev stack (docker compose up)
+├── docker/dev/Dockerfile        # its web server: Apache with PHP, as benchgap.net runs it
+├── .github/workflows/           # deploy web/ on every push to main; refresh the data daily
+└── tests/                       # pytest; tests/data/seed.csv is a fixed BenchLM subset
 ```
 
 ## Usage
 
 ```bash
-uv venv && uv pip install -e ".[dev]"     # or: pip install -e ".[dev]"
-python scripts/build_seed.py --fetch       # download BenchLM's newest results -> data/seed/scores.csv
-benchgap init                              # create data/benchgap.db
-benchgap ingest                            # load data/seed/scores.csv
-benchgap fit -v                            # fit univariate mappings per version pair (every core; -j N)
-benchgap multifit                          # fit multivariate mappings per target
-benchgap crossfit                          # fit pairs across capabilities (cross-domain view only)
-benchgap crossmultifit                     # fit each benchmark from several of any capability (multivariate view only)
-benchgap fit --cache .fit-cache            # reuse the fits whose data did not change since the last run
-benchgap gapfill                           # fill missing scores (prefers multi where it wins)
-benchgap report                            # dense-core score matrix (terminal)
-benchgap html                               # self-contained HTML report -> data/report.html
+uv venv && uv pip install -e ".[dev]"  # or: pip install -e ".[dev]"
+python scripts/build_seed.py --fetch   # download BenchLM's newest results -> data/seed/scores.csv
+benchgap init                          # create data/benchgap.db
+benchgap ingest                        # load data/seed/scores.csv
+benchgap fit -v                        # fit univariate mappings per version pair (every core; -j N)
+benchgap multifit                      # fit multivariate mappings per target
+benchgap crossfit                      # fit pairs across capabilities (cross-domain view only)
+benchgap crossmultifit                 # fit each benchmark from several of any capability (multivariate view only)
+benchgap fit --cache .fit-cache        # reuse the fits whose data did not change since the last run (any fit command)
+benchgap gapfill                       # fill missing scores (prefers multi where it wins)
+benchgap report                        # dense-core score matrix (terminal)
+benchgap html                          # self-contained HTML report -> data/report.html
 benchgap predict terminal-bench-4/current aa-terminal-bench4/current 59.6
 benchgap report --min-models 12 --min-benchmarks 5   # denser view (0 disables filtering)
-pytest                                      # run the tests (~20 s; tests/data/seed.csv)
+pytest                                 # run the tests (~20 s; tests/data/seed.csv)
+docker compose up                      # the website locally on http://localhost:8080 (see "Website")
 ```
 
 The matrices show a **dense-core view** by default: benchmark versions with
@@ -130,6 +139,17 @@ downloads BenchLM's newest results, recomputes every calibration and estimate,
 and publishes them; pages, the API and llms.txt show the new data and its
 dates right away. Run it by hand with `gh workflow run update-data.yml`.
 
+To run the site locally, with Docker:
+
+```bash
+docker compose up        # http://localhost:8080
+```
+
+It serves `web/` as benchgap.net does (Apache with PHP, `web/.htaccess`) from the
+database at `data/benchgap.db`: build it with the pipeline (Usage), or put a
+copy of a built one there; nothing is recomputed. `BENCHGAP_DB=other.db` serves another file and
+`BENCHGAP_PORT=9000` another port. Edits in `web/` show on reload.
+
 The front-end never loads the whole data set: every page loads the shared
 benchmark and model lists (`/data/site.json`) and only its own slice of the
 scores (a leaderboard, a model, the matrix cells, one calibration; see
@@ -139,7 +159,10 @@ keeps it until the next one.
 
 Pages: per-benchmark leaderboards, the full score matrix, a page per
 model, the calibration (predictability) matrix with a scatter + fitted
-curve per mapping, and the methodology. Each page has its own URL
+curve per mapping and the cross-domain predictability between capabilities,
+the multivariate view (`/multivariate`: each benchmark ~ two or three others,
+with its error, the error of the best of them alone, and a measured vs.
+leave-one-out predicted scatter), and the methodology. Each page has its own URL
 (`/matrix`, `/model/<slug>`, `/b/<name>/<version>`, ...) and is listed in the
 generated `sitemap.xml`. The backend serves each page with its own title,
 description and a plain-HTML summary of its content (`web/src/Pages.php`) for
@@ -186,12 +209,9 @@ rebuilds). Scores are fractions; estimated scores carry `estimate` with
   never run on a vision benchmark keeps that gap rather than inheriting a
   score from text benchmarks. `crossfit` fits the pairs across capabilities
   too, into `cross_mappings`, for the website's cross-domain predictability
-  view only; no estimate comes from them. `crossmultifit` (after `crossfit`)
-  runs the multivariate search with sources of any capability (always two or
-  three, picked from each target's 8 best single predictors and the 8 sharing
-  the most models with it), into `cross_multi_mappings` with
-  every training model's leave-one-out prediction: the website's
-  multivariate view, again never used for estimates.
+  view only; no estimate comes from them. Neither do the multivariate
+  view's fits in `cross_multi_mappings` (`crossmultifit`, after `crossfit`;
+  see "Fitting and selection").
 - `scores.source` is `measured` or `gapfilled`; gapfilled rows carry the
   `mapping_id` that produced them and a `prediction_json` with the input
   score, input version, method, and an extrapolation flag.
@@ -226,6 +246,12 @@ measured on all its feature benchmarks and its LOO RMSE is lower;
 otherwise the univariate path applies - so a model missing one source
 benchmark simply falls back, and a capability gap stays a gap.
 
+The multivariate view (`benchgap crossmultifit`) runs the same greedy search
+for analysis only, with sources of any capability: from each target's 8 best
+single predictors and the 8 benchmarks sharing the most models with it, it
+always combines two (a third only if it helps), and it stores every training
+model's leave-one-out prediction for the page's scatter.
+
 Selection is by leave-one-out CV RMSE (capped at 40 folds for large pairs),
 which penalizes overfitting. A pair keeps a mapping only if the best fit
 passes a quality gate (R2 >= 0.3 and LOO RMSE <= 15 pp) - weak pairs keep
@@ -243,8 +269,9 @@ sets each one's capability (`CAPABILITIES`) and which ones the leaderboard
 picker shows first (`FEATURED`). Any CSV with the seed's columns can be
 ingested too: `model_slug, model_name, release, benchmark, version, label,
 featured, capability, unit, harness, score, source_url, retrieved_at`. Then
-rerun `fit`, `multifit` and `gapfill`: mappings are fitted automatically for
-every same-capability version pair with at least 5 paired models.
+rerun `fit`, `multifit` and `gapfill` (and `crossfit`, `crossmultifit` for the
+website's views): mappings are fitted automatically for every same-capability
+version pair with at least 5 paired models.
 
 ## Probabilistic roadmap
 

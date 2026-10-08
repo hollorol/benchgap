@@ -30,7 +30,8 @@ require __DIR__ . '/vendor/autoload.php';
 
 function database(): PDO
 {
-    $config = require __DIR__ . '/config.php';
+    // BENCHGAP_DSN: the local dev stack's database (compose.yaml); config.php otherwise
+    $config = getenv('BENCHGAP_DSN') ? ['dsn' => getenv('BENCHGAP_DSN')] : require __DIR__ . '/config.php';
     return new PDO($config['dsn'], $config['username'] ?? null, $config['password'] ?? null, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,

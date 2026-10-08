@@ -1,0 +1,31 @@
+# The local dev stack: benchgap.net's web/ on http://localhost:8080 with the database at
+# data/benchgap.db (or BENCHGAP_DB). `docker compose up`; edits in web/ show on reload.
+#   BENCHGAP_DB=path/to/other.db BENCHGAP_PORT=9000 docker compose up
+services:
+  # web/vendor/ (Slim), installed once as your user so the files stay yours
+  vendor:
+    image: composer:2
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      COMPOSER_HOME: /tmp/composer
+    working_dir: /app
+    volumes:
+      - ./web:/app
+    command: install --no-dev --no-interaction --no-progress
+
+  web:
+    build: docker/dev
+    depends_on:
+      vendor:
+        condition: service_completed_successfully
+    ports:
+      - "${BENCHGAP_PORT:-8080}:80"
+    environment:
+      BENCHGAP_DSN: sqlite:/data/benchgap.db
+    volumes:
+      - ./web:/var/www/html
+      - type: bind
+        source: ${BENCHGAP_DB:-./data/benchgap.db}
+        target: /data/benchgap.db
+        bind:
+          create_host_path: false   # a missing database is an error, not an empty folder
