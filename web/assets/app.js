@@ -867,18 +867,23 @@
     const maps = data.mappings;
     const byPair = new Map(maps.map((m) => [m.from + ":" + m.to, m]));
     const nByCap = groupBy(maps, (m) => ix.bench.get(m.from).capability);
-    const caps = D.capabilities.filter((c) => nByCap.has(c.id)).map((c) => ({ id: c.id, label: c.label, n: nByCap.get(c.id).length }));
+    nByCap.set("all", maps);   // the "All" chip: every capability at once
+    const caps = [{ id: "all", label: "All" }, ...D.capabilities.filter((c) => nByCap.has(c.id))].map((c) => ({ ...c, n: nByCap.get(c.id).length }));
+    const capOrder = new Map(D.capabilities.map((c, i) => [c.id, i]));
+    const capName = (cap) => (cap === "all" ? "All capabilities" : capLabel(cap));
     const LIST_ROWS = 20;  // mappings listed before "Show all"
 
     function pairMap(cap) {
       const involved = new Set();
       nByCap.get(cap).forEach((m) => { involved.add(m.from); involved.add(m.to); });
-      const vs = D.benchmarks.filter((b) => involved.has(b.id));
+      // grouped by capability (stable: within one, the site's order)
+      const vs = D.benchmarks.filter((b) => involved.has(b.id)).sort((a, b) => capOrder.get(a.capability) - capOrder.get(b.capability));
       const head = vs.map((b) => `<th><span class="colh">${esc(b.label)}</span></th>`).join("");
       const body = vs
         .map((src, i) => `<tr><th scope="row">${esc(src.label)}</th>${vs
           .map((dst, j) => {
             if (i === j) return `<td class="diag"></td>`;
+            if (src.capability !== dst.capability) return `<td data-tiptext="${esc(src.label)} → ${esc(dst.label)}: not calibrated (different capabilities)"></td>`;
             const m = byPair.get(src.id + ":" + dst.id);
             if (!m) return `<td class="none" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
             return `<td class="cell" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
@@ -900,12 +905,12 @@
         + (!all && rows.length > LIST_ROWS ? `<button type="button" class="btn more-maps">Show all ${rows.length} mappings</button>` : "");
     }
 
-    let cap = caps.reduce((a, c) => (c.n > a.n ? c : a)).id;
+    let cap = caps.slice(1).reduce((a, c) => (c.n > a.n ? c : a)).id;
     main.innerHTML = `<div class="page">
       ${pageHead("Calibration", "Which benchmarks predict which", `For each ordered pair of same-capability benchmarks with at least ${D.meta.quality_gate.min_pairs} shared models,
         several monotone curves are fitted and the one with the lowest leave-one-out error is kept, if it passes the quality gate
         (R² ≥ ${D.meta.quality_gate.min_r2}, error ≤ ${gate} pp). Cells show that error in percentage points: rows are the source, columns the target.
-        Benchmarks are only calibrated within a capability; pick one below.`)}
+        Benchmarks are only calibrated within a capability; pick one below, or All.`)}
       <section class="section">
         <div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
           .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === cap}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`)
@@ -916,7 +921,7 @@
           <span><span class="sq diag"></span>same benchmark</span></div>
       </section>
       <section class="section">
-        <h2 class="h2">Fitted mappings · <span id="maps-cap">${esc(capLabel(cap))}</span></h2>
+        <h2 class="h2">Fitted mappings · <span id="maps-cap">${esc(capName(cap))}</span></h2>
         <div class="list-wrap" id="maps">${mapList(cap, false)}</div>
       </section></div>`;
 
@@ -926,7 +931,7 @@
       main.querySelectorAll(".pm-caps .chip").forEach((x) => x.setAttribute("aria-pressed", String(x === c)));
       hideTip();
       swapContent($("#pm-wrap"), pairMap(cap));
-      swapContent($("#maps-cap"), esc(capLabel(cap)));
+      swapContent($("#maps-cap"), esc(capName(cap)));
       swapContent($("#maps"), mapList(cap, false));
     }));
     $("#maps").addEventListener("click", (e) => {
