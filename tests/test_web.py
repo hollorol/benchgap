@@ -194,6 +194,11 @@ def test_page_data_slices_the_site_data(server):
     assert one["mapping"] == next(m for m in whole["mappings"] if m["id"] == maps[0]["id"])
     assert one["estimates"] == [s for s in scores if s["s"] == "e" and s["via"]["kind"] == "uni" and s["via"]["mapping"] == maps[0]["id"]]
 
+    # the cross-domain fits: compact, between listed benchmarks
+    cross = get_json(server, "/data/cross.json")["cross"]
+    assert cross and cross == [c for c in whole["cross_mappings"] if c[0] in listed and c[1] in listed]
+    assert whole["meta"]["counts"]["cross_mappings"] == len(whole["cross_mappings"])
+
     for path in ["/data/b/no-such/bench.json", "/data/model/no-such-model.json", "/data/calibration/999999.json", "/data/score/0/0.json"]:
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)

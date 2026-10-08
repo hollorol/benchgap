@@ -5,12 +5,14 @@ import json
 
 import pytest
 
+from benchgap.cache import FitCache
 from benchgap.db import connect, init_db
+from benchgap.fit import fit_cross_mappings
 from benchgap.gapfill import gapfill
 from benchgap.ingest import ingest_csv
 from benchgap.report import mapping_summary, render_matrix, score_matrix
 
-from conftest import SEED
+from conftest import CROSS_MIN_PAIRS, SEED
 
 # Snapshot expectations for the test seed (regenerate if it changes).
 N_MODELS = 206
@@ -82,6 +84,51 @@ def test_fit_within_capability_and_quality_gate(build):
         " WHERE bf.capability != bt.capability"
     ).fetchone()[0]
     assert cross == 0
+
+
+def test_cross_fits_only_across_capabilities(build):
+    """The cross-domain fits pair different capabilities, and gapfill never uses them."""
+    conn, summary = build["conn"], build["crossfit"]
+    rows = conn.execute(
+        "SELECT c.passes, bf.capability AS cf, bt.capability AS ct FROM cross_mappings c"
+        " JOIN benchmark_versions vf ON vf.id = c.from_version_id"
+        " JOIN benchmark_versions vt ON vt.id = c.to_version_id"
+        " JOIN benchmarks bf ON bf.id = vf.benchmark_id"
+        " JOIN benchmarks bt ON bt.id = vt.benchmark_id ORDER BY c.id"
+    ).fetchall()
+    assert len(rows) == len(summary) == 14
+    assert all(r["cf"] != r["ct"] for r in rows)
+    assert [bool(r["passes"]) for r in rows] == [s["rejected"] is None for s in summary]
+    assert any(r["passes"] for r in rows) and not all(r["passes"] for r in rows)
+    # every estimate comes from a mapping (or a multivariate mapping), never a cross fit
+    assert conn.execute(
+        "SELECT COUNT(*) FROM scores WHERE source = 'gapfilled'"
+        " AND mapping_id IS NULL AND multi_mapping_id IS NULL"
+    ).fetchone()[0] == 0
+
+
+def test_fit_cache(writable_db, tmp_path):
+    """A run from the cache stores exactly what fitting again does; checkpoints keep earlier results."""
+    def stored():
+        return [tuple(r) for r in writable_db.execute(
+            "SELECT from_version_id, to_version_id, method, params_json, metrics_json, passes"
+            " FROM cross_mappings ORDER BY id")]
+
+    cold = FitCache(tmp_path, "crossfit")
+    summary = fit_cross_mappings(writable_db, min_pairs=CROSS_MIN_PAIRS + 10, cache=cold)
+    cold.save()
+    fitted = stored()
+    warm = FitCache(tmp_path, "crossfit")
+    assert fit_cross_mappings(writable_db, min_pairs=CROSS_MIN_PAIRS + 10, cache=warm) == summary
+    assert stored() == fitted and warm.stats() == f" ({len(warm.used)} of {len(warm.used)} fits reused)"
+
+    cache = FitCache(tmp_path, "unit")
+    cache.earlier = {"old": 1}
+    cache.get("new", lambda: 2)
+    cache.checkpoint()
+    assert json.loads((tmp_path / "unit.json").read_text()) == {"old": 1, "new": 2}
+    cache.save()
+    assert json.loads((tmp_path / "unit.json").read_text()) == {"new": 2}
 
 
 def test_gapfill_keeps_capability_gaps(gapfilled_db, writable_db):

@@ -9,10 +9,30 @@ from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor
-from typing import Callable, Iterable, Optional, TypeVar
+from typing import Callable, Iterable, Iterator, Optional, TypeVar
 
 T = TypeVar("T")
 R = TypeVar("R")
+
+
+def ipmap(
+    fn: Callable[[T], R],
+    items: Iterable[T],
+    jobs: Optional[int] = None,
+    initializer: Optional[Callable] = None,
+    initargs: tuple = (),
+) -> Iterator[R]:
+    """``fn(x) for x in items`` over ``jobs`` processes (none or 0: every core; 1: in this
+    process), yielded in input order as the results come in."""
+    items = list(items)
+    workers = min(jobs if jobs and jobs > 0 else (os.cpu_count() or 1), len(items))
+    if workers <= 1:
+        if initializer is not None:
+            initializer(*initargs)
+        yield from map(fn, items)
+        return
+    with ProcessPoolExecutor(workers, initializer=initializer, initargs=initargs) as pool:
+        yield from pool.map(fn, items, chunksize=max(1, len(items) // (workers * 8)))
 
 
 def pmap(
@@ -23,11 +43,4 @@ def pmap(
     initargs: tuple = (),
 ) -> list[R]:
     """``[fn(x) for x in items]`` over ``jobs`` processes (none or 0: every core; 1: in this process)."""
-    items = list(items)
-    workers = min(jobs if jobs and jobs > 0 else (os.cpu_count() or 1), len(items))
-    if workers <= 1:
-        if initializer is not None:
-            initializer(*initargs)
-        return [fn(x) for x in items]
-    with ProcessPoolExecutor(workers, initializer=initializer, initargs=initargs) as pool:
-        return list(pool.map(fn, items, chunksize=max(1, len(items) // (workers * 8))))
+    return list(ipmap(fn, items, jobs, initializer, initargs))

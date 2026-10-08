@@ -82,6 +82,7 @@ benchgap init                              # create data/benchgap.db
 benchgap ingest                            # load data/seed/scores.csv
 benchgap fit -v                            # fit univariate mappings per version pair (every core; -j N)
 benchgap multifit                          # fit multivariate mappings per target
+benchgap crossfit                          # fit pairs across capabilities (cross-domain view only)
 benchgap fit --cache .fit-cache            # reuse the fits whose data did not change since the last run
 benchgap gapfill                           # fill missing scores (prefers multi where it wins)
 benchgap report                            # dense-core score matrix (terminal)
@@ -182,7 +183,9 @@ rebuilds). Scores are fractions; estimated scores carry `estimate` with
   coding, math, knowledge, instruction-following, vision, ...). Mappings are
   only fitted between versions of the same capability - a model that was
   never run on a vision benchmark keeps that gap rather than inheriting a
-  score from text benchmarks.
+  score from text benchmarks. `crossfit` fits the pairs across capabilities
+  too, into `cross_mappings`, for the website's cross-domain predictability
+  view only; no estimate comes from them.
 - `scores.source` is `measured` or `gapfilled`; gapfilled rows carry the
   `mapping_id` that produced them and a `prediction_json` with the input
   score, input version, method, and an extrapolation flag.

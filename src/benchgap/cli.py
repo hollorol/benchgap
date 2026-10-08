@@ -118,6 +118,20 @@ def cmd_multifit(args: argparse.Namespace) -> None:
     _print_kept(f"searched {len(summary)} targets", "multivariate mappings", summary, cache)
 
 
+def cmd_crossfit(args: argparse.Namespace) -> None:
+    from .cache import FitCache
+    from .fit import fit_cross_mappings
+
+    conn = _conn(args)
+    cache = FitCache(args.cache, "crossfit")
+    summary = fit_cross_mappings(conn, jobs=args.jobs, cache=cache)
+    cache.save()
+    for s in summary if args.verbose else []:
+        verdict = f"rejected (quality gate: {s['rejected']})" if s["rejected"] else f"LOO RMSE {s['best_LOO_RMSE'] * 100:.2f} pp"
+        print(f"{s['from']} -> {s['to']}: n={s['n_pairs']} {verdict}")
+    _print_kept(f"fitted {len(summary)} cross-capability pairs", "passing the quality gate", summary, cache)
+
+
 def cmd_report(args: argparse.Namespace) -> None:
     from .report import display_filter
 
@@ -246,6 +260,15 @@ def build_parser() -> argparse.ArgumentParser:
     mfit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
     mfit.add_argument("--cache", metavar="DIR", help=CACHE_HELP)
     mfit.set_defaults(func=cmd_multifit)
+
+    cfit = sub.add_parser(
+        "crossfit",
+        help="fit pairs across capabilities, for the cross-domain view (never used for estimates)",
+    )
+    cfit.add_argument("-v", "--verbose", action="store_true", help="show every pair")
+    cfit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
+    cfit.add_argument("--cache", metavar="DIR", help=CACHE_HELP)
+    cfit.set_defaults(func=cmd_crossfit)
 
     rep = sub.add_parser("report", help="show mappings and the score matrix")
     rep.add_argument("--min-models", type=int, default=DEFAULT_MIN_MODELS,

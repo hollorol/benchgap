@@ -17,6 +17,8 @@ namespace Benchgap;
  * - calibration.json: the calibrations between listed benchmarks, without
  *   their points and curves
  * - calibration/{id}.json: one calibration with its points, curve and estimates
+ * - cross.json: the cross-domain fits (Snapshot's compact rows) between listed benchmarks
+ *   of different capabilities; never used for estimates
  *
  * Scores, benchmarks, models and mappings keep the Snapshot's shapes and ids.
  */
@@ -109,6 +111,14 @@ final class Site
             }
         }
         return ['mappings' => $maps];
+    }
+
+    public function cross(): array
+    {
+        return ['cross' => array_values(array_filter(
+            $this->data['cross_mappings'] ?? [],
+            fn ($m) => isset($this->listed[$m[0]], $this->listed[$m[1]])
+        ))];
     }
 
     /** One calibration with its points and curve, the estimates it made and its reverse; null if there is none. */

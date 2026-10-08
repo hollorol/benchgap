@@ -151,6 +151,7 @@ $app->group('/data', function (RouteCollectorProxy $data) {
     $data->get('/score/{model:[0-9]+}/{benchmark:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->score((int) $a['model'], (int) $a['benchmark']), $rq)));
     $data->get('/calibration.json', fn (Request $rq, Response $rs) => send($rs, site()->calibration()));
+    $data->get('/cross.json', fn (Request $rq, Response $rs) => send($rs, site()->cross()));
     $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->mapping((int) $a['id']), $rq)));
 });

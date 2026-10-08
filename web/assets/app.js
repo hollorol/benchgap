@@ -866,31 +866,38 @@
     // one capability at a time (the one with the most mappings first)
     const maps = data.mappings;
     const byPair = new Map(maps.map((m) => [m.from + ":" + m.to, m]));
-    const nByCap = groupBy(maps, (m) => ix.bench.get(m.from).capability);
+    const capOf = (id) => ix.bench.get(id).capability;
+    const nByCap = groupBy(maps, (m) => capOf(m.from));
     nByCap.set("all", maps);   // the "All" chip: every capability at once
     const caps = [{ id: "all", label: "All" }, ...D.capabilities.filter((c) => nByCap.has(c.id))].map((c) => ({ ...c, n: nByCap.get(c.id).length }));
     const capOrder = new Map(D.capabilities.map((c, i) => [c.id, i]));
     const capName = (cap) => (cap === "all" ? "All capabilities" : capLabel(cap));
+    // the cross-domain fits (data/cross.json), by "from:to"; loaded after the page
+    let cross = null;
     const LIST_ROWS = 20;  // mappings listed before "Show all"
+
+    // a source x target table of rows ({ id, label }) with cell(src, dst, pair) for each cell
+    const pmTable = (rows, cell) => `<table class="pm"><thead><tr><th style="text-align:right;vertical-align:bottom" class="muted">source ↓ · target →</th>${rows
+      .map((r) => `<th><span class="colh">${esc(r.label)}</span></th>`).join("")}</tr></thead><tbody>${rows
+      .map((src) => `<tr><th scope="row">${esc(src.label)}</th>${rows.map((dst) => cell(src, dst, `${esc(src.label)} → ${esc(dst.label)}`)).join("")}</tr>`)
+      .join("")}</tbody></table>`;
 
     function pairMap(cap) {
       const involved = new Set();
       nByCap.get(cap).forEach((m) => { involved.add(m.from); involved.add(m.to); });
       // grouped by capability (stable: within one, the site's order)
       const vs = D.benchmarks.filter((b) => involved.has(b.id)).sort((a, b) => capOrder.get(a.capability) - capOrder.get(b.capability));
-      const head = vs.map((b) => `<th><span class="colh">${esc(b.label)}</span></th>`).join("");
-      const body = vs
-        .map((src, i) => `<tr><th scope="row">${esc(src.label)}</th>${vs
-          .map((dst, j) => {
-            if (i === j) return `<td class="diag"></td>`;
-            if (src.capability !== dst.capability) return `<td data-tiptext="${esc(src.label)} → ${esc(dst.label)}: not calibrated (different capabilities)"></td>`;
-            const m = byPair.get(src.id + ":" + dst.id);
-            if (!m) return `<td class="none" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
-            return `<td class="cell" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${esc(src.label)} → ${esc(dst.label)}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
-          })
-          .join("")}</tr>`)
-        .join("");
-      return `<table class="pm"><thead><tr><th style="text-align:right;vertical-align:bottom" class="muted">source ↓ · target →</th>${head}</tr></thead><tbody>${body}</tbody></table>`;
+      return pmTable(vs, (src, dst, pair) => {
+        if (src === dst) return `<td class="diag"></td>`;
+        if (src.capability !== dst.capability) {
+          const x = cross?.get(src.id + ":" + dst.id);
+          if (x?.passes && x.loo != null) return `<td class="cell cross" style="background:${lossColor(x.loo * 100, gate)}" data-tiptext="${pair}: cross-domain, ${esc(methodLabel(x.method))}, n=${x.n}, R²=${x.r2.toFixed(2)}, LOO error ${pct(x.loo)} pp (shown to compare, never used for estimates)">${pct(x.loo)}</td>`;
+          return `<td data-tiptext="${pair}: ${x ? "the cross-domain fit fails the quality gate" : "different capabilities, too few shared models"}"></td>`;
+        }
+        const m = byPair.get(src.id + ":" + dst.id);
+        if (!m) return `<td class="none" data-tiptext="${pair}: no usable mapping (too few shared models, or the best fit failed the quality gate)"></td>`;
+        return `<td class="cell" style="background:${lossColor(m.loo * 100, gate)}"><a href="${mappingHref(m.id)}" data-tiptext="${pair}: ${esc(methodLabel(m.method))}, n=${m.n}, R²=${m.r2.toFixed(2)}, LOO error ${pct(m.loo)} pp, used for ${m.n_used} estimates">${pct(m.loo)}</a></td>`;
+      });
     }
     function mapList(cap, all) {
       const rows = nByCap.get(cap).slice().sort((a, b) => a.loo - b.loo);
@@ -905,12 +912,25 @@
         + (!all && rows.length > LIST_ROWS ? `<button type="button" class="btn more-maps">Show all ${rows.length} mappings</button>` : "");
     }
 
+    // capability x capability: the median LOO error of the cross-domain fits that pass the gate
+    function crossTable() {
+      const byCaps = groupBy([...cross.values()], (x) => capOf(x.from) + ":" + capOf(x.to));
+      return pmTable(caps.slice(1), (src, dst, pair) => {
+        if (src === dst) return `<td class="diag" data-tiptext="${esc(src.label)}: the same capability, calibrated within it (its chip above)"></td>`;
+        const all = byCaps.get(src.id + ":" + dst.id) || [];
+        const ok = all.filter((x) => x.passes && x.loo != null).sort((a, b) => a.loo - b.loo);
+        if (!ok.length) return `<td class="none" data-tiptext="${pair}: ${all.length ? `none of ${all.length} benchmark pairs passes the quality gate` : "no benchmark pairs with enough shared models"}"></td>`;
+        const med = ok[ok.length >> 1].loo, best = ok[0];
+        return `<td class="cell cross" style="background:${lossColor(med * 100, gate)}" data-tiptext="${pair}: median LOO error ${pct(med)} pp; ${ok.length} of ${all.length} benchmark pairs pass the quality gate; best ${esc(ix.bench.get(best.from).label)} → ${esc(ix.bench.get(best.to).label)} (${pct(best.loo)} pp)">${pct(med)}</td>`;
+      });
+    }
+
     let cap = caps.slice(1).reduce((a, c) => (c.n > a.n ? c : a)).id;
     main.innerHTML = `<div class="page">
       ${pageHead("Calibration", "Which benchmarks predict which", `For each ordered pair of same-capability benchmarks with at least ${D.meta.quality_gate.min_pairs} shared models,
         several monotone curves are fitted and the one with the lowest leave-one-out error is kept, if it passes the quality gate
         (R² ≥ ${D.meta.quality_gate.min_r2}, error ≤ ${gate} pp). Cells show that error in percentage points: rows are the source, columns the target.
-        Benchmarks are only calibrated within a capability; pick one below, or All.`)}
+        Estimates come only from calibrations within a capability; pick one below, or All, which also shows the fits across capabilities (see Cross-domain predictability).`)}
       <section class="section">
         <div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
           .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === cap}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`)
@@ -918,7 +938,15 @@
         <div class="pm-wrap" id="pm-wrap">${pairMap(cap)}</div>
         <div class="scale"><span>0 pp</span><span class="ramp" style="background:${LOSS_RAMP}"></span><span>${gate} pp (gate)</span>
           <span style="margin-left:1rem"><span class="sq none"></span>no usable mapping</span>
-          <span><span class="sq diag"></span>same benchmark</span></div>
+          <span><span class="sq diag"></span>same benchmark</span>
+          <span><span class="sq cross"></span>cross-domain (All only)</span></div>
+      </section>
+      <section class="section">
+        <h2 class="h2">Cross-domain predictability</h2>
+        <p class="lede">How well one capability's benchmarks predict another's: each cell is the median leave-one-out error (pp)
+          of the fits between their benchmarks that pass the quality gate, from source capability (row) to target (column).
+          Fits across capabilities are made only for this comparison and the All view; no estimate comes from them.</p>
+        <div class="pm-wrap" id="cross-sum"><p class="muted">Loading the cross-domain fits…</p></div>
       </section>
       <section class="section">
         <h2 class="h2">Fitted mappings · <span id="maps-cap">${esc(capName(cap))}</span></h2>
@@ -937,6 +965,14 @@
     $("#maps").addEventListener("click", (e) => {
       if (e.target.closest(".more-maps")) swapContent($("#maps"), mapList(cap, true));
     });
+    const sum = $("#cross-sum");
+    load("/data/cross.json").then((d) => {
+      if (!sum.isConnected) return;   // another page was opened meanwhile
+      cross = new Map(d.cross.map(([from, to, method, n, r2, loo, passes]) => [from + ":" + to, { from, to, method, n, r2, loo, passes }]));
+      if (!d.cross.length) { sum.innerHTML = `<p class="muted">No cross-domain fits in this build yet.</p>`; return; }
+      swapContent(sum, crossTable());
+      if (cap === "all") swapContent($("#pm-wrap"), pairMap(cap));
+    }).catch(() => { if (sum.isConnected) sum.innerHTML = `<p class="muted">The cross-domain fits could not be loaded.</p>`; });
   }
 
   // data: the calibration with its points and curve, the estimates it made and its reverse (data/calibration/{id}.json)

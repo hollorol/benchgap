@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Benchgap;
 
 use PDO;
+use PDOException;
 
 /**
  * The site's data document (data/benchgap.json), computed from the
@@ -248,6 +249,15 @@ final class Snapshot
             ];
         }
 
+        // the cross-domain view's fits (never used for estimates), compact: [from, to, method,
+        // n, r2, loo, passes]; there are none before the first build that has the table
+        $cross = [];
+        foreach (self::hasTable($db, 'cross_mappings') ? $db->query('SELECT * FROM cross_mappings ORDER BY id') : [] as $m) {
+            $metrics = json_decode($m['metrics_json'], true);
+            $cross[] = [(int) $m['from_version_id'], (int) $m['to_version_id'], $m['method'], (int) $m['n_points'],
+                self::num($metrics['R2'] ?? null, 3), self::num($metrics['LOO_RMSE'] ?? null, 4), (bool) $m['passes']];
+        }
+
         $harnesses = array_values(array_unique(array_column($benchmarks, 'harness')));
         sort($harnesses);
         $estimated = array_sum($tiers);
@@ -262,6 +272,7 @@ final class Snapshot
                     'measured' => count($measured),
                     'estimated' => $estimated,
                     'mappings' => count($mappingDocs),
+                    'cross_mappings' => count($cross),
                     'confidence' => $tiers,
                 ],
                 'quality_gate' => self::QUALITY_GATE + ['n_candidates' => count(Curves::EQUATIONS)],
@@ -277,6 +288,7 @@ final class Snapshot
             'models' => $models,
             'scores' => $scores,
             'mappings' => $mappingDocs,
+            'cross_mappings' => $cross,
         ];
     }
 
@@ -365,6 +377,16 @@ final class Snapshot
             $models = array_diff_key($models, array_flip($dropM));
         } while ($dropV || $dropM);
         return [$versions, $models];
+    }
+
+    private static function hasTable(PDO $db, string $table): bool
+    {
+        try {
+            $db->query("SELECT 1 FROM $table LIMIT 1");
+            return true;
+        } catch (PDOException) {
+            return false;
+        }
     }
 
     /** Sort key of a candidate mapping: lowest LOO error, then lowest RMSE. */

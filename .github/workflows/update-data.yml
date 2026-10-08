@@ -7,7 +7,8 @@
 # page, the API and llms.txt show the new data and dates right away.
 # Fits whose training data did not change since the last run come from the fit
 # cache (identical results), so a normal day takes a minute or two instead of
-# the ~20 minutes of a cold build.
+# the ~90 minutes of a cold build (most of it the cross-domain fits); a run cut
+# off midway keeps the fits it finished, and the next one carries on from them.
 # Repository secrets: SSH_HOST, SSH_USER, SSH_PASSWORD.
 name: Update the data
 
@@ -32,7 +33,7 @@ env:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@v7
 
@@ -55,18 +56,27 @@ jobs:
           key: fit-cache-${{ github.run_id }}
           restore-keys: fit-cache-
 
-      # shorter than the job, so the fit cache is still saved when it runs out of time
+      # the steps' timeouts add up to less than the job's, so the fit cache is still saved
       - name: Compute every calibration and estimate
         timeout-minutes: 60
         run: |
-          db="$RUNNER_TEMP/benchgap.db"
-          bg() { .venv/bin/benchgap --db "$db" "$@"; }
+          bg() { .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" "$@"; }
           bg init
           bg ingest
           bg fit --cache .fit-cache | tail -1
           bg multifit --cache .fit-cache | tail -1
           bg gapfill | tail -1
-          bg sql "$RUNNER_TEMP/benchgap.sql"
+
+      # for the cross-domain view only (no estimate uses it): if it fails or runs out of
+      # time, the data is loaded without it, and the next run carries on from its fits
+      - name: Fit across capabilities
+        timeout-minutes: 120
+        continue-on-error: true
+        run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" crossfit --cache .fit-cache
+
+      - name: Write the database
+        run: |
+          .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" sql "$RUNNER_TEMP/benchgap.sql"
           gzip -1 "$RUNNER_TEMP/benchgap.sql"
 
       # also when a later stage fails or runs out of time: the fits done so far are kept

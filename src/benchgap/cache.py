@@ -56,6 +56,9 @@ class FitCache:
             self.used[key] = self.earlier[key] if key in self.earlier else compute()
         return self.used[key]
 
+    def put(self, key: str, result) -> None:
+        self.used[key] = result
+
     @classmethod
     def of(cls, earlier: dict) -> "FitCache":
         """A cache over earlier results (in a worker process: the parent saves what it used)."""
@@ -64,9 +67,20 @@ class FitCache:
         return cache
 
     def save(self) -> None:
+        """Writes the results this run used (and only those)."""
+        self._write(self.used)
+
+    def checkpoint(self) -> None:
+        """Writes the results so far, keeping the earlier ones (until save): a run cut off
+        afterwards loses none of them."""
+        self._write({**self.earlier, **self.used})
+
+    def _write(self, results: dict) -> None:
         if self.file:
             self.file.parent.mkdir(parents=True, exist_ok=True)
-            self.file.write_text(json.dumps(self.used))
+            tmp = self.file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(results))
+            tmp.replace(self.file)   # never half a file, even when the run is killed while writing
 
     def stats(self) -> str:
         """How many fits were reused, as " (N of M fits reused)"; "" without a cache directory."""

@@ -63,6 +63,21 @@ CREATE TABLE IF NOT EXISTS mapping_points (
     PRIMARY KEY (mapping_id, model_id)
 );
 
+-- the selected fit of each pair of versions of different capabilities: for the
+-- cross-domain view only, never used for estimates (fit.fit_cross_mappings)
+CREATE TABLE IF NOT EXISTS cross_mappings (
+    id              INTEGER PRIMARY KEY,
+    from_version_id INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    to_version_id   INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    method          TEXT NOT NULL,
+    params_json     TEXT NOT NULL,
+    metrics_json    TEXT NOT NULL,
+    n_points        INTEGER NOT NULL,
+    passes          INTEGER NOT NULL,  -- 1 if it passes the quality gate
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (from_version_id, to_version_id)
+);
+
 CREATE TABLE IF NOT EXISTS multi_mappings (
     id                     INTEGER PRIMARY KEY,
     to_version_id          INTEGER NOT NULL REFERENCES benchmark_versions(id),

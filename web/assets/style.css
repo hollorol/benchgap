@@ -558,6 +558,9 @@ table.pm { border-collapse: separate; border-spacing: 2px; font: .72rem var(--mo
 .pm td.diag, .scale .sq.diag { background: repeating-linear-gradient(45deg, var(--rule-strong) 0 1px, transparent 1px 4px); }
 .pm td.none, .scale .sq.none { background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--rule-strong); }
 .pm td.cell:hover { outline: 2px solid var(--ink); }
+/* a fit across capabilities: compared, never used for estimates (no link: the text is the cell's own) */
+.pm td.cross { color: #17191e; font-weight: 600; box-shadow: inset 0 0 0 2px var(--paper); }
+.scale .sq.cross { background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--rule-strong), inset 0 0 0 3px var(--paper); }
 .scale { display: flex; align-items: center; gap: .6rem; font: .72rem var(--mono); color: var(--muted); margin: .8rem 0 0; flex-wrap: wrap; }
 .scale .ramp { width: 180px; height: 10px; border-radius: 99px; }  /* gradient set from LOSS_STOPS in app.js */
 .scale .sq { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -3px; margin-right: .3rem; }
