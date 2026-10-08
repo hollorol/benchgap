@@ -20,8 +20,14 @@
 <meta property="og:image:alt" content="benchgap: Mind the gap. LLM benchmark scores, measured where possible, estimated where not.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- until app.js renders the page, <main> (the plain-HTML summary) stays hidden: see .booting in style.css -->
+<script>document.documentElement.classList.add("booting")</script>
 <link rel="preload" href="/assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/geist-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/fonts/instrument-serif-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/instrument-serif-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
+<!-- serve.php adds the page's data (data/...) here, so it loads alongside app.js -->
+<link rel="preload" href="/data/site.json" as="fetch" crossorigin>
 <link rel="stylesheet" href="/assets/style.css">
 <script data-host="https://app.analyzati.com" data-dnt="false" src="https://app.analyzati.com/js/script.js?v=1791125405" id="ZwSg9rf6GA" async defer></script>
 <script type="application/ld+json">

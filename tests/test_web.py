@@ -251,6 +251,12 @@ def test_pages_and_sitemap(server):
         assert re.search(rf"<title>[^<]*{re.escape(title)} · benchgap</title>", body), path
         assert f'<link rel="canonical" href="https://benchgap.net{path}">' in body, path
         assert '<main id="main" class="wrap" tabindex="-1"><div class="page">' in body, path
+        # the data app.js renders the page from loads alongside app.js; app.js and style.css by their content
+        data = re.findall(r'<link rel="preload" href="(/data/[^"]+)" as="fetch"', body)
+        assert data[0] == "/data/site.json" and len(data) == (1 if path == "/method" else 2), path
+        assert all(get_json(server, url) for url in data), path
+        assert re.search(r'<script src="/assets/app\.js\?v=[0-9a-f]+" defer', body), path
+        assert re.search(r'<link rel="stylesheet" href="/assets/style\.css\?v=[0-9a-f]+">', body), path
     _, board = get(server, "/b/aa-terminal-bench21/current")
     assert "the highest measured score on AA Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]
     assert model["page"] == f"https://benchgap.net/model/{model['slug']}"

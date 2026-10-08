@@ -204,6 +204,10 @@ button, input, select { font: inherit; color: inherit; }
 main { flex: 1; outline: none; transition: opacity .15s; }
 /* while the next page's data loads (app.js route()): dimmed only if it takes a moment */
 main[aria-busy="true"] { opacity: .55; transition-delay: .15s; }
+/* the first load: the server's plain-HTML summary (for search engines and no-JS) is not
+   shown before app.js renders the page in its place; shown anyway if app.js never runs */
+.booting main { visibility: hidden; animation: boot-timeout 0s 4s forwards; }
+@keyframes boot-timeout { to { visibility: visible; } }
 .page { animation: rise .45s cubic-bezier(.2, .7, .2, 1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .page, .reveal > * { animation: none !important; } }

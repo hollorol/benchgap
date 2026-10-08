@@ -1355,6 +1355,8 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     $('meta[name="robots"]').content = path === null ? "noindex" : "index, follow";
   }
 
+  // the first page is rendered: <main> no longer hides (index.html, .booting)
+  const booted = () => document.documentElement.classList.remove("booting");
   let shownPath = null;   // the path the page was last rendered (or is being loaded) for
   const scrollToHash = () => { const el = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1))); if (el) el.scrollIntoView(); return !!el; };
   async function route() {
@@ -1383,6 +1385,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     const nav = page ? page[1] : "";
     const inPlace = page ? page[2](arg, data) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+    booted();
     if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }
 
@@ -1551,6 +1554,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
 
   function renderError(err) {
     main.innerHTML = `<div class="page">${pageHead("Error", "The score database could not be loaded.", `${esc(err.message)}. Please try again in a moment.`)}</div>`;
+    booted();
   }
 
   // links from before pages had their own paths: #/model/x -> /model/x

@@ -95,17 +95,33 @@ function found(?array $document, Request $request): array
     return $document ?? throw new HttpNotFoundException($request);
 }
 
-// index.html filled in with one of the site's pages (see Pages)
-function html(Pages $pages, array $page, Request $request): string
+// index.html filled in with one of the site's pages (see Pages), and with the page's own
+// data document (data/...) to preload: app.js loads it alongside data/site.json
+function html(Pages $pages, array $page, Request $request, ?string $data = null): string
 {
-    return $pages->html(file_get_contents(__DIR__ . '/index.html'), $page, $request->getUri()->getPath());
+    $template = file_get_contents(__DIR__ . '/index.html');
+    // app.js and style.css by their content, so browsers can keep them (.htaccess) and still get each new upload
+    foreach (['/assets/app.js', '/assets/style.css'] as $asset) {
+        $template = str_replace("\"$asset\"", "\"$asset?v=" . hash_file('crc32b', __DIR__ . $asset) . '"', $template);
+    }
+    if ($data !== null) {
+        $site = '<link rel="preload" href="/data/site.json" as="fetch" crossorigin>';
+        $template = str_replace($site, "$site\n" . str_replace('/data/site.json', htmlspecialchars($data), $site), $template);
+    }
+    return $pages->html($template, $page, $request->getUri()->getPath());
 }
 
-// the page $build makes with Pages
-function page(Request $request, Response $response, Closure $build): Response
+// the page $build makes with Pages, and the data document app.js renders it from (as app.js PAGES)
+function page(Request $request, Response $response, Closure $build, ?string $data = null): Response
 {
     $pages = new Pages(api());
-    return send($response, html($pages, found($build($pages), $request), $request), 'text/html');
+    return send($response, html($pages, found($build($pages), $request), $request, $data), 'text/html');
+}
+
+// a data/ path, its parts URL-encoded (as app.js boardUrl and modelUrl)
+function data(string ...$parts): string
+{
+    return '/data/' . implode('/', array_map('rawurlencode', $parts)) . '.json';
 }
 
 $app = AppFactory::create();
@@ -143,14 +159,17 @@ $app->get('/llms.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(ap
 $app->get('/llms-full.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llmsFull(), 'text/markdown'));
 
 // the site's pages (keep in step with app.js PAGES)
-$app->get('/', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->board($p->home())));
-$app->get('/b/{key:.+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->board($a['key'])));
-$app->get('/model/{slug:.+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->model($a['slug'])));
-$app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->matrix()));
-$app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->calibration()));
-$app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) => page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id'])));
+$app->get('/', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->board($p->home()), data('home')));
+$app->get('/b/{key:.+}', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->board($a['key']), data('b', ...explode('/', $a['key']))));
+$app->get('/model/{slug:.+}', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->model($a['slug']), data('model', $a['slug'])));
+$app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->matrix(), data('matrix')));
+$app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->calibration(), data('calibration')));
+$app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id']), data('calibration', $a['id'])));
 $app->get('/method', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->methodPage()));
-$app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage()));
+$app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage(), data('calibration')));
 
 $app->group('/api/v1', function (RouteCollectorProxy $v1) {
     $v1->get('[/[index.json]]', fn (Request $rq, Response $rs) => send($rs, api()->index()));
