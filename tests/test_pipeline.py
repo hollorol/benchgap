@@ -6,9 +6,10 @@ import math
 
 import pytest
 
+from benchgap import multivariate
 from benchgap.cache import FitCache
 from benchgap.db import connect, init_db
-from benchgap.fit import fit_cross_mappings
+from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2, fit_cross_mappings
 from benchgap.fitting import MAX_LOO_FOLDS
 from benchgap.gapfill import gapfill
 from benchgap.ingest import ingest_csv
@@ -155,6 +156,16 @@ def test_fit_cache(writable_db, tmp_path):
     assert json.loads((tmp_path / "unit.json").read_text()) == {"old": 1, "new": 2}
     cache.save()
     assert json.loads((tmp_path / "unit.json").read_text()) == {"new": 2}
+
+
+def test_multifit_checkpoints(writable_db, tmp_path, monkeypatch):
+    """The multivariate searches write their fits out as they go: a run cut off midway (a CI
+    step's timeout) leaves the next one most of them."""
+    monkeypatch.setattr(multivariate, "CHECKPOINT", 1)
+    cache = FitCache(tmp_path, "multifit")
+    multivariate.fit_multimappings(writable_db, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE, cache=cache)
+    # never saved: what is on disk is the last checkpoint's
+    assert set(json.loads((tmp_path / "multifit.json").read_text())) == set(cache.used)
 
 
 def test_gapfill_keeps_capability_gaps(gapfilled_db, writable_db):

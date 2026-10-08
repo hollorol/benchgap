@@ -47,9 +47,9 @@ from functools import partial
 import numpy as np
 from scipy.optimize import curve_fit
 
-from .cache import FitCache, fit_key
+from .cache import CHECKPOINT, FitCache, fit_key
 from .fitting import _loo_indices
-from .parallel import pmap
+from .parallel import ipmap
 
 # candidates offered to one fit (the pool); the L1 part zeroes what it can
 POOL_MAX = 8
@@ -551,15 +551,20 @@ def _fraction_versions(conn: sqlite3.Connection) -> list[dict]:
 
 def _run_searches(conn: sqlite3.Connection, fn, min_pairs: int, cache: FitCache, jobs: int | None, **policy):
     """(target, fn(target)'s result) for every fraction version, searched on ``jobs`` processes
-    (default: every core) under ``policy`` (_init's); the fits they used go into ``cache``."""
+    (default: every core) under ``policy`` (_init's); the fits they used go into ``cache``,
+    written out every CHECKPOINT new ones."""
     versions = _fraction_versions(conn)
     conn.commit()  # the workers read the committed database
     path = conn.execute("PRAGMA database_list").fetchone()[2]
+    saved = len(cache.used)
     # an in-memory database (no path) exists only in this process
-    for target, (best, used) in zip(versions, pmap(
+    for target, (best, used) in zip(versions, ipmap(
         fn, versions, jobs if path else 1, partial(_init, **policy), (path or conn, versions, min_pairs, cache.earlier)
     )):
         cache.used.update(used)
+        if len(cache.used) - saved >= CHECKPOINT:
+            cache.checkpoint()
+            saved = len(cache.used)
         yield target, best
 
 

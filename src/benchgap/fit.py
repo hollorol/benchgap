@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import asdict
 from typing import Optional
 
-from .cache import FitCache, fit_key
+from .cache import CHECKPOINT, FitCache, fit_key
 from .db import version_label
 from .fitting import FitResult, fit_all, select_best
 from .parallel import ipmap
@@ -90,10 +90,6 @@ def _xy(pairs: list[tuple[int, float, float]]) -> tuple[list[float], list[float]
 
 def _fit_pair(pairs: list[tuple[int, float, float]]):
     return fit_all(*_xy(pairs))
-
-
-# fits between two saves of the fit cache, so a run cut off midway keeps most of its fits
-CHECKPOINT = 500
 
 
 def _pair_tasks(conn: sqlite3.Connection, min_pairs: int, cross: bool) -> list[tuple]:
