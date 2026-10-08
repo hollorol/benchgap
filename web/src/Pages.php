@@ -263,8 +263,11 @@ final class Pages
         return $this->result('Multivariate LLM benchmark predictions',
             'Each LLM benchmark predicted from several others together, of any capability: the fitted model, its cross-validated error and every prediction.', '/multivariate',
             $this->header('Multivariate', 'Each benchmark from several others',
-                '<p class="lede">For each benchmark, two or three others of any capability are picked greedily by leave-one-out error '
-                . 'and combined in one fit. Shown for analysis: the estimates come from the calibrations.</p>')
+                '<p class="lede">For each benchmark, candidates of any capability feed two searches combined - '
+                . 'one elastic net fit whose lasso part zeroes the useless ones, and greedy forward selection trying '
+                . 'every candidate - always ending with at least two; on what they find, the linear fit and a '
+                . 'multivariate Michaelis–Menten curve compete by cross-validated error. '
+                . 'Shown for analysis: the estimates come from the calibrations.</p>')
             . $this->table(['Model', 'Fit', 'Models', 'Error', 'Best one alone'], $rows));
     }
 

@@ -18,7 +18,7 @@ import numpy as np
 import scipy
 
 # bump when a change to the fitting gives different results (a refactoring keeps the cache)
-VERSION = 1
+VERSION = 4
 _SEED = hashlib.sha256(f"v{VERSION} numpy {np.__version__} scipy {scipy.__version__}".encode())
 
 

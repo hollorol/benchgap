@@ -160,9 +160,10 @@ keeps it until the next one.
 Pages: per-benchmark leaderboards, the full score matrix, a page per
 model, the calibration (predictability) matrix with a scatter + fitted
 curve per mapping and the cross-domain predictability between capabilities,
-the multivariate view (`/multivariate`: each benchmark ~ two or three others,
-with its error, the error of the best of them alone, and a measured vs.
-leave-one-out predicted scatter), and the methodology. Each page has its own URL
+the multivariate view (`/multivariate`: each benchmark from the others its
+elastic net keeps, with its error, the error of the best of them alone, and
+a measured vs. leave-one-out predicted scatter), and the methodology. Each
+page has its own URL
 (`/matrix`, `/model/<slug>`, `/b/<name>/<version>`, ...) and is listed in the
 generated `sitemap.xml`. The backend serves each page with its own title,
 description and a plain-HTML summary of its content (`web/src/Pages.php`) for
@@ -233,23 +234,35 @@ candidates are monotone; the quadratic is deliberately absent (a
 non-monotone fit eventually predicts that a better model scores worse).
 
 Multivariate gapfill (see `multivariate.py`, `benchgap multifit`): for each
-target benchmark, greedy forward selection picks up to three same-capability
-source benchmarks whose measured scores together predict the target best by
-leave-one-out CV. Two families compete per feature set: ridge regression
-(`linear_mv`, alpha chosen by inner LOO) and a **multivariate
-Michaelis-Menten** (`mm_mv`) that combines sources into a weighted
+target benchmark two searches run and the fit with the lower LOO CV error is
+stored. One search fits one **elastic net** (`enet_mv`) over a pool of
+same-capability source benchmarks and lets its lasso part decide the
+features: the pool grows by data availability (candidates ranked by their
+best single-source fit, then the models they share with the target; a
+source joins only if the models measured on it and the pool so far still
+clear the minimum training size, so a sparse candidate is skipped rather
+than hiding the candidates ranked below it), and the penalty drives useless
+sources' coefficients to
+exactly zero. The other is the earlier greedy forward search: each step
+tries every remaining candidate on its own training set. On whatever
+features each lands on, two families compete by LOO CV: the linear elastic
+net fit and a **multivariate
+Michaelis-Menten** (`mm_mv`) that combines the sources into a weighted
 aggregate capability index mapped through y = y0 + Vmax*s/(K + s),
-monotone in every source. A multi-mapping is stored only if it uses at
-least two features, passes the quality gate, and beats the target's best
-univariate mapping. Gapfill prefers a multi-mapping when the model is
-measured on all its feature benchmarks and its LOO RMSE is lower;
-otherwise the univariate path applies - so a model missing one source
-benchmark simply falls back, and a capability gap stays a gap.
+monotone in every source. A multi-mapping is
+stored only if the fit passes the quality gate and beats the target's best
+univariate mapping - a fit the lasso leaves with a single source may be
+stored too (its shrinkage can beat every univariate curve), while a
+one-feature nonlinear fit is the univariate pipeline's job. Gapfill
+prefers a multi-mapping when the model is measured on all its feature
+benchmarks and its LOO RMSE is lower; otherwise the univariate path applies
+- so a model missing one source benchmark simply falls back, and a
+capability gap stays a gap.
 
-The multivariate view (`benchgap crossmultifit`) runs the same greedy search
+The multivariate view (`benchgap crossmultifit`) runs the same search
 for analysis only, with sources of any capability: from each target's 8 best
-single predictors and the 8 benchmarks sharing the most models with it, it
-always combines two (a third only if it helps), and it stores every training
+single predictors and the 8 benchmarks sharing the most models with it, the
+lasso part must always keep two or more, and it stores every training
 model's leave-one-out prediction for the page's scatter.
 
 Selection is by leave-one-out CV RMSE (capped at 40 folds for large pairs),
@@ -288,9 +301,9 @@ the deterministic one without migration:
 - Model selection can move from LOO-CV RMSE to out-of-sample log score once
   predictions are distributions.
 - The multivariate mappings are the deterministic precursor of a joint
-  model: a Bayesian network over benchmark scores would replace the greedy
-  per-target feature selection and the per-direction calibrations with one
-  coherent posterior, imputing every missing score with uncertainty.
+  model: a Bayesian network over benchmark scores would replace the
+  per-target lasso feature selection and the per-direction calibrations with
+  one coherent posterior, imputing every missing score with uncertainty.
 
 ## Sources
 

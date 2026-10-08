@@ -376,8 +376,11 @@ def generate_html_report(
 <th>R²</th><th>LOO RMSE (pp)</th></tr></thead>
 <tbody>{multi_rows}</tbody>
 </table>
-<p class="legend">Per target, up to three same-capability source benchmarks are
-selected greedily by leave-one-out CV. Gapfill prefers a multivariate mapping
+<p class="legend">Per target, two searches combined - the lasso part of one
+elastic net over the same-capability source benchmarks, and greedy forward
+selection - decide the features; on them, the linear fit and a multivariate
+Michaelis-Menten curve compete by leave-one-out CV.
+Gapfill prefers a multivariate mapping
 when the model is measured on every source benchmark it uses and its LOO RMSE
 beats the best univariate mapping; otherwise the univariate mapping applies.
 Models missing one of the source scores fall back to the univariate path.</p>

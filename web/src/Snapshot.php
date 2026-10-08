@@ -85,6 +85,7 @@ final class Snapshot
         'logistic' => 'offset logistic',
         'linear_mv' => 'ridge regression (multivariate)',
         'mm_mv' => 'multivariate Michaelis–Menten',
+        'enet_mv' => 'elastic net (multivariate)',
     ];
 
     /** The data document for the database behind $db. */

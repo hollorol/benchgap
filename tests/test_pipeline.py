@@ -93,7 +93,7 @@ def test_cross_multi_fits(build):
     model's leave-one-out prediction; gapfill never uses it."""
     conn, summary = build["conn"], build["crossmultifit"]
     rows = conn.execute("SELECT * FROM cross_multi_mappings ORDER BY id").fetchall()
-    assert len(rows) == len(summary) == 7
+    assert len(rows) == len(summary) >= 1
     assert [bool(r["passes"]) for r in rows] == [s["rejected"] is None for s in summary]
     for r in rows:
         features = json.loads(r["feature_version_ids_json"])

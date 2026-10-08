@@ -1142,8 +1142,7 @@
     }
 
     main.innerHTML = `<div class="page">
-      ${pageHead("Multivariate", "Each benchmark from several others", `For each benchmark, two or three others of any capability are picked greedily by leave-one-out error
-        (from its best single predictors and the benchmarks sharing the most models with it) and combined in one fit: ridge regression or a multivariate Michaelis–Menten curve.
+      ${pageHead("Multivariate", "Each benchmark from several others", `For each benchmark, candidates of any capability (its best single predictors and the benchmarks sharing the most models with it) feed two searches combined - one elastic net fit whose lasso part zeroes the useless ones, and greedy forward selection trying every candidate - always ending with at least two. On what they find, the linear fit and a multivariate Michaelis–Menten curve compete by cross-validated error.
         Each plot shows every model measured on all of them: its measured score against the prediction of the fit to the other models.
         Shown for analysis: the estimates come from the <a href="/calibration">calibrations</a>.`)}
       <section class="section">
