@@ -113,7 +113,7 @@ button, input, select { font: inherit; color: inherit; }
 .nav { display: flex; gap: .2rem; min-width: 0; overflow-x: auto; scrollbar-width: none; }   /* never pushes the tools out */
 .nav a {
   text-decoration: none; color: var(--muted); padding: .35rem .7rem; border-radius: 999px;
-  font-size: .9rem; font-weight: 500; transition: color .15s, background .15s;
+  font-size: .9rem; font-weight: 500; white-space: nowrap; transition: color .15s, background .15s;
 }
 .nav a:hover { color: var(--ink); }
 .nav a[aria-current="page"] { color: var(--ink); background: var(--paper-2); }
@@ -174,9 +174,9 @@ button, input, select { font: inherit; color: inherit; }
 .search-btn { display: none; width: 34px; height: 34px; padding: 0; place-items: center; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--card); color: var(--ink-2); cursor: pointer; }
 .search-btn:hover, .topbar.searching .search-btn { color: var(--ink); border-color: var(--ink); }
 .search-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
-@media (max-width: 1060px) {
+@media (max-width: 1280px) {
   .topbar-in { position: relative; gap: .8rem; }
-  .nav a { padding-inline: .5rem; }   /* the six pages fit beside the brand down to 761px */
+  .nav a { padding-inline: .5rem; }   /* with the search folded to its button, the eight pages fit beside the brand down to 1001px */
   .search { display: none; }
   .search-btn { display: grid; }
   .topbar.searching .search {
@@ -189,8 +189,8 @@ button, input, select { font: inherit; color: inherit; }
   .search-results a { padding-block: .6rem; }
   .search-types button { height: 36px; }
 }
-/* phones: the pages become a swipeable row of pills under the brand */
-@media (max-width: 760px) {
+/* phones and tablets: the pages become a swipeable row of pills under the brand */
+@media (max-width: 1000px) {
   .topbar-in { height: auto; flex-wrap: wrap; padding-block: 6px 8px; gap: 6px; }
   .brand-mark { width: 24px; height: 24px; }
   .nav { order: 3; width: calc(100% + 2 * var(--gutter)); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); gap: 4px; overflow-x: auto; scrollbar-width: none; }
@@ -607,6 +607,15 @@ table.list { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .list a { text-decoration: none; }
 .list a:hover { text-decoration: underline; }
 .list-wrap { overflow-x: auto; }
+/* phones: each paper (publications) becomes a card, its other columns labelled lines under the title */
+@media (max-width: 760px) {
+  .list.papers thead { display: none; }
+  .list.papers tr { display: block; padding: .85rem 0; border-bottom: 1px solid var(--rule); }
+  .list.papers td { display: block; padding: 0; border: 0; }
+  .list.papers td:first-child { font-size: .95rem; font-weight: 500; }
+  .list.papers td[data-label]::before { content: attr(data-label); display: block; margin-top: .55rem; font: 600 .66rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .list.papers tr:hover td { background: none; }
+}
 
 .plot { width: 100%; height: auto; display: block; font-family: var(--mono); }
 .plot .ax { stroke: var(--rule-strong); }
@@ -659,7 +668,8 @@ table.list { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .tier-table th { font: 600 .68rem var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); border-bottom-color: var(--ink); }
 .jump { display: none; }
 @media (max-width: 960px) {
-  .jump { display: flex; padding-block: .9rem; border-bottom: 1px solid var(--rule); }
+  /* wrapped, not scrolled: every section of the page is in sight */
+  .jump { display: flex; flex-wrap: wrap; overflow: visible; margin-inline: 0; padding-inline: 0; padding-block: .9rem; border-bottom: 1px solid var(--rule); }
 }
 /* phones: one card per confidence level */
 @media (max-width: 760px) {

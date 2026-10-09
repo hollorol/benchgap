@@ -427,10 +427,10 @@
       .map((x) => benchChip(x, b))
       .join("")}</nav>`;
   }
-  // scrolls a row of pills (phones only) so its current one is in the middle
-  const phone = matchMedia("(max-width: 760px)");
-  function centerIn(row, selector) {
-    const chip = phone.matches && row && row.querySelector(selector);
+  // scrolls a row of pills (phones only; the site nav up to tablets, as the CSS) so its current one is in the middle
+  const phone = matchMedia("(max-width: 760px)"), pillNav = matchMedia("(max-width: 1000px)");
+  function centerIn(row, selector, when = phone) {
+    const chip = when.matches && row && row.querySelector(selector);
     if (chip) row.scrollLeft += chip.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - chip.offsetWidth) / 2;
   }
   const centerRail = () => centerIn($("#bench-rail .rail"), '[aria-current="true"]');
@@ -1384,12 +1384,12 @@
     setMeta("Publications: the research behind benchgap", "Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.");
     const rows = PAPERS.map(([title, authors, year, id, from, approach, relation]) => `<tr>
         <td><a href="https://arxiv.org/abs/${id}" rel="noopener" target="_blank">${esc(title)}</a><br><span class="muted">${esc(`${authors}, ${year}`)}</span></td>
-        <td>${from ? esc(from) : "—"}</td>
-        <td>${esc(approach)}</td>
-        <td>${esc(relation)}</td></tr>`).join("");
+        <td data-label="Predicts from">${from ? esc(from) : "—"}</td>
+        <td data-label="Approach">${esc(approach)}</td>
+        <td data-label="How benchgap relates">${esc(relation)}</td></tr>`).join("");
     main.innerHTML = `<div class="page">
       ${pageHead("Publications", "The research behind the gapfilling", esc("benchgap is one entry in an active research line: predicting a model's benchmark scores without running every evaluation. These are the papers closest to what this site does, and how they relate to it."))}
-      <section class="section"><div class="list-wrap"><table class="list">
+      <section class="section"><div class="list-wrap"><table class="list papers">
         <thead><tr><th>Paper</th><th>Predicts from</th><th>Approach</th><th>How benchgap relates</th></tr></thead>
         <tbody>${rows}</tbody></table></div></section>
       <section class="section"><h2 class="h2">The multivariate predictions</h2>
@@ -1705,7 +1705,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     const nav = page ? page[1] : "";
     const inPlace = page ? page[2](arg, data) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-    centerIn($(".nav"), '[aria-current="page"]');
+    centerIn($(".nav"), '[aria-current="page"]', pillNav);
     booted();
     if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }
