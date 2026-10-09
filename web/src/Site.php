@@ -21,6 +21,8 @@ namespace Benchgap;
  *   of different capabilities; never used for estimates
  * - multivariate.json: the multivariate view's fits of listed benchmarks from listed ones;
  *   never used for estimates
+ * - compare.json: the model-compare view's numbers: every model's general performance
+ *   (mean percentile of its measured scores) and the frontier; never used for estimates
  *
  * Scores, benchmarks, models and mappings keep the Snapshot's shapes and ids.
  */
@@ -130,6 +132,17 @@ final class Site
             $this->data['cross_multi_mappings'] ?? [],
             fn ($m) => isset($this->listed[$m['to']]) && !array_diff_key(array_flip($m['from']), $this->listed)
         ))];
+    }
+
+    /**
+     * The model-compare view's numbers: every model's general performance (the mean
+     * percentile of its measured scores across the listed benchmarks) as [model, general,
+     * n], strongest first, and the frontier (its top tenth among dense models). Measured
+     * scores only; never used for estimates.
+     */
+    public function compare(): array
+    {
+        return ['compare' => Compare::compute($this->data)];
     }
 
     /** The harness-tax analysis (families, pairs, per-model deltas, aggregates), without slice filtering:

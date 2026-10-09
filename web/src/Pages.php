@@ -22,10 +22,19 @@ final class Pages
         . 'Measured and estimated scores are always marked apart.';
     private const HOME_TITLE = 'LLM Benchmark Leaderboard with Estimated Scores';
     private const HOME_DESCRIPTION = "LLM benchmark scores: measured where available, estimated where missing, with every estimate's error and confidence.";
+    // what general performance means (the compare page; the same definition as Compare.php)
+    private const COMPARE_LEDE = 'General performance is the mean percentile of a model\'s measured scores across the '
+        . 'listed benchmarks; the frontier is its strongest tenth. Measured scores only - never estimates.';
+    // the compare page's lede (app.js compareLede); the definition above rides along on the pair pages
+    private const COMPARE_INTRO = 'Two models on every benchmark, measured scores and estimates alike, with how far apart '
+        . 'they sit. Or pick one model and a checkbox fills the other with the frontier model closest to it in general '
+        . 'performance - the mean percentile of its measured scores; the frontier is its strongest tenth, of one provider '
+        . 'or of any. Measured scores only decide the standings.';
     // the pages besides those of each benchmark, model and calibration: title and summary for llms.txt
     private const PAGES = [
         '/' => ['Leaderboard', 'one benchmark at a time, measured and estimated scores ranked together'],
         '/matrix' => ['Score matrix', 'every model on every benchmark'],
+        '/compare' => ['Compare', 'two models side by side on every benchmark, or one against the closest frontier model'],
         '/calibration' => ['Calibration', 'which benchmarks predict which, and how well'],
         '/multivariate' => ['Multivariate', 'each benchmark predicted from several others together, with every model\'s cross-validated prediction'],
         '/harness-tax' => ['Harness tax', 'how much harnesses disagree about the same models on the same benchmark, measured scores only'],
@@ -202,6 +211,108 @@ final class Pages
             $this->header("{$m['provider_name']} · model", "{$m['name']} benchmark scores",
                 '<p class="lede">' . self::esc($this->modelLead($m)) . '</p>')
             . $this->table(['Benchmark', 'Score', 'Source'], $rows));
+    }
+
+    /**
+     * The compare page's pair summary (app.js renders the interactive page): the two
+     * models' scores on the benchmarks both have one, and their standings. One model
+     * (or none) picks the frontier model closest to it - of one provider, or of any;
+     * a named pair stays a pair.
+     */
+    public function compare(?string $a = null, ?string $b = null, ?string $from = null): ?array
+    {
+        if (($a !== null && !isset($this->models[$a])) || ($b !== null && !isset($this->models[$b]))) {
+            return null;
+        }
+        $doc = $this->api->compare();
+        $general = array_column($doc['general'], null, 'slug');   // strongest first
+        $frontier = array_column($doc['frontier'], null, 'slug');
+        $rank = array_flip(array_keys($general));
+        $nStanding = count($general);
+        $standing = fn (string $slug): string => isset($general[$slug])
+            ? number_format($general[$slug]['general'] * 100, 1) . ' on ' . $general[$slug]['n'] . ' measured (rank #'
+                . ($rank[$slug] + 1) . ' of ' . $nStanding . ')'
+            : '— (no measured scores to stand on)';
+        if ($a === null) {
+            $rows = array_map(fn ($f) => [
+                $this->link($this->models[$f['slug']]),
+                number_format($f['general'] * 100, 1),
+                $f['n'],
+            ], $doc['frontier']);
+            return $this->result('Compare two LLM models',
+                'Compare two LLM models benchmark by benchmark: measured scores and estimates side by side, or one against the closest frontier model.',
+                '/compare',
+                $this->header('Model compare', 'Two models, benchmark by benchmark', '<p class="lede">' . self::esc(self::COMPARE_INTRO) . '</p>')
+                . $this->table(['Frontier model', 'General performance', 'Measured on'], $rows)
+                . '<p class="muted">Pick two models on the <a href="/compare">interactive page</a>, or one and '
+                    . 'the closest frontier model is chosen for it - of one provider, or of any.</p>');
+        }
+        $ma = $this->models[$a];
+        $auto = $b === null;
+        if ($from === 'any') {
+            $from = null;
+        }
+        if ($auto && $from !== null && !in_array($from, array_column($this->models, 'provider'), true)) {
+            return null;
+        }
+        if ($auto) {
+            // the closest frontier model of that provider (the whole frontier if the provider has none of its own)
+            $pool = $from === null ? $doc['frontier'] : array_values(array_filter($doc['frontier'], fn ($f) => $f['provider'] === $from));
+            $closest = Compare::closest($pool, $general[$a]['general'] ?? null, $a)
+                ?? Compare::closest($doc['frontier'], $general[$a]['general'] ?? null, $a)
+                ?? $doc['frontier'][0] ?? null;
+            $b = $closest['slug'] ?? null;
+        }
+        if ($b === null || $b === $a) {
+            return null;
+        }
+        $mb = $this->models[$b];
+        $scoresOf = fn (string $slug): array => array_column(array_filter(
+            $this->api->model($slug)['scores'],
+            fn ($s) => isset($this->listed[$s['benchmark']])
+        ), null, 'benchmark');
+        $sa = $scoresOf($a);
+        $sb = $scoresOf($b);
+        $shared = array_intersect_key($sa, $sb);
+        $wins = [0, 0, 0];   // a ahead, b ahead, even (both measured)
+        foreach ($shared as $k => $s) {
+            if ($s['source'] === 'measured' && $sb[$k]['source'] === 'measured') {
+                $d = $s['score'] <=> $sb[$k]['score'];
+                $wins[$d === 0 ? 2 : ($d > 0 ? 0 : 1)]++;
+            }
+        }
+        $lead = sprintf(
+            '%s stands at %s, %s at %s%s. Of the %d benchmark%s both have a score on, %s leads on %d and %s on %d where both are measured.',
+            $ma['name'], $standing($a), $mb['name'], $standing($b),
+            isset($frontier[$b]) ? ' - a frontier model' : '',
+            count($shared), count($shared) === 1 ? '' : 's',
+            $ma['name'], $wins[0], $mb['name'], $wins[1]
+        );
+        $rows = array_map(fn ($k) => [
+            $this->link($this->benchmarks[$k]),
+            self::pct($sa[$k]['score']) . '%',
+            self::pct($sb[$k]['score']) . '%',
+            sprintf('%+.1f', ($sa[$k]['score'] - $sb[$k]['score']) * 100),
+        ], array_keys($shared));
+        $pick = '';
+        if ($auto) {
+            $pick = ' <b>' . self::esc($mb['name']) . '</b> is the frontier model '
+                . ($from !== null && $mb['provider'] === $from ? 'of ' . self::esc($mb['provider_name']) . ' ' : '')
+                . 'closest to <b>' . self::esc($ma['name']) . '</b> in general performance';
+            if (isset($general[$a], $general[$b])) {
+                $gap = ($general[$b]['general'] - $general[$a]['general']) * 100;
+                $pick .= $gap === 0.0 ? ' (even with it)' : sprintf(' (%.1f points %s)', abs($gap), $gap > 0 ? 'ahead of it' : 'behind it');
+            }
+            $pick .= '; the interactive page follows it as the field moves.';
+        }
+        return $this->result("{$ma['name']} vs {$mb['name']} benchmark scores",
+            "{$ma['name']} vs {$mb['name']} on the benchmarks both have a score on: measured scores and estimates side by side.",
+            null,
+            $this->header('Model compare', "{$ma['name']} vs {$mb['name']}",
+                '<p class="lede">' . self::esc($lead) . '</p>')
+            . $this->table(['Benchmark', $ma['name'], $mb['name'], 'Δ (pp)'], $rows)
+            . '<p class="muted">' . self::esc(self::COMPARE_LEDE) . $pick
+                . ' Every estimate carries its error and confidence on the model pages.</p>');
     }
 
     public function matrix(): array

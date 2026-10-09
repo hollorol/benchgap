@@ -541,6 +541,36 @@ table.mx { width: 100%; border-collapse: separate; border-spacing: 0; font-size:
   .mrow .bn a, .mrow .val { font-size: .92rem; }
 }
 
+/* --- compare page ----------------------------------------------------------- */
+.cmp-pick { display: flex; align-items: center; gap: .6rem; }
+.cmp-pick .select { min-width: 220px; max-width: min(360px, 60vw); }
+.cmp-note { margin: -.4rem 0 .8rem; }
+.cmp-sum { display: grid; grid-template-columns: 1fr minmax(0, 34ch) 1fr; gap: .4rem 1.6rem; align-items: center; padding: .6rem 0 1rem; border-bottom: 1px solid var(--rule); }
+.cmp-side .who { display: flex; align-items: center; gap: .7rem; font: 400 1.35rem/1.1 var(--serif); margin: 0; }
+.cmp-side .who .dot { width: 12px; height: 12px; }
+.cmp-side .who .flag { font-size: .64rem; }
+.cmp-side:last-child { text-align: right; }
+.cmp-side:last-child .who { justify-content: flex-end; }
+.cmp-mid { font-size: .84rem; color: var(--muted); text-align: center; margin: 0; }
+.crow { display: grid; grid-template-columns: minmax(140px, 230px) minmax(0, 1fr) 5.6rem 5.6rem 4.2rem; gap: .3rem 1rem; align-items: center; padding: .45rem 0; }
+.crow .bn a { text-decoration: none; font-size: .9rem; }
+.crow .bn a:hover { text-decoration: underline; }
+.ctrack { position: relative; height: 18px; }
+.ctrack .bar { left: 0; border-radius: 0 3px 3px 0; }
+.ctrack .bar.a { top: 1px; bottom: auto; height: 7px; }
+.ctrack .bar.b { top: auto; bottom: 1px; height: 7px; }
+.crow .cva, .crow .cvb, .crow .dlt { text-align: right; font: 500 .9rem var(--mono); font-feature-settings: "tnum"; white-space: nowrap; }
+.crow .est { font-style: italic; color: var(--ink-2); }
+.crow .dlt.up { color: var(--conf-high); }
+.crow .dlt.down { color: var(--conf-low); }
+@media (max-width: 640px) {
+  .crow { grid-template-columns: minmax(0, 1fr) 4.6rem 4.6rem 3.4rem; }
+  .crow .ctrack { grid-column: 1 / -1; grid-row: 2; }
+  .cmp-sum { grid-template-columns: 1fr; }
+  .cmp-side:last-child { text-align: left; }
+  .cmp-side:last-child .who { justify-content: flex-start; }
+}
+
 /* --- calibration --------------------------------------------------------- */
 .pm thead { position: sticky; top: 0; z-index: 2; }
 /* the header and the source names cover the 2px cell gaps of what scrolls under them */

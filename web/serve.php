@@ -158,6 +158,7 @@ $app->group('/data', function (RouteCollectorProxy $data) {
     $data->get('/calibration.json', fn (Request $rq, Response $rs) => send($rs, site()->calibration()));
     $data->get('/cross.json', fn (Request $rq, Response $rs) => send($rs, site()->cross()));
     $data->get('/multivariate.json', fn (Request $rq, Response $rs) => send($rs, site()->multivariate()));
+    $data->get('/compare.json', fn (Request $rq, Response $rs) => send($rs, site()->compare()));
     $data->get('/harness-tax.json', fn (Request $rq, Response $rs) => send($rs, site()->harnessTax()));
     $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->mapping((int) $a['id']), $rq)));
@@ -173,6 +174,15 @@ $app->get('/b/{key:.+}', fn (Request $rq, Response $rs, array $a) =>
 $app->get('/model/{slug:.+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->model($a['slug']), data('model', $a['slug'])));
 $app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->matrix(), data('matrix')));
+// two models side by side, or one and the frontier model closest to it - of one provider,
+// or of any (the second stays dynamic)
+$app->get('/compare', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->compare(), data('compare')));
+$app->get('/compare/{a:[^/]+}', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->compare($a['a']), data('compare')));
+$app->get('/compare/{a:[^/]+}/from/{provider:[^/]+}', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->compare($a['a'], null, $a['provider']), data('compare')));
+$app->get('/compare/{a:[^/]+}/{b:[^/]+}', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->compare($a['a'], $a['b']), data('compare')));
 $app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->calibration(), data('calibration')));
 $app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id']), data('calibration', $a['id'])));
