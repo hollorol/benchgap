@@ -101,6 +101,10 @@ function found(?array $document, Request $request): array
 function html(Pages $pages, array $page, Request $request, ?string $data = null): string
 {
     $template = file_get_contents(__DIR__ . '/index.html');
+    // the local dev stack (compose.yaml) counts no visits: BENCHGAP_ANALYTICS=off leaves the analytics script out
+    if (getenv('BENCHGAP_ANALYTICS') === 'off') {
+        $template = preg_replace('~<script data-host="https://app\.analyzati\.com"[^>]*></script>\n~', '', $template);
+    }
     // app.js and style.css by their content, so browsers can keep them (.htaccess) and still get each new upload
     foreach (['/assets/app.js', '/assets/style.css'] as $asset) {
         $template = str_replace("\"$asset\"", "\"$asset?v=" . hash_file('crc32b', __DIR__ . $asset) . '"', $template);
