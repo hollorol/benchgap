@@ -173,6 +173,7 @@ $app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) =
     page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id']), data('calibration', $a['id'])));
 $app->get('/multivariate', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->multivariate(), data('multivariate')));
 $app->get('/method', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->methodPage()));
+$app->get('/publications', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->publications()));
 $app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage(), data('calibration')));
 
 $app->group('/api/v1', function (RouteCollectorProxy $v1) {

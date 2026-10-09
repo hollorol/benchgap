@@ -13,6 +13,7 @@
  *   /calibration/<id>       one fitted mapping (scatter + curve)
  *   /multivariate           each benchmark from several others (fit + predicted vs measured)
  *   /method                 methodology
+ *   /publications           the papers behind the method, and how benchgap relates
  *   /api                    public API documentation (api/v1/)
  */
 (function () {
@@ -1218,6 +1219,65 @@
       </article></div>`;
   }
 
+  // --- page: publications --------------------------------------------------------
+  // the papers on predicting benchmark scores; the same content is the static page in src/Pages.php
+  const PAPERS = [
+    ["You Don't Need to Run Every Eval", "Zeng & Papailiopoulos", 2026, "2606.24020", "a model's other benchmark scores",
+      "the model × benchmark score matrix is nearly rank-2; matrix completion in logit space (BenchPress)",
+      "the closest relative: the same gapfilling problem with one global factor model. benchgap keeps local, explicit calibrations per benchmark pair, each with its own cross-validated error, and refuses to transfer across capabilities."],
+    ["Sloth: scaling laws for LLM skills to predict multi-benchmark performance across families", "Polo et al.", 2024, "2412.06540", "training compute and latent skills",
+      "scaling laws over low-dimensional skill factors, within and across model families",
+      "predicts hypothetical models and needs training metadata. benchgap maps an existing model from its measured scores alone, which is all closed API models publish."],
+    ["Observational Scaling Laws and the Predictability of Language Model Performance", "Ruan et al.", 2024, "2405.10938", "simple benchmarks and compute",
+      "a latent capability variable regressed onto downstream benchmarks",
+      "the same score-from-scores idea, anchored to compute. benchgap is compute-agnostic, so it also works for models whose training details are unknown."],
+    ["From Benchmarks to Skills: Low-Rank Factors for LLM Evaluation", "Maimon et al.", 2025, "2507.20208", "a subset of a model's scores",
+      "psychometric low-rank factorization; profiling a model from a few tasks",
+      "closest in the fill-the-profile goal, but in latent space. benchgap stays in observable benchmark space and shows the fitted curve for every pair."],
+    ["Efficient Benchmarking Is Just Feature Selection and Multiple Regression", "Bowyer et al.", 2026, "2605.25773", "a small coreset of benchmark items",
+      "feature selection plus regression to predict full-benchmark scores",
+      "the item-level analogue of the multivariate view's elastic net, whose lasso part selects the useful benchmarks."],
+    ["metabench: A Sparse Benchmark of Reasoning and Knowledge in Large Language Models", "Kipnis et al.", 2024, "2407.12844", "a sparse (~3%) subset of items",
+      "item-level distillation that preserves scores and rankings",
+      "item-level. benchgap works from published aggregate scores, so it needs no access to benchmark items at all."],
+    ["Look Before you Leap: Estimating LLM Benchmark Scores from Descriptions", "Park et al.", 2025, "2509.20645", "a redacted text description of the task",
+      "an LLM as the regressor (the PRECOG corpus); no evaluation runs at all",
+      "predicts before any evaluation exists; benchgap predicts after a model has some measured scores. Complementary ends of the pipeline."],
+    ["How predictable is language model benchmark performance?", "Owen", 2024, "2401.04757", "training compute",
+      "empirical analysis of benchmark performance across five orders of magnitude of compute",
+      "a different input: predictability against compute, not scores from scores."],
+    ["How Benchmark Prediction from Fewer Data Misses the Mark", "Zhang et al.", 2025, "2506.07673", null,
+      "a systematic evaluation of 11 score-prediction methods across 19 benchmarks",
+      "the caution this site's guardrails are built around: predictors fail on models unlike their calibration set."],
+    ["PredictaBoard: Benchmarking LLM Score Predictability", "Pacchiardi et al.", 2025, "2502.14445", null,
+      "benchmarks score predictability itself, via assessors that anticipate a model's errors",
+      "instance-level predictability rather than score-level estimation; a complementary lens on the same uncertainty."],
+  ];
+  // what sets benchgap apart from the papers above (HTML)
+  const RELATED_WORK = [
+    "<b>Capability gating.</b> A factor model imputes between any two benchmarks. benchgap calibrates only within a capability group, so a model never evaluated on vision keeps that gap instead of inheriting an estimate from text benchmarks.",
+    "<b>No estimate recursion.</b> Every input to an estimate is a measured score; an estimate never feeds another estimate. A factor model completes a matrix that already contains its own outputs.",
+    "<b>Per-cell error.</b> Each estimate carries its own leave-one-out error and confidence level, and a pair whose best curve still fits poorly keeps no mapping at all. The papers above report one aggregate error over held-out cells.",
+    "<b>The shared limit.</b> As How Benchmark Prediction from Fewer Data Misses the Mark shows, every method in this line misestimates models unlike its calibration set. Confidence levels flag the known risk factors - extrapolation, small fits, weak R² - but nothing here detects a genuinely novel model.",
+  ];
+
+  function renderPublications() {
+    setMeta("Publications: the research behind benchgap", "Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.");
+    const rows = PAPERS.map(([title, authors, year, id, from, approach, relation]) => `<tr>
+        <td><a href="https://arxiv.org/abs/${id}" rel="noopener" target="_blank">${esc(title)}</a><br><span class="muted">${esc(`${authors}, ${year}`)}</span></td>
+        <td>${from ? esc(from) : "—"}</td>
+        <td>${esc(approach)}</td>
+        <td>${esc(relation)}</td></tr>`).join("");
+    main.innerHTML = `<div class="page">
+      ${pageHead("Publications", "The research behind the gapfilling", esc("benchgap is one entry in an active research line: predicting a model's benchmark scores without running every evaluation. These are the papers closest to what this site does, and how they relate to it."))}
+      <section class="section"><div class="list-wrap"><table class="list">
+        <thead><tr><th>Paper</th><th>Predicts from</th><th>Approach</th><th>How benchgap relates</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></section>
+      <section class="section"><h2 class="h2">Where benchgap differs</h2>
+        <article class="prose"><ul>${RELATED_WORK.map((item) => `<li>${item}</li>`).join("")}</ul></article>
+      </section></div>`;
+  }
+
   // --- page: API ----------------------------------------------------------------
   const API_BASE = new URL("/api/v1/", location.origin).href;
   const API_ENDPOINTS = [
@@ -1471,6 +1531,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     [/^\/calibration\/(\d+)$/, "calibration", renderMapping, (id) => `/data/calibration/${id}.json`],
     [/^\/multivariate$/, "multivariate", renderMultivariate, () => "/data/multivariate.json"],
     [/^\/method$/, "method", renderMethod],
+    [/^\/publications$/, "publications", renderPublications],
     [/^\/api$/, "api", renderApi, () => "/data/calibration.json"],
   ];
   const pageOf = (path) => PAGES.find(([re]) => re.test(path));

@@ -29,6 +29,7 @@ final class Pages
         '/calibration' => ['Calibration', 'which benchmarks predict which, and how well'],
         '/multivariate' => ['Multivariate', 'each benchmark predicted from several others together, with every model\'s cross-validated prediction'],
         '/method' => ['Method', 'how the missing scores are estimated, and when not to trust them'],
+        '/publications' => ['Publications', 'the papers on predicting benchmark scores without running every eval, and how benchgap relates to them'],
         '/api' => ['API', 'free JSON and CSV API, no key'],
     ];
 
@@ -278,6 +279,80 @@ final class Pages
             $this->header('Method', 'How the gaps are filled, and when not to trust it', '<p class="lede">' . self::esc(self::ABOUT) . '</p>')
             . '<ul>' . implode('', array_map(fn ($item) => "<li>$item</li>", $this->rules())) . '</ul>');
     }
+
+    public function publications(): array
+    {
+        $rows = array_map(fn ($p) => [
+            '<a href="https://arxiv.org/abs/' . self::esc($p['id']) . '" rel="noopener" target="_blank">' . self::esc($p['title']) . '</a>'
+                . '<br><span class="muted">' . self::esc("{$p['authors']}, {$p['year']}") . '</span>',
+            $p['from'] === null ? '—' : self::esc($p['from']),
+            self::esc($p['approach']),
+            self::esc($p['relation']),
+        ], self::PAPERS);
+        $lede = 'benchgap is one entry in an active research line: predicting a model\'s benchmark scores without running '
+            . 'every evaluation. These are the papers closest to what this site does, and how they relate to it.';
+        return $this->result('Publications: the research behind benchgap',
+            'Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.',
+            '/publications',
+            $this->header('Publications', 'The research behind the gapfilling', '<p class="lede">' . self::esc($lede) . '</p>')
+            . $this->table(['Paper', 'Predicts from', 'Approach', 'How benchgap relates'], $rows)
+            . '<section class="section"><h2 class="h2">Where benchgap differs</h2><ul>'
+            . implode('', array_map(fn ($item) => "<li>$item</li>", self::RELATED_WORK))
+            . '</ul></section>');
+    }
+
+    /** the papers closest to what benchgap does (publications): what a score is predicted from and how they relate */
+    private const PAPERS = [
+        ['title' => 'You Don\'t Need to Run Every Eval', 'authors' => 'Zeng & Papailiopoulos', 'year' => 2026, 'id' => '2606.24020',
+            'from' => 'a model\'s other benchmark scores',
+            'approach' => 'the model × benchmark score matrix is nearly rank-2; matrix completion in logit space (BenchPress)',
+            'relation' => 'the closest relative: the same gapfilling problem with one global factor model. benchgap keeps local, explicit calibrations per benchmark pair, each with its own cross-validated error, and refuses to transfer across capabilities.'],
+        ['title' => 'Sloth: scaling laws for LLM skills to predict multi-benchmark performance across families', 'authors' => 'Polo et al.', 'year' => 2024, 'id' => '2412.06540',
+            'from' => 'training compute and latent skills',
+            'approach' => 'scaling laws over low-dimensional skill factors, within and across model families',
+            'relation' => 'predicts hypothetical models and needs training metadata. benchgap maps an existing model from its measured scores alone, which is all closed API models publish.'],
+        ['title' => 'Observational Scaling Laws and the Predictability of Language Model Performance', 'authors' => 'Ruan et al.', 'year' => 2024, 'id' => '2405.10938',
+            'from' => 'simple benchmarks and compute',
+            'approach' => 'a latent capability variable regressed onto downstream benchmarks',
+            'relation' => 'the same score-from-scores idea, anchored to compute. benchgap is compute-agnostic, so it also works for models whose training details are unknown.'],
+        ['title' => 'From Benchmarks to Skills: Low-Rank Factors for LLM Evaluation', 'authors' => 'Maimon et al.', 'year' => 2025, 'id' => '2507.20208',
+            'from' => 'a subset of a model\'s scores',
+            'approach' => 'psychometric low-rank factorization; profiling a model from a few tasks',
+            'relation' => 'closest in the fill-the-profile goal, but in latent space. benchgap stays in observable benchmark space and shows the fitted curve for every pair.'],
+        ['title' => 'Efficient Benchmarking Is Just Feature Selection and Multiple Regression', 'authors' => 'Bowyer et al.', 'year' => 2026, 'id' => '2605.25773',
+            'from' => 'a small coreset of benchmark items',
+            'approach' => 'feature selection plus regression to predict full-benchmark scores',
+            'relation' => 'the item-level analogue of the multivariate view\'s elastic net, whose lasso part selects the useful benchmarks.'],
+        ['title' => 'metabench: A Sparse Benchmark of Reasoning and Knowledge in Large Language Models', 'authors' => 'Kipnis et al.', 'year' => 2024, 'id' => '2407.12844',
+            'from' => 'a sparse (~3%) subset of items',
+            'approach' => 'item-level distillation that preserves scores and rankings',
+            'relation' => 'item-level. benchgap works from published aggregate scores, so it needs no access to benchmark items at all.'],
+        ['title' => 'Look Before you Leap: Estimating LLM Benchmark Scores from Descriptions', 'authors' => 'Park et al.', 'year' => 2025, 'id' => '2509.20645',
+            'from' => 'a redacted text description of the task',
+            'approach' => 'an LLM as the regressor (the PRECOG corpus); no evaluation runs at all',
+            'relation' => 'predicts before any evaluation exists; benchgap predicts after a model has some measured scores. Complementary ends of the pipeline.'],
+        ['title' => 'How predictable is language model benchmark performance?', 'authors' => 'Owen', 'year' => 2024, 'id' => '2401.04757',
+            'from' => 'training compute',
+            'approach' => 'empirical analysis of benchmark performance across five orders of magnitude of compute',
+            'relation' => 'a different input: predictability against compute, not scores from scores.'],
+        ['title' => 'How Benchmark Prediction from Fewer Data Misses the Mark', 'authors' => 'Zhang et al.', 'year' => 2025, 'id' => '2506.07673',
+            'from' => null,
+            'approach' => 'a systematic evaluation of 11 score-prediction methods across 19 benchmarks',
+            'relation' => 'the caution this site\'s guardrails are built around: predictors fail on models unlike their calibration set.'],
+        ['title' => 'PredictaBoard: Benchmarking LLM Score Predictability', 'authors' => 'Pacchiardi et al.', 'year' => 2025, 'id' => '2502.14445',
+            'from' => null,
+            'approach' => 'benchmarks score predictability itself, via assessors that anticipate a model\'s errors',
+            'relation' => 'instance-level predictability rather than score-level estimation; a complementary lens on the same uncertainty.'],
+    ];
+
+    /** what sets benchgap apart from the papers above (publications page, HTML list items) */
+    private const RELATED_WORK = [
+        '<b>Capability gating.</b> A factor model imputes between any two benchmarks. benchgap calibrates only within a capability group, so a model never evaluated on vision keeps that gap instead of inheriting an estimate from text benchmarks.',
+        '<b>No estimate recursion.</b> Every input to an estimate is a measured score; an estimate never feeds another estimate. A factor model completes a matrix that already contains its own outputs.',
+        '<b>Per-cell error.</b> Each estimate carries its own leave-one-out error and confidence level, and a pair whose best curve still fits poorly keeps no mapping at all. The papers above report one aggregate error over held-out cells.',
+        '<b>The shared limit.</b> As How Benchmark Prediction from Fewer Data Misses the Mark shows, every method in this line misestimates models unlike its calibration set. Confidence levels flag the known risk factors - extrapolation, small fits, weak R² - but nothing here detects a genuinely novel model.',
+    ];
+
 
     public function apiPage(): array
     {
