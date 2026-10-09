@@ -89,7 +89,10 @@ jobs:
           key: harness-tax-history-${{ github.run_id }}
           restore-keys: harness-tax-history-
 
+      # a registered benchmark that BenchLM dropped or renamed stops the analysis: the
+      # day's data is loaded without it (its tables empty) rather than not at all
       - name: Measure the harness tax
+        continue-on-error: true
         run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" harness-tax
           --output data/harness_tax.json --history data/harness_tax_history.jsonl
 
