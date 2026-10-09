@@ -1261,6 +1261,13 @@
     "<b>The shared limit.</b> As How Benchmark Prediction from Fewer Data Misses the Mark shows, every method in this line misestimates models unlike its calibration set. Confidence levels flag the known risk factors - extrapolation, small fits, weak R² - but nothing here detects a genuinely novel model.",
   ];
 
+  // the multivariate view against the papers above (HTML paragraphs)
+  const MULTIVARIATE_WORK = [
+    "Predicting one benchmark from several others jointly is where benchgap meets the papers above head-on: BenchPress, Sloth and From Benchmarks to Skills do the same thing through latent factors over the whole score matrix. The <a href=\"/multivariate\">multivariate view</a> does it with explicit features - the measured benchmarks themselves, named in every fit - selected per target benchmark.",
+    "The selection echoes Efficient Benchmarking Is Just Feature Selection and Multiple Regression, one level up: they select items, benchgap selects benchmarks. An elastic net whose lasso part zeroes the useless candidates runs alongside a greedy forward search trying every one; on the features they find, a linear fit and a multivariate Michaelis–Menten curve compete by cross-validated error.",
+    "What a joint model has and a per-target fit does not is strength borrowed across all benchmarks at once - BenchPress finds most of the score matrix is two numbers per model. benchgap trades that for fits a reader can check: every feature is a real benchmark, and every fit carries its own cross-validated error and a measured-vs-predicted scatter. These mappings are the deterministic precursor of that joint model: a Bayesian network over benchmark scores, imputing every gap with one coherent posterior, is where the roadmap points.",
+  ];
+
   function renderPublications() {
     setMeta("Publications: the research behind benchgap", "Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.");
     const rows = PAPERS.map(([title, authors, year, id, from, approach, relation]) => `<tr>
@@ -1273,6 +1280,9 @@
       <section class="section"><div class="list-wrap"><table class="list">
         <thead><tr><th>Paper</th><th>Predicts from</th><th>Approach</th><th>How benchgap relates</th></tr></thead>
         <tbody>${rows}</tbody></table></div></section>
+      <section class="section"><h2 class="h2">The multivariate predictions</h2>
+        <article class="prose">${MULTIVARIATE_WORK.map((p) => `<p>${p}</p>`).join("")}</article>
+      </section>
       <section class="section"><h2 class="h2">Where benchgap differs</h2>
         <article class="prose"><ul>${RELATED_WORK.map((item) => `<li>${item}</li>`).join("")}</ul></article>
       </section></div>`;

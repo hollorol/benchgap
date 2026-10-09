@@ -296,6 +296,9 @@ final class Pages
             '/publications',
             $this->header('Publications', 'The research behind the gapfilling', '<p class="lede">' . self::esc($lede) . '</p>')
             . $this->table(['Paper', 'Predicts from', 'Approach', 'How benchgap relates'], $rows)
+            . '<section class="section"><h2 class="h2">The multivariate predictions</h2><article class="prose">'
+            . implode('', array_map(fn ($p) => "<p>$p</p>", self::MULTIVARIATE_WORK))
+            . '</article></section>'
             . '<section class="section"><h2 class="h2">Where benchgap differs</h2><ul>'
             . implode('', array_map(fn ($item) => "<li>$item</li>", self::RELATED_WORK))
             . '</ul></section>');
@@ -343,6 +346,23 @@ final class Pages
             'from' => null,
             'approach' => 'benchmarks score predictability itself, via assessors that anticipate a model\'s errors',
             'relation' => 'instance-level predictability rather than score-level estimation; a complementary lens on the same uncertainty.'],
+    ];
+
+    /** the multivariate view against the papers above (publications page, HTML paragraphs) */
+    private const MULTIVARIATE_WORK = [
+        'Predicting one benchmark from several others jointly is where benchgap meets the papers above head-on: '
+        . 'BenchPress, Sloth and From Benchmarks to Skills do the same thing through latent factors over the whole score matrix. '
+        . 'The <a href="/multivariate">multivariate view</a> does it with explicit features - the measured benchmarks themselves, '
+        . 'named in every fit - selected per target benchmark.',
+        'The selection echoes Efficient Benchmarking Is Just Feature Selection and Multiple Regression, one level up: '
+        . 'they select items, benchgap selects benchmarks. An elastic net whose lasso part zeroes the useless candidates '
+        . 'runs alongside a greedy forward search trying every one; on the features they find, a linear fit and a '
+        . 'multivariate Michaelis–Menten curve compete by cross-validated error.',
+        'What a joint model has and a per-target fit does not is strength borrowed across all benchmarks at once - '
+        . 'BenchPress finds most of the score matrix is two numbers per model. benchgap trades that for fits a reader can check: '
+        . 'every feature is a real benchmark, and every fit carries its own cross-validated error and a measured-vs-predicted scatter. '
+        . 'These mappings are the deterministic precursor of that joint model: a Bayesian network over benchmark scores, '
+        . 'imputing every gap with one coherent posterior, is where the roadmap points.',
     ];
 
     /** what sets benchgap apart from the papers above (publications page, HTML list items) */
