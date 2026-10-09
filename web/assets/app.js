@@ -1176,7 +1176,7 @@
     let tier = "all";
 
     // one pair's measured scores against each other, on one scale, with the y = x line
-    function scatter(p) {
+    function htScatter(p) {
       const ds = deltasOf(p);
       if (!ds.length) return '<p class="muted">No model was measured on both.</p>';
       const W = 300, H = 300, L = 40, R = 10, T = 10, B = 38;
@@ -1195,7 +1195,7 @@
         <text class="lbl" x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">${esc(shortKey(p.a.key))} (%)</text>
         <text class="lbl" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${esc(shortKey(p.b.key))} (%)</text></svg>`;
     }
-    function card(p) {
+    function htCard(p) {
       const name = (v) => `${esc(shortKey(v.key))} <small>· ${esc(v.harness || "?")}</small>`;
       const flags = [
         p.low_overlap ? '<span class="flag low">low overlap</span>' : "",
@@ -1224,12 +1224,12 @@
           </dl>
           <p class="mv-flags">${flags}</p>
         </div>
-        ${scatter(p)}
+        ${htScatter(p)}
       </article>`;
     }
-    function list() {
+    function htList() {
       const shown = pairs.filter((p) => tier === "all" || p.tier === tier);
-      return shown.length ? shown.map(card).join("") : '<p class="muted">No pairs in this tier.</p>';
+      return shown.length ? shown.map(htCard).join("") : '<p class="muted">No pairs in this tier.</p>';
     }
     const agg = ht.aggregates || {};
     const tiers = agg.by_tier || {};
@@ -1240,9 +1240,9 @@
       <section class="section">
         <div class="mv-sort"><span class="ctl-label">Tier</span>${segHTML("Tier", [["all", "all"], ...Object.entries(TIERS)], tier)}</div>
         <p class="muted">Pooled mean |Δ| over reportable pairs - ${esc(tierLine) || "n/a"}. Verified families only, the agentic vs tool-free ratio: <b>${ratio == null ? "n/a" : ratio.toFixed(1) + "x"}</b>.</p>
-        <div class="mv-list" id="ht-list">${list()}</div>
+        <div class="mv-list" id="ht-list">${htList()}</div>
       </section></div>`;
-    bindSeg($(".mv-sort .seg"), (k) => { tier = k; hideTip(); swapContent($("#ht-list"), list()); });
+    bindSeg($(".mv-sort .seg"), (k) => { tier = k; hideTip(); swapContent($("#ht-list"), htList()); });
   }
 
   // --- page: method -----------------------------------------------------------
