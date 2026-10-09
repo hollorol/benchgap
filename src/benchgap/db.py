@@ -184,7 +184,21 @@ CREATE TABLE IF NOT EXISTS harness_tax_aggregates (
 );
 """
 
-SCHEMA = SCHEMA + HARNESS_TAX_SCHEMA
+HOLDOUT_SCHEMA = """
+-- the masked-holdout evaluation of the whole pipeline (holdout.py, benchgap holdout):
+-- one row per run of the shipped results file, plus the 'headline' summary row.
+-- The results are measured artifacts of a data snapshot, not recomputed daily;
+-- benchgap holdout re-stores the shipped summary after every database rebuild.
+CREATE TABLE IF NOT EXISTS holdout_eval (
+    id           INTEGER PRIMARY KEY,
+    run_id       TEXT NOT NULL UNIQUE,
+    scheme       TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+SCHEMA = SCHEMA + HARNESS_TAX_SCHEMA + HOLDOUT_SCHEMA
 
 
 def connect(path: str | Path, readonly: bool = False) -> sqlite3.Connection:

@@ -61,6 +61,7 @@ final class Site
             'capabilities' => $this->data['capabilities'],
             'benchmarks' => $this->data['benchmarks'],
             'models' => $this->data['models'],
+            'holdout' => $this->data['holdout'],
         ];
     }
 

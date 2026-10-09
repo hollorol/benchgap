@@ -320,6 +320,7 @@ final class Snapshot
             'cross_mappings' => $cross,
             'cross_multi_mappings' => $multiView,
             'harness_tax' => $harnessTax,
+            'holdout' => self::holdout($db),
         ];
     }
 
@@ -513,6 +514,29 @@ final class Snapshot
             $models = array_diff_key($models, array_flip($dropM));
         } while ($dropV || $dropM);
         return [$versions, $models];
+    }
+
+    /**
+     * The masked-holdout evaluation of the whole pipeline (holdout.py, benchgap holdout):
+     * the shipped results file's runs and headline summary, or nothing if it has
+     * never been stored. Analysis only: a validation of the estimates, never an input.
+     */
+    private static function holdout(PDO $db): array
+    {
+        if (!self::hasTable($db, 'holdout_eval')) {
+            return ['headline' => null, 'runs' => []];
+        }
+        $headline = null;
+        $runs = [];
+        foreach ($db->query('SELECT run_id, summary_json FROM holdout_eval ORDER BY id') as $r) {
+            $parsed = json_decode($r['summary_json'], true);
+            if ($r['run_id'] === 'headline') {
+                $headline = $parsed;
+            } else {
+                $runs[] = $parsed;
+            }
+        }
+        return ['headline' => $headline, 'runs' => $runs];
     }
 
     private static function hasTable(PDO $db, string $table): bool

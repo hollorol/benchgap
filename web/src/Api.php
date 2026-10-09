@@ -84,6 +84,7 @@ final class Api
             'confidence_levels' => $this->data['meta']['confidence_levels'],
             'quality_gate' => $this->data['meta']['quality_gate'],
             'capabilities' => $this->data['capabilities'],
+            'holdout' => $this->data['holdout']['headline'] ?? null,
         ];
     }
 

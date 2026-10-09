@@ -131,6 +131,29 @@ def cmd_harness_tax(args: argparse.Namespace) -> None:
         print(f"appended {args.history}")
 
 
+def cmd_holdout(args: argparse.Namespace) -> None:
+    from . import holdout
+
+    conn = _conn(args)
+    runs = holdout.store(conn, Path(args.file) if args.file else None)
+    print(f"stored {len(runs)} holdout runs (replacing any earlier ones)")
+    for run in runs:
+        kind = f"sparse k={run['k']}" if run["scheme"] == "sparse" else "random mask"
+        print(
+            f"{run['run_id']} ({kind}): filled {run['n_filled']}/{run['n_masked']}"
+            f" ({run['coverage'] * 100:.0f}%), MAE {run['pipeline']['mae_pp']:.1f} pp"
+        )
+    headline = holdout.summary(conn)["headline"]
+    if headline:
+        levels = headline["by_level_mae_pp"]
+        print(
+            f"headline: pipeline {headline['pipeline_vs_svd2_pct']:.0f}% lower MAE than a rank-2"
+            f" completion; levels {levels['high']}/{levels['medium']}/{levels['low']} pp MAE"
+            f" (high/medium/low); a published estimate carries about"
+            f" {headline['reweighted']['mae_pp']:.1f} pp MAE ({headline['reweighted']['rmse_pp']:.1f} pp RMSE)"
+        )
+
+
 def cmd_multifit(args: argparse.Namespace) -> None:
     from .cache import FitCache
     from .fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2
@@ -324,6 +347,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="append each run's per-pair stats here (never rewritten)",
     )
     htax.set_defaults(func=cmd_harness_tax)
+
+    ho = sub.add_parser(
+        "holdout",
+        help="store the shipped masked-holdout evaluation's results (the paper's validation)",
+    )
+    ho.add_argument(
+        "--file", metavar="JSON",
+        help="results file to use instead of the packaged holdout_results.json",
+    )
+    ho.set_defaults(func=cmd_holdout)
 
     mfit = sub.add_parser(
         "multifit",

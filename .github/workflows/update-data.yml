@@ -100,6 +100,12 @@ jobs:
           path: data/harness_tax_history.jsonl
           key: harness-tax-history-${{ github.run_id }}
 
+      # the masked-holdout evaluation of the whole pipeline (the paper's validation):
+      # measured artifacts of a data snapshot, shipped with the package and re-stored
+      # after every rebuild so the site and the paper stay in sync
+      - name: Store the holdout evaluation
+        run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" holdout
+
       - name: Write the database
         run: |
           .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" sql "$RUNNER_TEMP/benchgap.sql"

@@ -1246,12 +1246,35 @@
   }
 
   // --- page: method -----------------------------------------------------------
+  // the end-to-end validation section (method): the holdout evaluation's headline numbers,
+  // from the site data (benchgap holdout stores them); absent until it has been run
+  function validatedSection() {
+    const h = D?.holdout?.headline;
+    if (!h) return `<p>The pipeline's end-to-end validation (masking measured scores, refitting everything and
+      scoring the masked cells against their truth) has not been stored in this database yet.</p>`;
+    const pct = (x) => `${(100 * x).toFixed(0)}%`;
+    const lv = h.by_level_mae_pp;
+    return `<p>The whole pipeline was tested by masking a share of the measured scores, wiping every fitted
+      table, refitting everything on what's left and scoring the masked cells against their held-out truth.
+      On ${h.n_runs} runs (${h.random_mae_pp[0].toFixed(1)} ± ${h.random_mae_pp[1].toFixed(1)} pp MAE on the random-mask seeds),
+      the estimates fill ${pct(h.random_coverage[0])}–${pct(h.random_coverage[1])} of masked cells at
+      <b>${h.random_mae_pp[0].toFixed(1)} pp</b> mean absolute error — ${h.pipeline_vs_svd2_pct.toFixed(0)}% lower than a
+      matrix-completion baseline on the same cells, whose error on the cells the pipeline refuses is nearly double its own.
+      The confidence levels above are correctly ordered — realized error ${lv.high.toFixed(1)} / ${lv.medium.toFixed(1)} /
+      ${lv.low.toFixed(1)} pp (high/medium/low) — but the ± labels are selected minima and understate the realized RMSE
+      by roughly 40–70% (×${h.label_inflation_rmse.high.toFixed(1)}–${h.label_inflation_rmse.medium.toFixed(1)}).
+      Reweighted to the confidence mix of the published matrix, a published estimate should be expected to carry about
+      <b>${h.reweighted.mae_pp.toFixed(1)} pp MAE</b> (${h.reweighted.rmse_pp.toFixed(1)} pp RMSE), and a model with a single
+      measured score gets estimates for only ${pct(h.sparse_coverage.k1)} of its remaining benchmarks
+      (${h.sparse_mae_pp.k1.toFixed(1)} pp MAE where it does).</p>`;
+  }
+
   function renderMethod() {
     const r = D.meta.confidence_levels, g = D.meta.quality_gate, c = D.meta.counts.confidence;
     setMeta("How missing benchmark scores are estimated", "How benchgap estimates missing LLM benchmark scores: calibration curves, multivariate mappings, leave-one-out validation and confidence levels.");
     main.innerHTML = `<div class="page">
       ${pageHead("Method", "How the gaps are filled, and when not to trust it", esc(ABOUT))}
-      <nav class="jump chip-row" aria-label="On this page">${[["data", "The data"], ["calibrating", "Calibrating"], ["together", "Several together"], ["filling", "Filling a gap"], ["confidence", "Confidence"], ["views", "Analysis views"], ["harness", "Harness tax"], ["caveats", "Caveats"]]
+      <nav class="jump chip-row" aria-label="On this page">${[["data", "The data"], ["calibrating", "Calibrating"], ["together", "Several together"], ["filling", "Filling a gap"], ["confidence", "Confidence"], ["validated", "Validated"], ["views", "Analysis views"], ["harness", "Harness tax"], ["caveats", "Caveats"]]
         .map(([id, label]) => `<a class="chip" href="#${id}">${label}</a>`).join("")}</nav>
       <article class="prose">
         <h2 id="data">The data</h2>
@@ -1305,6 +1328,9 @@
         </ul>
         <p>Hover over, tap or focus any estimate to see exactly which benchmark it came from, the curve used, and which warnings applied.
         The leaderboard and matrix can hide low-confidence estimates (<i>+ reliable estimates</i>) or all of them (<i>Measured only</i>).</p>
+
+        <h2 id="validated">Validated end to end</h2>
+        ${validatedSection()}
 
         <h2 id="views">Analysis views</h2>
         <p>Two pages show fits that never produce an estimate. The <a href="/calibration">calibration page</a> also shows how well benchmarks of

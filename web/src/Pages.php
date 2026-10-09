@@ -495,7 +495,7 @@ final class Pages
     {
         $g = $this->index['quality_gate'];
         $r = $this->index['confidence_levels'];
-        return [
+        $rules = [
             'Measured scores come from public evaluation leaderboards and are never altered; each benchmark is calibrated only against benchmarks of the same capability.',
             "For every ordered pair of benchmarks with at least {$g['min_pairs']} models measured on both, {$g['n_candidates']} monotone curves are fitted "
                 . 'and the one with the lowest leave-one-out cross-validated error is kept. That error, in percentage points, is the ± shown with every estimate.',
@@ -511,6 +511,22 @@ final class Pages
                 . 'it never feeds the estimates, and it is why each of them holds for its source harness\'s evaluation setup only.',
             'Estimates are predictions, not measurements, and hold for the source leaderboard\'s evaluation setup only.',
         ];
+        // the end-to-end validation (app.js validatedSection reads the same numbers)
+        $h = $this->index['holdout'] ?? null;
+        if ($h !== null) {
+            $lv = $h['by_level_mae_pp'];
+            $rules[] = sprintf(
+                'The whole pipeline is validated end to end: masking measured scores and refitting everything, estimates fill about %d%% of masked cells at about %.1f pp mean absolute error '
+                    . '(%d%% lower than a matrix-completion baseline on the same cells); the confidence levels are correctly ordered (%.1f / %.1f / %.1f pp realized MAE for high/medium/low), '
+                    . 'though the ± labels understate the realized RMSE by roughly 40–70%%; reweighted to the published mix, a published estimate should be expected to carry about %.1f pp MAE (%.1f pp RMSE).',
+                100 * $h['random_coverage'][0],
+                $h['random_mae_pp'][0],
+                (int) round($h['pipeline_vs_svd2_pct']),
+                $lv['high'], $lv['medium'], $lv['low'],
+                $h['reweighted']['mae_pp'], $h['reweighted']['rmse_pp'],
+            );
+        }
+        return $rules;
     }
 
     // -- html ------------------------------------------------------------------------

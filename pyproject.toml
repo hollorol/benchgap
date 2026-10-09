@@ -28,4 +28,4 @@ where = ["src"]
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-benchgap = ["families.json"]
+benchgap = ["families.json", "holdout_results.json"]
