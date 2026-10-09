@@ -215,7 +215,8 @@ final class Snapshot
         unset($b);
 
         $models = [];
-        foreach ($db->query('SELECT id, slug, name FROM models ORDER BY name COLLATE NOCASE') as $m) {
+        // by name, ignoring case (LOWER: SQLite's case-insensitive collation is an error on MySQL)
+        foreach ($db->query('SELECT id, slug, name FROM models ORDER BY LOWER(name), name') as $m) {
             $name = $m['name'] ?? $m['slug'];
             $models[] = [
                 'id' => (int) $m['id'],

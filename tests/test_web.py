@@ -90,6 +90,14 @@ def test_front_end_modules_name_each_function_once():
         assert not {n for n in names if names.count(n) > 1}, path
 
 
+def test_backend_sql_runs_on_mysql():
+    # the tests run the backend on SQLite, benchgap.net on MySQL: SQL that only SQLite knows
+    # passes here and breaks every page there (COLLATE NOCASE did)
+    sqlite_only = re.compile(r"COLLATE\s+NOCASE", re.I)
+    for path in [WEB / "serve.php", *(WEB / "src").glob("*.php")]:
+        assert not sqlite_only.search(path.read_text()), path
+
+
 def test_reliability_tiers():
     cases = php(
         "foreach ([[0.03, 0.9, 20, false], [0.07, 0.9, 20, false], [0.12, 0.9, 20, false],"
