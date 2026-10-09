@@ -260,6 +260,7 @@ def test_pages_and_sitemap(server):
         "/api": "Public API",
         "/calibration": "LLM benchmark calibrations",
         "/multivariate": "Multivariate LLM benchmark predictions",
+        "/harness-tax": "The harness tax: how much harnesses disagree",
         "/publications": "Publications: the research behind benchgap",
         f"/calibration/{mapping['id']}": "calibration",
         "/b/aa-terminal-bench21/current": "AA Terminal-Bench 2.1 leaderboard",
@@ -289,7 +290,7 @@ def test_pages_and_sitemap(server):
     assert headers["Content-Type"].startswith("application/xml")
     index = get_json(server, "/api/v1/")
     n = index["counts"]
-    assert sitemap.count("<loc>") == 7 + n["benchmarks"] + n["models"] + n["mappings"]
+    assert sitemap.count("<loc>") == 8 + n["benchmarks"] + n["models"] + n["mappings"]
     assert f"<loc>{model['page']}</loc>" in sitemap and "<lastmod>" in sitemap
 
 

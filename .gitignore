@@ -23,3 +23,8 @@ web/config.php
 .agents/
 .claude/
 skills-lock.json
+
+# harness-tax outputs (benchgap harness-tax and scripts/export_paper.py)
+data/harness_tax.json
+data/harness_tax_history.jsonl
+exports/

@@ -79,6 +79,27 @@ jobs:
         continue-on-error: true
         run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" crossmultifit --cache .fit-cache
 
+      # the harness-tax analysis (measured scores only; never used for estimates):
+      # pairs, metrics and the audit queue into the database (exported with it),
+      # plus the append-only history, which the cache carries between runs
+      - name: Restore the harness-tax history
+        uses: actions/cache/restore@v4
+        with:
+          path: data/harness_tax_history.jsonl
+          key: harness-tax-history-${{ github.run_id }}
+          restore-keys: harness-tax-history-
+
+      - name: Measure the harness tax
+        run: .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" harness-tax
+          --output data/harness_tax.json --history data/harness_tax_history.jsonl
+
+      - name: Save the harness-tax history
+        if: always() && hashFiles('data/harness_tax_history.jsonl') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/harness_tax_history.jsonl
+          key: harness-tax-history-${{ github.run_id }}
+
       - name: Write the database
         run: |
           .venv/bin/benchgap --db "$RUNNER_TEMP/benchgap.db" sql "$RUNNER_TEMP/benchgap.sql"

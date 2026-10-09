@@ -1,0 +1,305 @@
+"""Candidate score-mapping models, fitting, and model selection.
+
+Each candidate maps a score on one benchmark version (x) to a score on
+another (y), both fractions in [0, 1]. Fits are deterministic least-squares;
+the registry pattern lets a probabilistic method register itself later with
+the same interface (fit -> params, predict(params, x)).
+
+Candidates:
+- linear:       y = a*x + b
+- mm:           y = Vmax*x / (K + x)             Michaelis-Menten through origin
+- mm_offset:    y = y0 + Vmax*x / (K + x)         Michaelis-Menten with offset
+- mm_offset_inv: the analytic inverse of the mm_offset form (convex directions)
+- hill:         y = y0 + (A - y0)*x^n / (K^n + x^n)   Hill (generalizes MM)
+- logistic:     y = y0 + (A - y0) / (1 + exp(-k*(x - xmid)))   offset sigmoid
+
+mm_offset is monotone with a ceiling, so its inverse exists in closed form;
+for the reverse direction of a fitted pair we use that inverse instead of an
+independently fitted (non-monotone) polynomial. All candidates here are
+monotone non-decreasing.
+
+Leave-one-out CV is capped at MAX_LOO_FOLDS folds (deterministic subsample)
+so that large benchmark pairs stay tractable.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+import numpy as np
+from scipy.optimize import curve_fit
+
+# Maximum number of leave-one-out folds actually refit; above this, a
+# deterministic subsample of the points is used.
+MAX_LOO_FOLDS = 40
+
+
+# --- model forms --------------------------------------------------------------
+
+
+def _linear(x, a, b):
+    return a * x + b
+
+
+def _mm(x, vmax, k):
+    return vmax * x / (k + x)
+
+
+def _mm_offset(x, y0, vmax, k):
+    return y0 + vmax * x / (k + x)
+
+
+def _hill(x, y0, a, k, n):
+    return y0 + (a - y0) * x**n / (k**n + x**n)
+
+
+def _logistic(x, y0, a, k, xmid):
+    return y0 + (a - y0) / (1.0 + np.exp(-k * (x - xmid)))
+
+
+@dataclass(frozen=True)
+class Candidate:
+    method: str
+    param_names: tuple[str, ...]
+    fit: Callable[[np.ndarray, np.ndarray], dict[str, float]]
+    predict: Callable[[dict[str, float], np.ndarray], np.ndarray]
+    equation: str
+
+
+def _sorted_xy(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    order = np.argsort(x)
+    return x[order], y[order]
+
+
+def _clip(p0, bounds) -> list[float]:
+    """An initial guess moved inside the fit's bounds (curve_fit rejects one outside)."""
+    return [float(np.clip(v, lo, hi)) for v, lo, hi in zip(p0, bounds[0], bounds[1])]
+
+
+def _lsq_candidate(method, fn, param_names, p0_fn, equation, bounds=None, maxfev=20000) -> Candidate:
+    def fit(x, y):
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        kwargs = {}
+        if bounds is not None:
+            kwargs["bounds"] = bounds
+            p0 = _clip(p0_fn(x, y), bounds)
+        else:
+            p0 = p0_fn(x, y)
+        popt, _ = curve_fit(fn, x, y, p0=p0, maxfev=maxfev, **kwargs)
+        return {n: float(v) for n, v in zip(param_names, popt)}
+
+    # predictions are scores, so clipped to the fraction scale [0, 1]: a linear fit extrapolated
+    # far outside its training range would otherwise predict below 0% or above 100%. The
+    # cross-validation scores this same clipped curve.
+    def predict(params, x):
+        x = np.atleast_1d(np.asarray(x, dtype=float))
+        args = [params[n] for n in param_names]
+        return np.clip(fn(x, *args), 0.0, 1.0)
+
+    return Candidate(method, tuple(param_names), fit, predict, equation)
+
+
+def _linear_p0(x, y):
+    xs, ys = _sorted_xy(x, y)
+    span = max(xs[-1] - xs[0], 1e-9)
+    return [float((ys[-1] - ys[0]) / span), float(ys[0])]
+
+
+def _mm_p0(x, y):
+    return [float(np.max(y)), float(np.median(x) * 0.1) + 1e-6]
+
+
+def _mm_offset_p0(x, y):
+    return [
+        float(np.min(y)),
+        float(np.max(y) - np.min(y)),
+        float(np.median(x) * 0.1) + 1e-6,
+    ]
+
+
+def _hill_p0(x, y):
+    return [
+        float(np.min(y)),
+        min(float(np.max(y)) + 0.02, 1.1),
+        max(float(np.median(x)) * 0.5, 1e-3),
+        1.0,
+    ]
+
+
+def _logistic_p0(x, y):
+    span = max(float(np.max(x) - np.min(x)), 1e-3)
+    return [float(np.min(y)), min(float(np.max(y)) + 0.02, 1.1), 20.0 / span, float(np.median(x))]
+
+
+# Bounds keep the saturating fits physical in fraction space: non-negative
+# baseline and rise, half-saturation strictly positive, asymptote at most 2.
+_MM_BOUNDS = ([0.0, 0.0, 1e-9], [1.0, 2.0, np.inf])
+_MM_PLAIN_BOUNDS = ([0.0, 1e-9], [2.0, np.inf])
+
+
+def _mm_offset_inv_fn(x, y0, vmax, k):
+    """Inverse MM+offset curve: u = K*(x - y0) / (y0 + Vmax - x), in [0, 1].
+
+    This is the analytic inverse form of y = y0 + Vmax*u/(K + u), used as a
+    model family for directions where the relationship is convex (the inverse
+    of a saturating curve). Values are clamped to [0, 1]; for x <= y0 the
+    curve returns 0, for x >= y0 + Vmax (at/above the ceiling) it returns 1.
+    """
+    x = np.atleast_1d(np.asarray(x, dtype=float))
+    asymptote = y0 + vmax
+    num = k * (x - y0)
+    den = asymptote - x
+    with np.errstate(divide="ignore", invalid="ignore"):
+        u = np.where(den > 1e-9, num / np.where(den > 1e-9, den, 1.0), np.inf)
+    u = np.where(x <= y0, 0.0, u)
+    return np.clip(u, 0.0, 1.0)
+
+
+def _mm_offset_inv_p0(x, y):
+    """Seed of the inverse MM+offset fit.
+
+    The inverse *form* is fitted directly in the target space (rather than
+    inverting the forward fit's point predictions), which avoids error
+    amplification near the ceiling: a forward fit saturates below the highest
+    observed scores, and naive inversion of those maps them to nonsense.
+    """
+    x_min, x_max = float(np.min(x)), float(np.max(x))
+    y0_0 = max(x_min - 0.05, 0.0)
+    asymptote_0 = min(x_max + 0.05, 1.2)
+    # seed k from the median point: y_med ~= k*(xm - y0)/(A - xm)
+    order = np.argsort(x)
+    xm = float(x[order[len(order) // 2]])
+    ym = float(y[order[len(y) // 2]])
+    k_0 = max(ym * (asymptote_0 - xm) / max(xm - y0_0, 1e-3), 1e-3)
+    return [y0_0, asymptote_0 - y0_0, k_0]
+
+
+CANDIDATES: dict[str, Candidate] = {
+    "linear": _lsq_candidate(
+        "linear", _linear, ("slope", "intercept"), _linear_p0,
+        "y = {slope:.4f}·x + {intercept:.4f}",
+    ),
+    "mm": _lsq_candidate(
+        "mm", _mm, ("vmax", "k"), _mm_p0,
+        "y = {vmax:.4f}·x / ({k:.5f} + x)",
+        _MM_PLAIN_BOUNDS,
+    ),
+    "mm_offset": _lsq_candidate(
+        "mm_offset", _mm_offset, ("y0", "vmax", "k"), _mm_offset_p0,
+        "y = {y0:.4f} + {vmax:.4f}·x / ({k:.5f} + x)",
+        _MM_BOUNDS,
+    ),
+    "mm_offset_inv": _lsq_candidate(
+        "mm_offset_inv", _mm_offset_inv_fn, ("y0", "vmax", "k"), _mm_offset_inv_p0,
+        "y = {k:.5f}·(x − {y0:.4f}) / ({y0:.4f} + {vmax:.4f} − x)",
+        ([0.0, 0.0, 1e-9], [1.0, 2.0, 20.0]),
+        maxfev=40000,
+    ),
+    "hill": _lsq_candidate(
+        "hill", _hill, ("y0", "a", "k", "n"), _hill_p0,
+        "y = {y0:.4f} + ({a:.4f} − {y0:.4f})·x^{n:.2f} / ({k:.5f}^{n:.2f} + x^{n:.2f})",
+        ([0.0, 0.0, 1e-9, 0.2], [1.0, 1.2, 5.0, 6.0]),
+    ),
+    "logistic": _lsq_candidate(
+        "logistic", _logistic, ("y0", "a", "k", "xmid"), _logistic_p0,
+        "y = {y0:.4f} + ({a:.4f} − {y0:.4f}) / (1 + exp(−{k:.2f}·(x − {xmid:.4f})))",
+        ([0.0, 0.0, 1e-6, -2.0], [1.0, 1.2, 200.0, 3.0]),
+    ),
+}
+
+
+@dataclass
+class FitResult:
+    method: str
+    params: dict[str, float]
+    metrics: dict[str, float]
+
+    @property
+    def n_params(self) -> int:
+        return len(self.params)
+
+
+def _loo_indices(n: int) -> np.ndarray:
+    if n <= MAX_LOO_FOLDS:
+        return np.arange(n)
+    return np.linspace(0, n - 1, MAX_LOO_FOLDS, dtype=int)
+
+
+def fit_metrics(
+    method: str, params: dict[str, float], x: np.ndarray, y: np.ndarray
+) -> dict[str, float]:
+    """In-sample metrics plus (capped) leave-one-out CV RMSE."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    n = len(x)
+    p = len(params)
+    cand = CANDIDATES[method]
+    pred = cand.predict(params, x)
+    ss_res = float(np.sum((y - pred) ** 2))
+    ss_tot = float(np.sum((y - np.mean(y)) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else float("nan")
+    adj_r2 = 1.0 - (1.0 - r2) * (n - 1) / (n - p) if n > p else float("nan")
+    rmse = float(np.sqrt(ss_res / n))
+
+    loo_sq = 0.0
+    loo_ok = n > p
+    if loo_ok:
+        for i in _loo_indices(n):
+            mask = np.ones(n, dtype=bool)
+            mask[i] = False
+            try:
+                params_i = cand.fit(x[mask], y[mask])
+                loo_sq += float((y[i] - cand.predict(params_i, x[i : i + 1])[0]) ** 2)
+            except RuntimeError:
+                loo_ok = False
+                break
+    loo_rmse = float(np.sqrt(loo_sq / len(_loo_indices(n)))) if loo_ok else float("nan")
+    return {
+        "n": n,
+        "n_params": p,
+        "R2": r2,
+        "adj_R2": adj_r2,
+        "RMSE": rmse,
+        "LOO_RMSE": loo_rmse,
+    }
+
+
+def fit_candidate(method: str, x, y) -> FitResult:
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    cand = CANDIDATES[method]
+    params = cand.fit(x, y)
+    metrics = fit_metrics(method, params, x, y)
+    return FitResult(method=method, params=params, metrics=metrics)
+
+
+def fit_all(x, y) -> list[FitResult]:
+    """Fit every registered candidate on the same paired data.
+
+    A candidate whose least-squares fit does not converge on this data is
+    left out (it would have no parameters to predict with).
+    """
+    results = []
+    for m in CANDIDATES:
+        try:
+            results.append(fit_candidate(m, x, y))
+        except RuntimeError:
+            continue
+    return results
+
+
+def select_best(results: list[FitResult]) -> FitResult | None:
+    """Selection rule: lowest leave-one-out CV RMSE (falls back to RMSE); None if there are no results."""
+    if not results:
+        return None
+    keyed = [
+        (r.metrics.get("LOO_RMSE"), r.metrics["RMSE"], i, r)
+        for i, r in enumerate(results)
+    ]
+    keyed.sort(key=lambda t: (np.isnan(t[0]) if t[0] is not None else False, t[0] if t[0] is not None and not np.isnan(t[0]) else t[1]))
+    return keyed[0][3]
+
+
+def predict(method: str, params: dict[str, float], x) -> np.ndarray:
+    return CANDIDATES[method].predict(params, x)

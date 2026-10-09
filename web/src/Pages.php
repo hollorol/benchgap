@@ -28,6 +28,7 @@ final class Pages
         '/matrix' => ['Score matrix', 'every model on every benchmark'],
         '/calibration' => ['Calibration', 'which benchmarks predict which, and how well'],
         '/multivariate' => ['Multivariate', 'each benchmark predicted from several others together, with every model\'s cross-validated prediction'],
+        '/harness-tax' => ['Harness tax', 'how much harnesses disagree about the same models on the same benchmark, measured scores only'],
         '/method' => ['Method', 'how the missing scores are estimated, and when not to trust them'],
         '/publications' => ['Publications', 'the papers on predicting benchmark scores without running every eval, and how benchgap relates to them'],
         '/api' => ['API', 'free JSON and CSV API, no key'],
@@ -272,6 +273,59 @@ final class Pages
             . $this->table(['Model', 'Fit', 'Models', 'Error', 'Best one alone'], $rows));
     }
 
+    public function harnessTax(): array
+    {
+        $doc = $this->api->harnessTax();
+        $tiers = $doc['aggregates']['by_tier'] ?? [];
+        $headline = $doc['aggregates']['headline'] ?? [];
+        $ratio = $headline['ratio'] ?? null;
+        $lede = 'The same benchmark, run under different harnesses or protocols, disagrees about the same models - '
+            . 'on the agentic benchmarks by far more than on the tool-free ones. Measured scores only: no estimate enters this page.';
+        $tiersText = implode(' · ', array_map(
+            fn ($tier, $t) => "{$tier}: " . ($t['pooled_mean_abs_pp'] === null ? 'n/a' : number_format($t['pooled_mean_abs_pp'], 1) . ' pp'),
+            array_keys($tiers), $tiers
+        ));
+        $pairs = $doc['pairs'];
+        usort($pairs, fn ($x, $y) => ($y['mean_abs_pp'] ?? -1.0) <=> ($x['mean_abs_pp'] ?? -1.0));
+        $rows = array_map(fn ($p) => [
+            self::esc(self::pairName($p['a']['key'])) . ' (' . self::esc($p['a']['harness'] ?? '?') . ') vs '
+                . self::esc(self::pairName($p['b']['key'])) . ' (' . self::esc($p['b']['harness'] ?? '?') . ')'
+                . '<br><span class="muted">' . self::esc(implode(' · ', array_filter([
+                    $p['tier'] ?? 'untiered', $p['pair_type'], $p['same_item_set'],
+                    $p['status'] === 'candidate' ? 'candidate family' : null,
+                    $p['low_overlap'] ? 'low overlap' : null,
+                    $p['family_id'],
+                ]))) . '</span>',
+            $p['n_models'],
+            $p['mean_abs_pp'] === null ? '—' : number_format($p['mean_abs_pp'], 1) . ' pp',
+            $p['kendall_tau'] === null ? '—' : number_format($p['kendall_tau'], 2),
+            ($p['n_models'] === 0 || ($p['n_positive'] + $p['n_negative']) === 0)
+                ? '—'
+                : "{$p['n_positive']} up / {$p['n_negative']} down",
+        ], $pairs);
+        $outliers = count($doc['audit']['outliers']);
+        return $this->result('The harness tax: how much harnesses disagree',
+            'How much the same benchmark\'s measured scores disagree across harnesses and run protocols, benchmark family by family. Measured scores only.',
+            '/harness-tax',
+            $this->header('Harness tax', 'The same benchmark, measured differently',
+                '<p class="lede">' . self::esc($lede) . '</p>'
+                . "<p>Pooled mean |delta| by tier - $tiersText; verified families only, the agentic vs tool-free ratio is "
+                . ($ratio === null ? 'n/a' : number_format($ratio, 1) . 'x') . '.</p>')
+            . $this->table(['Pair', 'Models', 'Mean |Δ|', 'Kendall τ', 'Direction'], $rows)
+            . '<p class="muted">Measured scores only, never estimates; every per-model delta keeps both scores\' retrieval '
+                . 'dates and source URLs in the <a href="/api/v1/harness-tax.json">API</a>. Families whose item sets are not '
+                . 'verified are flagged and stay out of the headline aggregates; low-overlap pairs are greyed on the '
+                . '<a href="/harness-tax">interactive page</a>; ' . $outliers . ' per-model delta' . ($outliers === 1 ? '' : 's')
+                . ' beyond 20 pp sit in the audit queue.</p>');
+    }
+
+    /** a pair side's key without the trailing /current (the site shows the bare name) */
+    private static function pairName(string $key): string
+    {
+        [$name, $version] = array_pad(explode('/', $key, 2), 2, null);
+        return $version === null || $version === 'current' ? $name : $key;
+    }
+
     public function methodPage(): array
     {
         return $this->result('How missing benchmark scores are estimated',
@@ -281,8 +335,7 @@ final class Pages
     }
 
     public function publications(): array
-    {
-        $rows = array_map(fn ($p) => [
+    {        $rows = array_map(fn ($p) => [
             '<a href="https://arxiv.org/abs/' . self::esc($p['id']) . '" rel="noopener" target="_blank">' . self::esc($p['title']) . '</a>'
                 . '<br><span class="muted">' . self::esc("{$p['authors']}, {$p['year']}") . '</span>',
             $p['from'] === null ? '—' : self::esc($p['from']),

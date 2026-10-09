@@ -12,6 +12,7 @@
  *   /calibration            predictability matrix + list of mappings
  *   /calibration/<id>       one fitted mapping (scatter + curve)
  *   /multivariate           each benchmark from several others (fit + predicted vs measured)
+ *   /harness-tax            how harnesses disagree about the same models (measured scores only)
  *   /method                 methodology
  *   /publications           the papers behind the method, and how benchgap relates
  *   /api                    public API documentation (api/v1/)
@@ -1160,6 +1161,90 @@
     });
   }
 
+  // --- page: harness tax --------------------------------------------------------
+  // data: the harness-tax analysis (data/harness-tax.json, benchgap harness-tax): the pairs
+  // of the same benchmark measured under different harnesses, each with its metrics and
+  // per-model deltas. Measured scores only; nothing here feeds the estimates.
+  function renderHarnessTax(_, data) {   // its lede is also in src/Pages.php
+    setMeta("The harness tax: how much harnesses disagree",
+      "How much the same benchmark's measured scores disagree across harnesses and run protocols. Measured scores only, never estimates.");
+    const ht = data.harness_tax;
+    const TIERS = { agentic: "agentic", knowledge_tool_free: "tool-free", protocol_layer: "protocol layer" };
+    const pairs = ht.pairs.slice().sort((a, b) => (b.mean_abs_pp ?? -1) - (a.mean_abs_pp ?? -1));
+    const deltasOf = (p) => ht.deltas[p.id] || [];
+    const shortKey = (k) => (k || "").endsWith("/current") ? k.slice(0, -"/current".length) : k || "?";
+    let tier = "all";
+
+    // one pair's measured scores against each other, on one scale, with the y = x line
+    function scatter(p) {
+      const ds = deltasOf(p);
+      if (!ds.length) return '<p class="muted">No model was measured on both.</p>';
+      const W = 300, H = 300, L = 40, R = 10, T = 10, B = 38;
+      const vals = ds.flatMap((d) => [d.score_a, d.score_b]);
+      const { min: lo, max: hi, ticks } = axis(Math.max(...vals) + 0.02, Math.min(...vals) - 0.02);
+      const clamp = (v) => Math.min(hi, Math.max(lo, v));
+      const px = (v) => L + ((clamp(v) - lo) / (hi - lo)) * (W - L - R), py = (v) => H - B - ((clamp(v) - lo) / (hi - lo)) * (H - T - B);
+      let grid = "";
+      for (const v of ticks) grid += `<line class="gl" x1="${px(v)}" x2="${px(v)}" y1="${T}" y2="${H - B}"/><text x="${px(v)}" y="${H - B + 16}" text-anchor="middle">${Math.round(v * 100)}</text>`
+        + `<line class="gl" x1="${L}" x2="${W - R}" y1="${py(v)}" y2="${py(v)}"/><text x="${L - 6}" y="${py(v) + 4}" text-anchor="end">${Math.round(v * 100)}</text>`;
+      const dots = ds.map((d) => `<circle class="pt" cx="${px(d.score_a).toFixed(1)}" cy="${py(d.score_b).toFixed(1)}"
+        data-tiptext="${esc(d.name)}: ${pct(d.score_a)}% on ${esc(shortKey(p.a.key))}, ${pct(d.score_b)}% on ${esc(shortKey(p.b.key))} (Δ ${d.delta_pp >= 0 ? "+" : "−"}${Math.abs(d.delta_pp).toFixed(1)} pp)"/>`).join("");
+      return `<svg class="plot mv-plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(shortKey(p.a.key))} against ${esc(shortKey(p.b.key))} measured scores">
+        ${grid}<line class="ax" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/><line class="ax" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
+        <line class="ideal" x1="${px(lo)}" y1="${py(lo)}" x2="${px(hi)}" y2="${py(hi)}"/>${dots}
+        <text class="lbl" x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">${esc(shortKey(p.a.key))} (%)</text>
+        <text class="lbl" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${esc(shortKey(p.b.key))} (%)</text></svg>`;
+    }
+    function card(p) {
+      const name = (v) => `${esc(shortKey(v.key))} <small>· ${esc(v.harness || "?")}</small>`;
+      const flags = [
+        p.low_overlap ? '<span class="flag low">low overlap</span>' : "",
+        p.same_item_set === "needs_audit" ? '<span class="flag medium">item set needs audit</span>' : "",
+        p.same_item_set === "weak_alignment" ? '<span class="flag low">weak item-set alignment</span>' : "",
+        p.status === "candidate" ? '<span class="flag x">candidate family</span>' : "",
+        p.pair_type === "protocol_variant" ? '<span class="flag x">protocol variant</span>' : "",
+        deltasOf(p).some((d) => Math.abs(d.delta_pp) > 20) ? '<span class="flag low">audit queue</span>' : "",
+      ].filter(Boolean).join(" ");
+      const m = (label, v) => `<dt>${label}</dt><dd>${v}</dd>`;
+      const n = p.n_positive + p.n_negative;
+      return `<article class="card mv-fit${p.low_overlap ? " ht-low" : ""}">
+        <div class="mv-info">
+          <div class="mv-formula">${name(p.a)}<span class="mv-op">vs</span>${name(p.b)}</div>
+          <dl class="kv">
+            ${m("models", p.n)}
+            ${m("mean |Δ|", p.mean_abs_pp == null ? "—" : `${p.mean_abs_pp.toFixed(1)} pp`)}
+            ${m("median |Δ|", p.median_abs_pp == null ? "—" : `${p.median_abs_pp.toFixed(1)} pp`)}
+            ${m("max |Δ|", p.max_abs_pp == null ? "—" : `${p.max_abs_pp.toFixed(1)} pp`)}
+            ${m("Kendall τ", p.kendall_tau == null ? "—" : p.kendall_tau.toFixed(2))}
+            ${m("rank flips", p.n_rank_flips)}
+            ${m("direction", n ? `${p.n_positive} up / ${p.n_negative} down` : "—")}
+            ${m("sign test p", p.sign_p == null ? "—" : p.sign_p.toFixed(3))}
+            ${m(">5 pp", p.share_gt_5 == null ? "—" : pct(p.share_gt_5, 0) + "%")}
+            ${m(">10 pp", p.share_gt_10 == null ? "—" : pct(p.share_gt_10, 0) + "%")}
+          </dl>
+          <p class="mv-flags">${flags}</p>
+        </div>
+        ${scatter(p)}
+      </article>`;
+    }
+    function list() {
+      const shown = pairs.filter((p) => tier === "all" || p.tier === tier);
+      return shown.length ? shown.map(card).join("") : '<p class="muted">No pairs in this tier.</p>';
+    }
+    const agg = ht.aggregates || {};
+    const tiers = agg.by_tier || {};
+    const tierLine = Object.entries(tiers).map(([t, s]) => `${TIERS[t] || t}: ${s.pooled_mean_abs_pp == null ? "n/a" : s.pooled_mean_abs_pp.toFixed(1) + " pp"}`).join(" · ");
+    const ratio = agg.headline && agg.headline.ratio;
+    main.innerHTML = `<div class="page">
+      ${pageHead("Harness tax", "The same benchmark, measured differently", esc("The same benchmark, run under different harnesses or protocols, disagrees about the same models - on the agentic benchmarks by far more than on the tool-free ones. Measured scores only: no estimate enters this page. Each point below is one model's score under the one harness against the other; the diagonal is agreement."))}
+      <section class="section">
+        <div class="mv-sort"><span class="ctl-label">Tier</span>${segHTML("Tier", [["all", "all"], ...Object.entries(TIERS)], tier)}</div>
+        <p class="muted">Pooled mean |Δ| over reportable pairs - ${esc(tierLine) || "n/a"}. Verified families only, the agentic vs tool-free ratio: <b>${ratio == null ? "n/a" : ratio.toFixed(1) + "x"}</b>.</p>
+        <div class="mv-list" id="ht-list">${list()}</div>
+      </section></div>`;
+    bindSeg($(".mv-sort .seg"), (k) => { tier = k; hideTip(); swapContent($("#ht-list"), list()); });
+  }
+
   // --- page: method -----------------------------------------------------------
   function renderMethod() {
     const r = D.meta.confidence_levels, g = D.meta.quality_gate, c = D.meta.counts.confidence;
@@ -1540,6 +1625,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     [/^\/calibration$/, "calibration", renderCalibration, () => "/data/calibration.json"],
     [/^\/calibration\/(\d+)$/, "calibration", renderMapping, (id) => `/data/calibration/${id}.json`],
     [/^\/multivariate$/, "multivariate", renderMultivariate, () => "/data/multivariate.json"],
+    [/^\/harness-tax$/, "harness-tax", renderHarnessTax, () => "/data/harness-tax.json"],
     [/^\/method$/, "method", renderMethod],
     [/^\/publications$/, "publications", renderPublications],
     [/^\/api$/, "api", renderApi, () => "/data/calibration.json"],

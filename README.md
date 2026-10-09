@@ -58,6 +58,8 @@ benchgap/
 │   ├── fitting.py               # monotone univariate candidates, fit, LOO-CV, selection
 │   ├── fit.py                   # mapping fits (within and across capabilities) + quality gate
 │   ├── multivariate.py          # multivariate mappings and the multivariate view's fits
+│   ├── families.py + families.json  # the harness-tax benchmark family registry (+ auto-detection)
+│   ├── harness_tax.py           # how much harnesses disagree about the same models
 │   ├── parallel.py              # independent fits on every core
 │   ├── cache.py                 # fit results reused between runs (--cache)
 │   ├── gapfill.py               # predict + store missing scores (source='gapfilled')
@@ -92,6 +94,8 @@ benchgap fit -v                        # fit univariate mappings per version pai
 benchgap multifit                      # fit multivariate mappings per target
 benchgap crossfit                      # fit pairs across capabilities (cross-domain view only)
 benchgap crossmultifit                 # fit each benchmark from several of any capability (multivariate view only)
+benchgap harness-tax                   # measure how much harnesses disagree (data/harness_tax.json + history)
+uv run python scripts/export_paper.py  # regenerate exports/paper/ from data/harness_tax.json
 benchgap fit --cache .fit-cache        # reuse the fits whose data did not change since the last run (any fit command)
 benchgap gapfill                       # fill missing scores (prefers multi where it wins)
 benchgap report                        # dense-core score matrix (terminal)
@@ -162,7 +166,9 @@ model, the calibration (predictability) matrix with a scatter + fitted
 curve per mapping and the cross-domain predictability between capabilities,
 the multivariate view (`/multivariate`: each benchmark from the others its
 elastic net keeps, with its error, the error of the best of them alone, and
-a measured vs. leave-one-out predicted scatter), the methodology, and the
+a measured vs. leave-one-out predicted scatter), the harness-tax page
+(`/harness-tax`: how much harnesses disagree about the same models, measured
+scores only), the methodology, and the
 publications page (`/publications`: the papers on predicting benchmark
 scores, and how benchgap relates to them). Each
 page has its own URL
@@ -276,6 +282,49 @@ Warnings the pipeline tracks: predictions outside the training x-range are
 flagged `extrapolated` in `prediction_json` and in the `predict` CLI
 output. Mapping coefficients are harness-specific: each benchmark version
 records whose run it is (`artificial-analysis`, `vals-ai` or `published`).
+
+## Harness tax
+
+The same warning, measured: **how much do harnesses disagree about the same
+models on the same benchmark?** `benchgap harness-tax` (`harness_tax.py`,
+never used for estimates) pairs the benchmark versions that measure the same
+benchmark under different harnesses or run protocols - the **families** of
+`families.json` (seeded by hand, with a tier per family: `agentic` for
+tool/scaffold-dependent benchmarks, `knowledge_tool_free` for tool-free ones,
+`protocol_layer` for within-harness variants such as HLE tools on/off). Names
+not covered by the seed are auto-detected by normalized base name
+(`families.detect_families`) and enter as `candidate` families, shown but kept
+out of aggregates until reviewed into the seed.
+
+For each pair, the **models measured on both** versions give a per-model
+delta in percentage points (score_a - score_b, in the registry's order), and
+the metrics that separate a systematic harness tax from noise: mean/median/max
+|delta|, the shares beyond 5 and 10 pp, Kendall tau-b of the two harnesses'
+rankings, the number of rank flips, a two-sided exact sign test against
+p = 0.5, and the directionality (the fraction agreeing with the dominant
+sign; >= 0.9 is systematic bias). Pairs with fewer than 5 shared models are
+stored but flagged `low_overlap` and greyed on the page; aggregates pool the
+mean |delta| by tier over reportable pairs only (active families, enough
+overlap, a known item set), with a verified-only headline set whose agentic
+vs tool-free ratio is the analysis's headline number.
+
+Everything is **measured scores only** - no estimate ever enters a delta, and
+a paired version with no measured scores fails the run loudly. Every
+per-model delta keeps both scores' retrieval dates and source URLs
+(`/api/v1/harness-tax/{family_id}.json`); a |delta| beyond 20 pp lands in the
+audit queue, as does any score outside [0, 1] (the pair is skipped). Each run
+rewrites `data/harness_tax.json` and the `harness_tax_*` tables (which flow to
+the site with `benchgap sql`) and **appends** one dated record per pair to
+`data/harness_tax_history.jsonl` - history is never rewritten. The page is
+`/harness-tax`; `uv run python scripts/export_paper.py` regenerates the
+paper-ready exports (`exports/paper/`: Table 1's pairs CSV, Figure 1's
+by-pair chart data, Figure 2's HLE tools effect, and the tier aggregates).
+
+Limitations: pair counts are lower bounds (a model measured on only one side
+cannot contribute), the item-set audit status is per family and partly manual
+(`verified` / `needs_audit` / `weak_alignment`), and a family whose versions
+changed items across harnesses (LiveCodeBench's v6, say) conflates version
+and harness effects - which is why it is a candidate, out of the aggregates.
 
 ## Adding benchmarks
 

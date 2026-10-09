@@ -280,6 +280,12 @@ final class Snapshot
             ];
         }
 
+        // the harness-tax analysis (never used for estimates; benchgap harness-tax): the
+        // benchmark families, every pair's metrics and per-model deltas with provenance;
+        // there are none before the first run that has the tables
+        $versionById = array_column($benchmarks, null, 'id');
+        $harnessTax = self::harnessTax($db, $versionById);
+
         $harnesses = array_values(array_unique(array_column($benchmarks, 'harness')));
         sort($harnesses);
         $estimated = array_sum($tiers);
@@ -313,6 +319,112 @@ final class Snapshot
             'mappings' => $mappingDocs,
             'cross_mappings' => $cross,
             'cross_multi_mappings' => $multiView,
+            'harness_tax' => $harnessTax,
+        ];
+    }
+
+    /**
+     * The harness-tax analysis (harness_tax.py) of this database, or empty lists if it
+     * has never been run. Families carry their registered versions; each pair carries
+     * its metrics and every per-model delta with both scores' retrieval dates (the
+     * source URLs stay on the pair's versions); aggregates are served as computed.
+     */
+    private static function harnessTax(PDO $db, array $versionById): array
+    {
+        if (!self::hasTable($db, 'harness_tax_pairs')) {
+            return ['families' => [], 'pairs' => [], 'deltas' => [], 'aggregates' => []];
+        }
+        $measured = [];
+        foreach ($db->query("SELECT version_id, COUNT(*) AS n FROM scores WHERE source = 'measured' GROUP BY version_id") as $r) {
+            $measured[$r['version_id']] = (int) $r['n'];
+        }
+        $families = [];
+        $familyVersions = [];       // family_id => its versions, gathered from the pairs
+        foreach ($db->query('SELECT * FROM harness_tax_families ORDER BY family_id') as $f) {
+            $families[$f['family_id']] = [
+                'family_id' => $f['family_id'],
+                'label' => $f['label'],
+                'capability' => $f['capability'],
+                'tier' => $f['tier'],
+                'same_item_set' => $f['same_item_set'],
+                'status' => $f['status'],
+                'pair_type' => $f['pair_type'],
+                'audit_note' => $f['audit_note'],
+                'origin' => $f['origin'],
+                'versions' => [],
+            ];
+        }
+        $pairs = [];
+        foreach ($db->query('SELECT * FROM harness_tax_pairs ORDER BY family_id, id') as $p) {
+            $f = $families[$p['family_id']];
+            $sides = [];
+            foreach (['a' => $p['version_a_id'], 'b' => $p['version_b_id']] as $side => $vid) {
+                $v = $versionById[$vid] ?? null;
+                $familyVersions[$p['family_id']][$vid] = [
+                    'key' => $v['key'] ?? null,
+                    'name' => $v === null ? null : explode('/', $v['key'])[0],
+                    'harness' => $v['harness'] ?? null,
+                    'n' => $measured[$vid] ?? 0,
+                ];
+                $sides[$side] = ['key' => $v['key'] ?? null, 'harness' => $v['harness'] ?? null, 'source_url' => $v['source_url'] ?? null];
+            }
+            $pairs[$p['id']] = [
+                'id' => (int) $p['id'],
+                'family_id' => $p['family_id'],
+                'tier' => $f['tier'],
+                'capability' => $f['capability'],
+                'pair_type' => $p['pair_type'],
+                'same_item_set' => $f['same_item_set'],
+                'status' => $f['status'],
+                'low_overlap' => (bool) $p['low_overlap'],
+                'a' => $sides['a'],
+                'b' => $sides['b'],
+                'n' => (int) $p['n_models'],
+                'mean_abs_pp' => self::num($p['mean_abs_pp'], 2),
+                'median_abs_pp' => self::num($p['median_abs_pp'], 2),
+                'max_abs_pp' => self::num($p['max_abs_pp'], 2),
+                'share_gt_5' => self::num($p['share_gt_5'], 3),
+                'share_gt_10' => self::num($p['share_gt_10'], 3),
+                'kendall_tau' => self::num($p['kendall_tau'], 3),
+                'n_rank_flips' => (int) $p['n_rank_flips'],
+                'n_positive' => (int) $p['n_positive'],
+                'n_negative' => (int) $p['n_negative'],
+                'sign_p' => self::num($p['sign_p'], 4),
+                'directionality' => self::num($p['directionality'], 3),
+            ];
+        }
+        foreach ($families as $familyId => &$f) {
+            // insertion order: each version enters at its first pair, a before b
+            $f['versions'] = array_values($familyVersions[$familyId] ?? []);
+        }
+        $deltas = [];
+        foreach ($db->query(
+            'SELECT d.pair_id, d.model_id, m.slug, m.name, d.score_a, d.score_b, d.delta_pp,'
+            . ' sa.retrieved_at AS retrieved_a, sb.retrieved_at AS retrieved_b'
+            . ' FROM harness_tax_deltas d'
+            . ' JOIN harness_tax_pairs p ON p.id = d.pair_id'
+            . ' JOIN models m ON m.id = d.model_id'
+            . " LEFT JOIN scores sa ON sa.model_id = d.model_id AND sa.version_id = p.version_a_id AND sa.source = 'measured'"
+            . " LEFT JOIN scores sb ON sb.model_id = d.model_id AND sb.version_id = p.version_b_id AND sb.source = 'measured'"
+            . ' ORDER BY d.pair_id, m.name'
+        ) as $d) {
+            $deltas[$d['pair_id']][] = [
+                'model_id' => (int) $d['model_id'],
+                'slug' => $d['slug'],
+                'name' => $d['name'],
+                'score_a' => self::num($d['score_a'], 4),
+                'score_b' => self::num($d['score_b'], 4),
+                'delta_pp' => self::num($d['delta_pp'], 2),
+                'retrieved_a' => $d['retrieved_a'],
+                'retrieved_b' => $d['retrieved_b'],
+            ];
+        }
+        $aggregates = $db->query('SELECT aggregates_json FROM harness_tax_aggregates WHERE id = 1')->fetchColumn();
+        return [
+            'families' => array_values($families),
+            'pairs' => array_values($pairs),
+            'deltas' => $deltas,          // by pair id (the site's data document only)
+            'aggregates' => $aggregates ? json_decode($aggregates, true) : [],
         ];
     }
 

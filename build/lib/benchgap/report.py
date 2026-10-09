@@ -1,0 +1,305 @@
+"""Human-readable views of the database: mapping summary and score matrix."""
+from __future__ import annotations
+
+import json
+import sqlite3
+
+# Display order for capability groups in the matrix.
+CAPABILITY_ORDER = [
+    "agentic-terminal",
+    "agentic-tool",
+    "coding",
+    "math",
+    "knowledge",
+    "instruction-following",
+    "multilingual",
+    "vision",
+    "long-context",
+    "general",
+]
+
+
+# Display filter defaults: drop benchmark versions with fewer measured models
+# and models with fewer measured benchmarks than these, iteratively until
+# stable (bipartite core). Display only - the database keeps everything.
+DEFAULT_MIN_MODELS = 8
+DEFAULT_MIN_BENCHMARKS = 3
+
+
+def display_filter(
+    conn: sqlite3.Connection,
+    min_models: int = DEFAULT_MIN_MODELS,
+    min_benchmarks: int = DEFAULT_MIN_BENCHMARKS,
+) -> tuple[set[int], set[int]]:
+    """Benchmark version ids and model ids to show for a dense summary view.
+
+    Iteratively peels the measured-score bipartite graph: drop versions with
+    fewer than ``min_models`` measured models, then models with fewer than
+    ``min_benchmarks`` measured versions, and repeat until both hold - so
+    the displayed region is a dense core with minimal missing cells.
+    Thresholds <= 0 disable the corresponding peel.
+    """
+    pairs = {
+        (r["model_id"], r["version_id"])
+        for r in conn.execute(
+            "SELECT model_id, version_id FROM scores WHERE source = 'measured'"
+        )
+    }
+    versions = {v for _, v in pairs}
+    models = {m for m, _ in pairs}
+    while True:
+        version_count: dict[int, int] = {}
+        model_count: dict[int, int] = {}
+        for m, v in pairs:
+            if m in models and v in versions:
+                version_count[v] = version_count.get(v, 0) + 1
+                model_count[m] = model_count.get(m, 0) + 1
+        drop_v = {
+            v
+            for v in versions
+            if min_models > 0 and version_count.get(v, 0) < min_models
+        }
+        drop_m = {
+            m
+            for m in models
+            if min_benchmarks > 0 and model_count.get(m, 0) < min_benchmarks
+        }
+        if not drop_v and not drop_m:
+            break
+        versions -= drop_v
+        models -= drop_m
+    return versions, models
+
+
+def _version_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    rows = conn.execute(
+        "SELECT v.id, v.version, v.harness, v.unit, b.name AS benchmark,"
+        "       b.capability AS capability"
+        " FROM benchmark_versions v JOIN benchmarks b ON b.id = v.benchmark_id"
+    ).fetchall()
+    cap_rank = {c: i for i, c in enumerate(CAPABILITY_ORDER)}
+    return sorted(
+        rows,
+        key=lambda r: (cap_rank.get(r["capability"], 99), r["benchmark"], r["version"]),
+    )
+
+
+def _labels(conn: sqlite3.Connection) -> dict[int, str]:
+    return {
+        r["id"]: f"{r['benchmark']}/{r['version']}" + (
+            f"@{r['harness']}" if r["harness"] != "unknown" else ""
+        )
+        for r in _version_rows(conn)
+    }
+
+
+def mapping_summary(conn: sqlite3.Connection) -> list[dict]:
+    """One row per version pair: the best mapping and its quality."""
+    labels = _labels(conn)
+    rows = conn.execute(
+        "SELECT m.from_version_id, m.to_version_id, m.method, m.n_points,"
+        "       json_extract(m.metrics_json, '$.R2') AS r2,"
+        "       json_extract(m.metrics_json, '$.LOO_RMSE') AS loo_rmse,"
+        "       (SELECT COUNT(*) FROM mappings m2"
+        "          WHERE m2.from_version_id = m.from_version_id"
+        "            AND m2.to_version_id = m.to_version_id) AS n_candidates"
+        " FROM mappings m"
+        " WHERE m.id = ("
+        "   SELECT m2.id FROM mappings m2"
+        "    WHERE m2.from_version_id = m.from_version_id"
+        "      AND m2.to_version_id = m.to_version_id"
+        "    ORDER BY COALESCE(json_extract(m2.metrics_json, '$.LOO_RMSE'), 1e9),"
+        "             COALESCE(json_extract(m2.metrics_json, '$.RMSE'), 1e9)"
+        "    LIMIT 1)"
+        " ORDER BY m.from_version_id, m.to_version_id"
+    ).fetchall()
+    return [
+        {
+            "from": labels[r["from_version_id"]],
+            "to": labels[r["to_version_id"]],
+            "method": r["method"],
+            "n_pairs": r["n_points"],
+            "candidates": r["n_candidates"],
+            "R2": r["r2"],
+            "LOO_RMSE_pp": r["loo_rmse"] * 100 if r["loo_rmse"] is not None else None,
+        }
+        for r in rows
+    ]
+
+
+def best_mappings(conn: sqlite3.Connection) -> list[dict]:
+    """Best mapping per ordered version pair, with version ids for matrices."""
+    rows = conn.execute(
+        "SELECT m.id, m.from_version_id, m.to_version_id, m.method, m.n_points,"
+        "       json_extract(m.metrics_json, '$.R2') AS r2,"
+        "       json_extract(m.metrics_json, '$.LOO_RMSE') AS loo_rmse"
+        " FROM mappings m"
+        " WHERE m.id = ("
+        "   SELECT m2.id FROM mappings m2"
+        "    WHERE m2.from_version_id = m.from_version_id"
+        "      AND m2.to_version_id = m.to_version_id"
+        "    ORDER BY COALESCE(json_extract(m2.metrics_json, '$.LOO_RMSE'), 1e9),"
+        "             COALESCE(json_extract(m2.metrics_json, '$.RMSE'), 1e9)"
+        "    LIMIT 1)"
+    ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "from_version_id": r["from_version_id"],
+            "to_version_id": r["to_version_id"],
+            "method": r["method"],
+            "n_pairs": r["n_points"],
+            "R2": r["r2"],
+            "LOO_RMSE": r["loo_rmse"],
+        }
+        for r in rows
+    ]
+
+
+def predictability_matrix(
+    conn: sqlite3.Connection, include_versions: set[int] | None = None
+) -> tuple[list[dict], list[list[dict | None]]]:
+    """Predictability of every target version from every source version.
+
+    Returns (versions, cells) where versions are ordered by capability and
+    cells[i][j] describes the best mapping versions[i] -> versions[j]
+    (None when no mapping exists). Diagonal cells are None. When
+    ``include_versions`` is given, only those version ids are displayed.
+    """
+    versions = [
+        {
+            "id": v["id"],
+            "label": f"{v['benchmark']}/{v['version']}",
+            "capability": v["capability"],
+        }
+        for v in _version_rows(conn)
+        if include_versions is None or v["id"] in include_versions
+    ]
+    by_pair = {
+        (m["from_version_id"], m["to_version_id"]): m for m in best_mappings(conn)
+    }
+    cells: list[list[dict | None]] = []
+    for src in versions:
+        row = []
+        for dst in versions:
+            if src["id"] == dst["id"]:
+                row.append(None)
+            else:
+                row.append(by_pair.get((src["id"], dst["id"])))
+        cells.append(row)
+    return versions, cells
+
+
+def multi_mapping_summary(conn: sqlite3.Connection) -> list[dict]:
+    """One row per multivariate mapping: target, features, quality."""
+    labels = _labels(conn)
+    rows = conn.execute(
+        "SELECT * FROM multi_mappings"
+        " ORDER BY COALESCE(json_extract(metrics_json, '$.LOO_RMSE'), 1e9)"
+    ).fetchall()
+    return [
+        {
+            "target": labels[r["to_version_id"]],
+            "method": r["method"],
+            "features": [labels[fid] for fid in json.loads(r["feature_version_ids_json"])],
+            "n_pairs": r["n_points"],
+            "R2": json.loads(r["metrics_json"])["R2"],
+            "LOO_RMSE_pp": json.loads(r["metrics_json"])["LOO_RMSE"] * 100,
+        }
+        for r in rows
+    ]
+
+
+def score_matrix(
+    conn: sqlite3.Connection,
+    include_versions: set[int] | None = None,
+    include_models: set[int] | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Models x versions matrix; gapfilled cells marked 'g', missing '.'.
+
+    Columns are grouped by capability. Cell values are in the version's
+    native unit (fractions rendered as percent by callers). When
+    ``include_versions`` / ``include_models`` are given, only those rows
+    and columns are displayed.
+    """
+    versions = [
+        v
+        for v in _version_rows(conn)
+        if include_versions is None or v["id"] in include_versions
+    ]
+    columns = []
+    for v in versions:
+        columns.append(
+            {
+                "id": v["id"],
+                "label": f"{v['benchmark']}/{v['version']}",
+                "capability": v["capability"],
+                "unit": v["unit"],
+            }
+        )
+
+    # (model_id, version_id) -> (value, source); measured wins over gapfilled
+    scores: dict[tuple[int, int], tuple[float, str]] = {}
+    for r in conn.execute("SELECT model_id, version_id, value, source FROM scores"):
+        key = (r["model_id"], r["version_id"])
+        if r["source"] == "measured" or key not in scores:
+            scores[key] = (r["value"], r["source"])
+
+    rows = []
+    for m in conn.execute("SELECT id, slug, name FROM models ORDER BY slug"):
+        if include_models is not None and m["id"] not in include_models:
+            continue
+        cells = []
+        for col in columns:
+            entry = scores.get((m["id"], col["id"]))
+            if entry is None:
+                cells.append({"value": None, "kind": "missing"})
+            else:
+                cells.append(
+                    {
+                        "value": entry[0],
+                        "kind": "g" if entry[1] == "gapfilled" else "m",
+                    }
+                )
+        rows.append({"id": m["id"], "slug": m["slug"], "name": m["name"], "cells": cells})
+    return columns, rows
+
+
+def _format_cell(col: dict, cell: dict) -> str:
+    if cell["value"] is None:
+        return "-".ljust(8)
+    mark = "*" if cell["kind"] == "g" else ""
+    if col["unit"] == "fraction":
+        return f"{cell['value'] * 100:5.1f}{mark}".ljust(8)
+    return f"{cell['value']:5.1f}{mark}".ljust(8)
+
+
+def render_matrix(
+    conn: sqlite3.Connection,
+    include_versions: set[int] | None = None,
+    include_models: set[int] | None = None,
+) -> str:
+    """Plain-text matrix: measured values plain, gapfilled marked with *."""
+    columns, rows = score_matrix(conn, include_versions, include_models)
+    name_w = max([len(r["slug"]) for r in rows] + [len("model")])
+    lines = []
+    header_cells = []
+    last_cap = None
+    for col in columns:
+        cap_mark = col["capability"] if col["capability"] != last_cap else ""
+        last_cap = col["capability"]
+        header_cells.append(f"{cap_mark:>8.8}")
+    # capability header line + column header line
+    lines.append(" " * (name_w + 2) + " ".join(header_cells))
+    lines.append(
+        " " * (name_w + 2) + " ".join(c["label"][:8].ljust(8) for c in columns)
+    )
+    lines.append("-" * len(lines[-1]))
+    for r in rows:
+        cells = " ".join(
+            _format_cell(c, cell) for c, cell in zip(columns, r["cells"])
+        )
+        lines.append(r["slug"].ljust(name_w) + "  " + cells)
+    lines.append("")
+    lines.append("* = gapfilled (fitted mapping, not a measured score)")
+    return "\n".join(lines)
