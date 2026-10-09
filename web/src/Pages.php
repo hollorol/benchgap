@@ -329,7 +329,7 @@ final class Pages
     public function methodPage(): array
     {
         return $this->result('How missing benchmark scores are estimated',
-            'How benchgap estimates missing LLM benchmark scores: calibration curves, leave-one-out validation and confidence levels.', '/method',
+            'How benchgap estimates missing LLM benchmark scores: calibration curves, multivariate mappings, leave-one-out validation and confidence levels.', '/method',
             $this->header('Method', 'How the gaps are filled, and when not to trust it', '<p class="lede">' . self::esc(self::ABOUT) . '</p>')
             . '<ul>' . implode('', array_map(fn ($item) => "<li>$item</li>", $this->rules())) . '</ul>');
     }
@@ -501,8 +501,14 @@ final class Pages
                 . 'and the one with the lowest leave-one-out cross-validated error is kept. That error, in percentage points, is the ± shown with every estimate.',
             "A pair keeps no calibration unless its best curve reaches R² ≥ {$g['min_r2']} and an error of at most {$g['max_loo_pp']} pp; such gaps stay empty.",
             'A missing score is estimated from the best calibration out of a benchmark the model was measured on. Estimates are never used to make further estimates.',
+            'Several same-capability benchmarks may be combined into a multivariate mapping: an elastic net whose lasso zeroes the useless sources or a greedy forward search finds the features, '
+                . 'and then a linear fit and a multivariate Michaelis–Menten curve compete. It is stored only if it passes the gate and beats the target\'s best single calibration, '
+                . 'and preferred for a model measured on all of its sources - a model missing one source falls back to the univariate path.',
+            'Cross-domain predictability and the multivariate view are analyses only: no estimate crosses a capability.',
             "Confidence: <b>high</b> for an error up to {$r['high_max_pp']} pp, <b>medium</b> up to {$r['medium_max_pp']} pp, <b>low</b> above; "
                 . "extrapolation, a fit on fewer than {$r['min_reliable_n']} models or R² below {$r['min_informative_r2']} each lower it by one level.",
+            'The harness tax (see <a href="/harness-tax">/harness-tax</a>) measures how much harnesses disagree about the same models on the same benchmark, from measured scores only; '
+                . 'it never feeds the estimates, and it is why each of them holds for its source harness\'s evaluation setup only.',
             'Estimates are predictions, not measurements, and hold for the source leaderboard\'s evaluation setup only.',
         ];
     }
