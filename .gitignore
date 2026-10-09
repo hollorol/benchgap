@@ -14,6 +14,7 @@ data/report.html
 # fit results reused between runs (benchgap fit/multifit --cache .fit-cache)
 .fit-cache/
 dist/
+build/
 
 # website: Composer installs vendor/ (CI does it before deploying); config.php holds the MySQL credentials
 web/vendor/

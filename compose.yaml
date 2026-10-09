@@ -22,6 +22,7 @@ services:
       - "${BENCHGAP_PORT:-8080}:80"
     environment:
       BENCHGAP_DSN: sqlite:/data/benchgap.db
+      BENCHGAP_ANALYTICS: "off"   # local visits are not counted (serve.php drops the analytics script)
     volumes:
       - ./web:/var/www/html
       - type: bind

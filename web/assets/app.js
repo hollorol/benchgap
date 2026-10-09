@@ -427,10 +427,10 @@
       .map((x) => benchChip(x, b))
       .join("")}</nav>`;
   }
-  // scrolls a row of pills (phones only) so its current one is in the middle
-  const phone = matchMedia("(max-width: 760px)");
-  function centerIn(row, selector) {
-    const chip = phone.matches && row && row.querySelector(selector);
+  // scrolls a row of pills (phones only; the site nav up to tablets, as the CSS) so its current one is in the middle
+  const phone = matchMedia("(max-width: 760px)"), pillNav = matchMedia("(max-width: 1000px)");
+  function centerIn(row, selector, when = phone) {
+    const chip = when.matches && row && row.querySelector(selector);
     if (chip) row.scrollLeft += chip.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - chip.offsetWidth) / 2;
   }
   const centerRail = () => centerIn($("#bench-rail .rail"), '[aria-current="true"]');
@@ -1176,7 +1176,7 @@
     let tier = "all";
 
     // one pair's measured scores against each other, on one scale, with the y = x line
-    function scatter(p) {
+    function htScatter(p) {
       const ds = deltasOf(p);
       if (!ds.length) return '<p class="muted">No model was measured on both.</p>';
       const W = 300, H = 300, L = 40, R = 10, T = 10, B = 38;
@@ -1195,7 +1195,7 @@
         <text class="lbl" x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">${esc(shortKey(p.a.key))} (%)</text>
         <text class="lbl" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${esc(shortKey(p.b.key))} (%)</text></svg>`;
     }
-    function card(p) {
+    function htCard(p) {
       const name = (v) => `${esc(shortKey(v.key))} <small>· ${esc(v.harness || "?")}</small>`;
       const flags = [
         p.low_overlap ? '<span class="flag low">low overlap</span>' : "",
@@ -1224,12 +1224,12 @@
           </dl>
           <p class="mv-flags">${flags}</p>
         </div>
-        ${scatter(p)}
+        ${htScatter(p)}
       </article>`;
     }
-    function list() {
+    function htList() {
       const shown = pairs.filter((p) => tier === "all" || p.tier === tier);
-      return shown.length ? shown.map(card).join("") : '<p class="muted">No pairs in this tier.</p>';
+      return shown.length ? shown.map(htCard).join("") : '<p class="muted">No pairs in this tier.</p>';
     }
     const agg = ht.aggregates || {};
     const tiers = agg.by_tier || {};
@@ -1240,9 +1240,9 @@
       <section class="section">
         <div class="mv-sort"><span class="ctl-label">Tier</span>${segHTML("Tier", [["all", "all"], ...Object.entries(TIERS)], tier)}</div>
         <p class="muted">Pooled mean |Δ| over reportable pairs - ${esc(tierLine) || "n/a"}. Verified families only, the agentic vs tool-free ratio: <b>${ratio == null ? "n/a" : ratio.toFixed(1) + "x"}</b>.</p>
-        <div class="mv-list" id="ht-list">${list()}</div>
+        <div class="mv-list" id="ht-list">${htList()}</div>
       </section></div>`;
-    bindSeg($(".mv-sort .seg"), (k) => { tier = k; hideTip(); swapContent($("#ht-list"), list()); });
+    bindSeg($(".mv-sort .seg"), (k) => { tier = k; hideTip(); swapContent($("#ht-list"), htList()); });
   }
 
   // --- page: method -----------------------------------------------------------
@@ -1410,12 +1410,12 @@
     setMeta("Publications: the research behind benchgap", "Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.");
     const rows = PAPERS.map(([title, authors, year, id, from, approach, relation]) => `<tr>
         <td><a href="https://arxiv.org/abs/${id}" rel="noopener" target="_blank">${esc(title)}</a><br><span class="muted">${esc(`${authors}, ${year}`)}</span></td>
-        <td>${from ? esc(from) : "—"}</td>
-        <td>${esc(approach)}</td>
-        <td>${esc(relation)}</td></tr>`).join("");
+        <td data-label="Predicts from">${from ? esc(from) : "—"}</td>
+        <td data-label="Approach">${esc(approach)}</td>
+        <td data-label="How benchgap relates">${esc(relation)}</td></tr>`).join("");
     main.innerHTML = `<div class="page">
       ${pageHead("Publications", "The research behind the gapfilling", esc("benchgap is one entry in an active research line: predicting a model's benchmark scores without running every evaluation. These are the papers closest to what this site does, and how they relate to it."))}
-      <section class="section"><div class="list-wrap"><table class="list">
+      <section class="section"><div class="list-wrap"><table class="list papers">
         <thead><tr><th>Paper</th><th>Predicts from</th><th>Approach</th><th>How benchgap relates</th></tr></thead>
         <tbody>${rows}</tbody></table></div></section>
       <section class="section"><h2 class="h2">The multivariate predictions</h2>
@@ -1731,7 +1731,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     const nav = page ? page[1] : "";
     const inPlace = page ? page[2](arg, data) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-    centerIn($(".nav"), '[aria-current="page"]');
+    centerIn($(".nav"), '[aria-current="page"]', pillNav);
     booted();
     if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }
