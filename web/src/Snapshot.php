@@ -141,7 +141,8 @@ final class Snapshot
 
         $scores = [];
         $used = [];
-        foreach ($db->query('SELECT * FROM scores ORDER BY version_id, model_id, source') as $s) {
+        // each benchmark's scores highest first, as the leaderboards and the API list them
+        foreach ($db->query('SELECT * FROM scores ORDER BY version_id, value DESC, model_id, source') as $s) {
             $row = ['m' => (int) $s['model_id'], 'b' => (int) $s['version_id'], 'v' => self::num($s['value'])];
             if ($s['source'] === 'measured') {
                 $scores[] = $row + ['s' => 'm'];
@@ -214,7 +215,7 @@ final class Snapshot
         unset($b);
 
         $models = [];
-        foreach ($db->query('SELECT id, slug, name FROM models ORDER BY name') as $m) {
+        foreach ($db->query('SELECT id, slug, name FROM models ORDER BY name COLLATE NOCASE') as $m) {
             $name = $m['name'] ?? $m['slug'];
             $models[] = [
                 'id' => (int) $m['id'],
@@ -249,6 +250,7 @@ final class Snapshot
                 'n_used' => $used[$m['id']] ?? 0,
             ];
         }
+        usort($mappingDocs, fn ($p, $q) => ($p['loo'] ?? INF) <=> ($q['loo'] ?? INF));   // the best first
 
         // the cross-domain view's fits (never used for estimates), compact: [from, to, method,
         // n, r2, loo, passes]; there are none before the first build that has the table
@@ -318,9 +320,64 @@ final class Snapshot
             'scores' => $scores,
             'mappings' => $mappingDocs,
             'cross_mappings' => $cross,
+            'cross_summary' => self::crossSummary($cross, $listed, $versionById),
             'cross_multi_mappings' => $multiView,
             'harness_tax' => $harnessTax,
+            'picker' => self::picker($benchmarks),
         ];
+    }
+
+    /**
+     * The leaderboard picker's order of each capability's listed benchmarks (ids, by
+     * capability): the original (featured) benchmarks first, in the site's order, then the
+     * others, the most measured first.
+     */
+    private static function picker(array $benchmarks): array
+    {
+        $out = [];
+        foreach ($benchmarks as $b) {
+            if ($b['listed']) {
+                $out[$b['capability']][$b['featured'] ? 'featured' : 'rest'][] = $b;
+            }
+        }
+        foreach ($out as &$c) {
+            $rest = $c['rest'] ?? [];
+            usort($rest, fn ($p, $q) => [$q['n_measured'], strtolower($p['label'])] <=> [$p['n_measured'], strtolower($q['label'])]);
+            $c = array_column([...$c['featured'] ?? [], ...$rest], 'id');
+        }
+        return $out;
+    }
+
+    /**
+     * The cross-domain fits between listed benchmarks by "from:to" capability pair: how many
+     * benchmark pairs were fitted (n) and passed the gate (n_pass), the median LOO error of those
+     * that pass and the best one as [from, to, loo] (both null when none pass).
+     */
+    private static function crossSummary(array $cross, array $listed, array $versionById): array
+    {
+        $byCaps = [];
+        foreach ($cross as [$from, $to, , , , $loo, $passes]) {
+            if (!isset($listed[$from], $listed[$to])) {
+                continue;
+            }
+            $caps = $versionById[$from]['capability'] . ':' . $versionById[$to]['capability'];
+            $byCaps[$caps]['n'] = ($byCaps[$caps]['n'] ?? 0) + 1;
+            if ($passes && $loo !== null) {
+                $byCaps[$caps]['ok'][] = [$from, $to, $loo];
+            }
+        }
+        $summary = [];
+        foreach ($byCaps as $caps => $c) {
+            $ok = $c['ok'] ?? [];
+            usort($ok, fn ($p, $q) => $p[2] <=> $q[2]);
+            $summary[$caps] = [
+                'n' => $c['n'],
+                'n_pass' => count($ok),
+                'median' => $ok ? $ok[intdiv(count($ok), 2)][2] : null,
+                'best' => $ok[0] ?? null,
+            ];
+        }
+        return $summary;
     }
 
     /**
@@ -420,9 +477,12 @@ final class Snapshot
             ];
         }
         $aggregates = $db->query('SELECT aggregates_json FROM harness_tax_aggregates WHERE id = 1')->fetchColumn();
+        // the biggest disagreement first (pairs without a mean last), as every page lists them
+        $pairs = array_values($pairs);
+        usort($pairs, fn ($x, $y) => ($y['mean_abs_pp'] ?? -1.0) <=> ($x['mean_abs_pp'] ?? -1.0));
         return [
             'families' => array_values($families),
-            'pairs' => array_values($pairs),
+            'pairs' => $pairs,
             'deltas' => $deltas,          // by pair id (the site's data document only)
             'aggregates' => $aggregates ? json_decode($aggregates, true) : [],
         ];

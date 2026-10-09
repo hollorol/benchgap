@@ -159,6 +159,7 @@ $app->group('/data', function (RouteCollectorProxy $data) {
     $data->get('/cross.json', fn (Request $rq, Response $rs) => send($rs, site()->cross()));
     $data->get('/multivariate.json', fn (Request $rq, Response $rs) => send($rs, site()->multivariate()));
     $data->get('/harness-tax.json', fn (Request $rq, Response $rs) => send($rs, site()->harnessTax()));
+    $data->get('/api.json', fn (Request $rq, Response $rs) => send($rs, site()->api()));
     $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->mapping((int) $a['id']), $rq)));
 });
@@ -180,7 +181,7 @@ $app->get('/multivariate', fn (Request $rq, Response $rs) => page($rq, $rs, fn (
 $app->get('/harness-tax', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->harnessTax(), data('harness-tax')));
 $app->get('/method', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->methodPage()));
 $app->get('/publications', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->publications()));
-$app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage(), data('calibration')));
+$app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage(), data('api')));
 
 $app->group('/api/v1', function (RouteCollectorProxy $v1) {
     $v1->get('[/[index.json]]', fn (Request $rq, Response $rs) => send($rs, api()->index()));

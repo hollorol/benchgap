@@ -158,8 +158,12 @@ The front-end never loads the whole data set: every page loads the shared
 benchmark and model lists (`/data/site.json`) and only its own slice of the
 scores (a leaderboard, a model, the matrix cells, one calibration; see
 `web/src/Site.php`), and an estimate's details in the matrix load when its
-tooltip opens. The server builds the site data once per data update and
-keeps it until the next one.
+tooltip opens. Each slice comes in the order the page shows it, with its
+summaries already computed (the leaderboard highest first, the calibrations
+lowest error first, the matrix's default row order and column ranges, the
+cross-domain medians by capability pair); the browser only re-sorts what the
+visitor picks, such as a matrix column. The server builds the site data once
+per data update and keeps it until the next one.
 
 Pages: per-benchmark leaderboards, the full score matrix, a page per
 model, the calibration (predictability) matrix with a scatter + fitted

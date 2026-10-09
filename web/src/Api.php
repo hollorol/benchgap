@@ -99,9 +99,8 @@ final class Api
         if ($b === null) {
             return null;
         }
-        $scores = $this->scoresBy['benchmark'][$key] ?? [];
-        usort($scores, fn ($x, $y) => $y['score'] <=> $x['score']);
-        return $this->about + ['benchmark' => $this->benchmarkObject($b), 'scores' => $scores];
+        // highest first (Snapshot)
+        return $this->about + ['benchmark' => $this->benchmarkObject($b), 'scores' => $this->scoresBy['benchmark'][$key] ?? []];
     }
 
     public function models(): array

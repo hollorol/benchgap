@@ -169,19 +169,30 @@ def test_site_data_matches_database(server, gapfilled_db, writable_db):
 
 
 def test_page_data_slices_the_site_data(server):
-    """Each page's data (data/..., Site.php) is its slice of the whole site data."""
+    """Each page's data (data/..., Site.php) is its slice of the whole site data, in the order
+    the page shows it (orders that do not depend on the visitor are made on the server)."""
     whole = get_json(server, "/data/benchgap.json")
     site = get_json(server, "/data/site.json")
     for k in ("capabilities", "benchmarks", "models"):
         assert site[k] == whole[k]
+    assert [m["name"].lower() for m in whole["models"]] == sorted(m["name"].lower() for m in whole["models"])
     listed = {b["id"] for b in whole["benchmarks"] if b["listed"]}
+    highest_first = lambda scores: sorted(scores, key=lambda s: -s["v"])  # noqa: E731 (stable: ties keep their order)
+
+    # the leaderboard picker: each capability's listed benchmarks, the featured ones first (in the
+    # site's order), then the most measured
+    for cap, ids in site["picker"].items():
+        benches = [b for b in whole["benchmarks"] if b["listed"] and b["capability"] == cap]
+        rest = sorted((b for b in benches if not b["featured"]), key=lambda b: (-b["n_measured"], b["label"].lower()))
+        assert ids == [b["id"] for b in benches if b["featured"]] + [b["id"] for b in rest]
+    assert sum(map(len, site["picker"].values())) == len(listed)
     home = site["meta"]["home"]
     assert home in {b["key"] for b in whole["benchmarks"] if b["listed"]}
     scores = whole["scores"]
 
     bench = next(b for b in whole["benchmarks"] if b["key"] == home)
     board = get_json(server, f"/data/b/{home}.json")
-    assert board == {"benchmark": bench["id"], "scores": [s for s in scores if s["b"] == bench["id"]]}
+    assert board == {"benchmark": bench["id"], "scores": highest_first(s for s in scores if s["b"] == bench["id"])}
     assert get_json(server, "/data/home.json") == board
     model = whole["models"][0]
     assert get_json(server, f"/data/model/{model['slug']}.json")["scores"] == [
@@ -189,21 +200,41 @@ def test_page_data_slices_the_site_data(server):
     ]
 
     kinds = {"high": 1, "medium": 2, "low": 3}
-    cells = get_json(server, "/data/matrix.json")["cells"]
+    matrix = get_json(server, "/data/matrix.json")
+    cells = matrix["cells"]
     assert cells == [[s["m"], s["b"], round(s["v"], 4), 0 if s["s"] == "m" else kinds[s["tier"]]] for s in scores if s["b"] in listed]
+    # each column's measured range, and the rows most measured first
+    for b in listed:
+        vals = [c[2] for c in cells if c[1] == b and c[3] == 0]
+        assert matrix["range"].get(str(b)) == ([min(vals), max(vals)] if vals else None)
+    rows = sorted((m for m in whole["models"] if m["listed"]), key=lambda m: -m["n_measured"])  # ties: by name, as whole
+    assert matrix["models"] == [m["id"] for m in rows]
     est = next(s for s in scores if s["s"] == "e")
     assert get_json(server, f"/data/score/{est['m']}/{est['b']}.json") == est
 
     maps = get_json(server, "/data/calibration.json")["mappings"]
-    assert [m["id"] for m in maps] == [m["id"] for m in whole["mappings"] if m["from"] in listed and m["to"] in listed]
+    # the best first
+    assert [m["id"] for m in maps] == [m["id"] for m in sorted(
+        (m for m in whole["mappings"] if m["from"] in listed and m["to"] in listed), key=lambda m: m["loo"])]
     assert "points" not in maps[0] and "curve" not in maps[0]
     one = get_json(server, f"/data/calibration/{maps[0]['id']}.json")
     assert one["mapping"] == next(m for m in whole["mappings"] if m["id"] == maps[0]["id"])
-    assert one["estimates"] == [s for s in scores if s["s"] == "e" and s["via"]["kind"] == "uni" and s["via"]["mapping"] == maps[0]["id"]]
+    assert one["estimates"] == highest_first(s for s in scores if s["s"] == "e" and s["via"]["kind"] == "uni" and s["via"]["mapping"] == maps[0]["id"])
 
     # the cross-domain fits: compact, between listed benchmarks
-    cross = get_json(server, "/data/cross.json")["cross"]
+    cross_doc = get_json(server, "/data/cross.json")
+    cross = cross_doc["cross"]
     assert cross and cross == [c for c in whole["cross_mappings"] if c[0] in listed and c[1] in listed]
+    # ... summed up by capability pair: the median and the best of those that pass the gate
+    cap = {b["id"]: b["capability"] for b in whole["benchmarks"]}
+    by_caps = {}
+    for c in cross:
+        by_caps.setdefault(f"{cap[c[0]]}:{cap[c[1]]}", []).append(c)
+    assert set(cross_doc["summary"]) == set(by_caps)
+    for caps, rows in by_caps.items():
+        ok = sorted(([c[0], c[1], c[5]] for c in rows if c[6] and c[5] is not None), key=lambda c: c[2])
+        assert cross_doc["summary"][caps] == {
+            "n": len(rows), "n_pass": len(ok), "median": ok[len(ok) // 2][2] if ok else None, "best": ok[0] if ok else None}
     assert whole["meta"]["counts"]["cross_mappings"] == len(whole["cross_mappings"])
 
     # the multivariate view's fits: of listed benchmarks from listed ones, each model's prediction
@@ -211,6 +242,15 @@ def test_page_data_slices_the_site_data(server):
     assert multi and multi == [m for m in whole["cross_multi_mappings"] if m["to"] in listed and set(m["from"]) <= listed]
     assert all(len(m["from"]) >= 2 and len(m["points"]) == m["n"] for m in multi)
     assert whole["meta"]["counts"]["cross_multi_mappings"] == len(whole["cross_multi_mappings"])
+
+    # the API page's picker lists: the calibrations (as calibration.json, best first) and the harness-tax families
+    api = get_json(server, "/data/api.json")
+    assert api["mappings"] == [{k: m[k] for k in ("id", "from", "to", "loo")} for m in maps]
+    assert api["families"] == [{k: f[k] for k in ("family_id", "label", "capability")} for f in whole["harness_tax"]["families"]]
+
+    # the harness-tax pairs, the biggest disagreement first (no mean: last)
+    means = [-1.0 if p["mean_abs_pp"] is None else p["mean_abs_pp"] for p in whole["harness_tax"]["pairs"]]
+    assert means == sorted(means, reverse=True)
 
     for path in ["/data/b/no-such/bench.json", "/data/model/no-such-model.json", "/data/calibration/999999.json", "/data/score/0/0.json"]:
         with pytest.raises(urllib.error.HTTPError) as err:
@@ -238,6 +278,36 @@ def test_api(server):
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)
         assert err.value.code == 404 and err.value.headers["Content-Type"].startswith("application/json")
+
+
+def test_api_is_described_everywhere(server):
+    """The endpoints are the same in index.json, openapi.json and the API page (app.js API_ENDPOINTS),
+    and every object has exactly the fields its openapi schema describes."""
+    spec = json.loads((WEB / "api" / "v1" / "openapi.json").read_text())
+    paths = {p.lstrip("/") for p in spec["paths"]}
+    assert set(get_json(server, "/api/v1/")["endpoints"].values()) | {"index.json"} == paths
+    page = re.search(r"const API_ENDPOINTS = \[(.*?)\n  \];", (WEB / "assets" / "app.js").read_text(), re.S).group(1)
+    assert set(re.findall(r'^    \["([^"]+)"', page, re.M)) == paths
+
+    schemas = spec["components"]["schemas"]
+
+    def fields(name):
+        schema = schemas[name]
+        out = set(schema.get("properties", {}))
+        for part in schema.get("allOf", []):
+            out |= fields(part["$ref"].rsplit("/", 1)[1]) if "$ref" in part else set(part.get("properties", {}))
+        return out
+
+    benchmark = get_json(server, "/api/v1/benchmarks.json")["benchmarks"][0]
+    assert set(benchmark) == fields("Benchmark")
+    assert set(get_json(server, "/api/v1/models.json")["models"][0]) == fields("Model")
+    scores = get_json(server, "/api/v1/scores.json")["scores"]
+    assert all(set(s) == fields("Score") for s in scores)
+    assert all(set(s["estimate"]) == fields("Estimate") for s in scores if s["estimate"])
+    mapping = get_json(server, "/api/v1/mappings.json")["mappings"][0]
+    assert set(mapping) == fields("Mapping")
+    assert set(get_json(server, f"/api/v1/mappings/{mapping['id']}.json")["mapping"]) == fields("MappingDetail")
+    assert set(get_json(server, "/api/v1/index.json")) == fields("About") | fields("Index")
 
 
 def test_revalidation(server):

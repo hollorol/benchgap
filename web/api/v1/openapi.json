@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "benchgap API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "summary": "LLM benchmark scores, measured and estimated, as JSON.",
-    "description": "Read-only API over the benchgap score database. Every resource is regenerated whenever the data is rebuilt and revalidated with an ETag; there is no authentication, no rate limit beyond the host's, and CORS is open. Scores are fractions in [0, 1]. Each score is either `measured` (taken from a public leaderboard) or `estimated` (predicted from the same model's measured score on a calibrated benchmark), and every estimate carries its cross-validated error and a confidence level.",
+    "description": "Read-only API over the benchgap score database. Every resource is regenerated whenever the data is rebuilt and revalidated with an ETag; there is no authentication, no rate limit beyond the host's, and CORS is open. Scores are fractions in [0, 1]. Each score is either `measured` (taken from a public leaderboard) or `estimated` (predicted from the same model's measured scores: one calibrated benchmark, or several combined by a multivariate fit), and every estimate carries its cross-validated error and a confidence level.",
     "contact": {
       "url": "https://github.com/hollorol/benchgap"
     }
@@ -29,7 +29,14 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/About"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Index"
+                    }
+                  ]
                 }
               }
             }
@@ -301,7 +308,7 @@
     "/mappings.json": {
       "get": {
         "summary": "List calibrations",
-        "description": "The selected fitted mapping for every calibrated benchmark pair.",
+        "description": "The selected fitted mapping for every calibrated benchmark pair, lowest cross-validated error first.",
         "responses": {
           "200": {
             "description": "OK",
@@ -340,7 +347,7 @@
     "/mappings/{id}.json": {
       "get": {
         "summary": "Get a calibration",
-        "description": "One mapping with its training points, sampled curve and the estimates it produced.",
+        "description": "One mapping with its training points, sampled curve and the estimates it produced, highest first.",
         "responses": {
           "200": {
             "description": "OK",
@@ -570,7 +577,53 @@
             }
           },
           "counts": {
-            "type": "object"
+            "type": "object",
+            "description": "Sizes of the data set behind this build.",
+            "properties": {
+              "models": {
+                "type": "integer",
+                "description": "Listed models."
+              },
+              "benchmarks": {
+                "type": "integer",
+                "description": "Listed benchmarks."
+              },
+              "measured": {
+                "type": "integer",
+                "description": "Measured scores on listed benchmarks."
+              },
+              "estimated": {
+                "type": "integer",
+                "description": "Estimated scores."
+              },
+              "mappings": {
+                "type": "integer",
+                "description": "Calibrations (univariate, within one capability), as in mappings.json."
+              },
+              "cross_mappings": {
+                "type": "integer",
+                "description": "Fits between benchmarks of different capabilities, compared on the site but never used for estimates."
+              },
+              "cross_multi_mappings": {
+                "type": "integer",
+                "description": "Multivariate fits (one benchmark from several others)."
+              },
+              "confidence": {
+                "type": "object",
+                "description": "Estimated scores by confidence level.",
+                "properties": {
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
           }
         }
       },
@@ -726,6 +779,12 @@
         "required": [
           "confidence",
           "error_pp",
+          "reasons",
+          "extrapolated",
+          "method",
+          "method_name",
+          "kind",
+          "mapping_id",
           "inputs"
         ],
         "properties": {
@@ -739,7 +798,7 @@
           },
           "error_pp": {
             "type": "number",
-            "description": "Leave-one-out cross-validated RMSE of the mapping, percentage points."
+            "description": "Leave-one-out cross-validated RMSE of the fit that made the estimate, percentage points."
           },
           "reasons": {
             "type": "array",
@@ -749,11 +808,13 @@
             "description": "Why the confidence is not high (empty when it is)."
           },
           "extrapolated": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "An input lies outside the range the fit was trained on."
           },
           "method": {
             "type": "string",
-            "example": "mm_offset"
+            "example": "mm_offset",
+            "description": "Fitted curve. Univariate: `linear`, `mm`, `mm_offset`, `mm_offset_inv`, `hill`, `logistic`. Multivariate: `linear_mv`, `mm_mv`, `enet_mv`. New methods may be added; `method_name` is the readable name."
           },
           "method_name": {
             "type": "string"
@@ -763,29 +824,36 @@
             "enum": [
               "univariate",
               "multivariate"
-            ]
+            ],
+            "description": "`univariate`: from one source benchmark through a calibration (`mapping_id`). `multivariate`: from several source benchmarks combined; these fits are not served by v1, so `mapping_id` is null."
           },
           "mapping_id": {
             "type": [
               "integer",
               "null"
-            ]
+            ],
+            "description": "The calibration used (resolve with `mappings/{id}.json`); null for multivariate estimates."
           },
           "inputs": {
             "type": "array",
-            "description": "The model's measured scores the estimate was computed from.",
+            "description": "The model's measured scores the estimate was computed from: one for univariate, several for multivariate.",
             "items": {
               "type": "object",
               "properties": {
                 "benchmark": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Benchmark key."
                 },
                 "score": {
                   "type": "number",
                   "minimum": 0,
                   "maximum": 1
                 }
-              }
+              },
+              "required": [
+                "benchmark",
+                "score"
+              ]
             }
           }
         }
@@ -811,7 +879,8 @@
             "description": "Target benchmark key."
           },
           "method": {
-            "type": "string"
+            "type": "string",
+            "description": "Selected curve: `linear`, `mm`, `mm_offset`, `mm_offset_inv`, `hill` or `logistic` (more may be added)."
           },
           "method_name": {
             "type": "string"
@@ -1206,6 +1275,103 @@
             }
           }
         ]
+      },
+      "Index": {
+        "type": "object",
+        "required": [
+          "endpoints",
+          "capabilities"
+        ],
+        "properties": {
+          "documentation": {
+            "type": "string",
+            "format": "uri",
+            "description": "Human-readable API page."
+          },
+          "openapi": {
+            "type": "string",
+            "format": "uri"
+          },
+          "source_code": {
+            "type": "string",
+            "format": "uri"
+          },
+          "data_notice": {
+            "type": "string",
+            "description": "Where the measured scores come from and their license."
+          },
+          "endpoints": {
+            "type": "object",
+            "description": "Endpoint templates relative to the base URL, by name.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "example": {
+              "benchmark": "benchmarks/{name}/{version}.json"
+            }
+          },
+          "confidence_levels": {
+            "type": "object",
+            "description": "Thresholds behind each estimate's `confidence`: the LOO error sets the level, then extrapolation, a small sample and a low R² each lower it one step.",
+            "properties": {
+              "high_max_pp": {
+                "type": "number",
+                "description": "High: LOO error at most this, percentage points."
+              },
+              "medium_max_pp": {
+                "type": "number",
+                "description": "Medium: LOO error at most this, percentage points."
+              },
+              "min_reliable_n": {
+                "type": "integer",
+                "description": "Fits on fewer models drop one level."
+              },
+              "min_informative_r2": {
+                "type": "number",
+                "description": "Fits with a lower R² drop one level."
+              }
+            }
+          },
+          "quality_gate": {
+            "type": "object",
+            "description": "What a fit must pass to be used.",
+            "properties": {
+              "min_pairs": {
+                "type": "integer",
+                "description": "Models with both scores."
+              },
+              "min_r2": {
+                "type": "number"
+              },
+              "max_loo_pp": {
+                "type": "number",
+                "description": "Largest LOO error, percentage points."
+              },
+              "n_candidates": {
+                "type": "integer",
+                "description": "Curves tried per pair; the lowest LOO error wins."
+              }
+            }
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "label"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
       }
     }
   }

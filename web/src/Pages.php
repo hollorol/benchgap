@@ -285,8 +285,6 @@ final class Pages
             fn ($tier, $t) => "{$tier}: " . ($t['pooled_mean_abs_pp'] === null ? 'n/a' : number_format($t['pooled_mean_abs_pp'], 1) . ' pp'),
             array_keys($tiers), $tiers
         ));
-        $pairs = $doc['pairs'];
-        usort($pairs, fn ($x, $y) => ($y['mean_abs_pp'] ?? -1.0) <=> ($x['mean_abs_pp'] ?? -1.0));
         $rows = array_map(fn ($p) => [
             self::esc(self::pairName($p['a']['key'])) . ' (' . self::esc($p['a']['harness'] ?? '?') . ') vs '
                 . self::esc(self::pairName($p['b']['key'])) . ' (' . self::esc($p['b']['harness'] ?? '?') . ')'
@@ -302,7 +300,7 @@ final class Pages
             ($p['n_models'] === 0 || ($p['n_positive'] + $p['n_negative']) === 0)
                 ? '—'
                 : "{$p['n_positive']} up / {$p['n_negative']} down",
-        ], $pairs);
+        ], $doc['pairs']);   // the biggest disagreement first (Snapshot)
         $outliers = count($doc['audit']['outliers']);
         return $this->result('The harness tax: how much harnesses disagree',
             'How much the same benchmark\'s measured scores disagree across harnesses and run protocols, benchmark family by family. Measured scores only.',
@@ -437,7 +435,7 @@ final class Pages
         return $this->result('Public API',
             'Free JSON and CSV API for LLM benchmark scores, measured and estimated, with an OpenAPI 3.1 description.', '/api',
             $this->header('API · v1', 'Public API',
-                '<p class="lede">Everything on this site is available as plain JSON (and CSV): every benchmark, model, score and calibration, '
+                '<p class="lede">Everything on this site is available as plain JSON (and CSV): every benchmark, model, score and calibration, and the harness-tax analysis, '
                 . "with each estimate's confidence level and error. Free, no key, readable from any origin.</p><p>Base URL: <code>$base</code></p>")
             . '<ul>' . implode('', $endpoints) . '</ul>');
     }

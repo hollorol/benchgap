@@ -9,25 +9,31 @@ namespace Benchgap;
  * slice of the site data (Snapshot) instead of every score at once.
  *
  * - site.json: what every page needs (build metadata, capabilities, every
- *   benchmark and model with its counts, the home page's benchmark)
- * - home.json, b/{name}/{version}.json: a leaderboard's scores
+ *   benchmark and model with its counts, the home page's benchmark, the
+ *   leaderboard picker's order)
+ * - home.json, b/{name}/{version}.json: a leaderboard's scores, highest first
  * - model/{slug}.json: a model's scores on the listed benchmarks
  * - matrix.json: every listed benchmark's cells, as [model, benchmark, value, kind]
- *   (kind: CELL_KINDS); an estimate's details come from score/{m}/{b}.json
+ *   (kind: CELL_KINDS), each column's measured range and the default row order;
+ *   an estimate's details come from score/{m}/{b}.json
  * - calibration.json: the calibrations between listed benchmarks, without
- *   their points and curves
- * - calibration/{id}.json: one calibration with its points, curve and estimates
+ *   their points and curves, lowest error first
+ * - calibration/{id}.json: one calibration with its points, curve and estimates (highest first)
  * - cross.json: the cross-domain fits (Snapshot's compact rows) between listed benchmarks
- *   of different capabilities; never used for estimates
+ *   of different capabilities, and their summary by capability pair; never used for estimates
  * - multivariate.json: the multivariate view's fits of listed benchmarks from listed ones;
  *   never used for estimates
+ * - api.json: the API page's "Try it" lists (the calibrations, the harness-tax families)
  *
- * Scores, benchmarks, models and mappings keep the Snapshot's shapes and ids.
+ * Scores, benchmarks, models and mappings keep the Snapshot's shapes, ids and orders: the
+ * orders and summaries that do not depend on the visitor are made there, once per build.
  */
 final class Site
 {
     // a matrix cell's kind: measured, or the confidence of an estimate
     public const CELL_KINDS = ['m' => 0, 'high' => 1, 'medium' => 2, 'low' => 3];
+
+    private const MATRIX_DECIMALS = 4;   // the matrix shows whole percents
 
     private array $listed;        // listed benchmark ids => true
     private array $benchByKey;
@@ -61,10 +67,11 @@ final class Site
             'capabilities' => $this->data['capabilities'],
             'benchmarks' => $this->data['benchmarks'],
             'models' => $this->data['models'],
+            'picker' => $this->data['picker'] ?? [],
         ];
     }
 
-    /** A leaderboard: the benchmark's id and all its scores; null if there is no such benchmark. */
+    /** A leaderboard: the benchmark's id and all its scores, highest first; null if there is no such benchmark. */
     public function board(string $key): ?array
     {
         $b = $this->benchByKey[$key] ?? null;
@@ -86,16 +93,30 @@ final class Site
         ];
     }
 
+    /**
+     * The matrix: its cells, each benchmark's measured [min, max] (the column tint), and the
+     * models in the default row order (most measured first; a clicked column re-sorts them).
+     */
     public function matrix(): array
     {
         $cells = [];
+        $range = [];
         foreach ($this->data['scores'] as $s) {
-            if (isset($this->listed[$s['b']])) {
-                // 4 decimals: the matrix shows whole percents
-                $cells[] = [$s['m'], $s['b'], round($s['v'], 4), self::CELL_KINDS[$s['s'] === 'm' ? 'm' : $s['tier']]];
+            if (!isset($this->listed[$s['b']])) {
+                continue;
+            }
+            $v = round($s['v'], self::MATRIX_DECIMALS);
+            $cells[] = [$s['m'], $s['b'], $v, self::CELL_KINDS[$s['s'] === 'm' ? 'm' : $s['tier']]];
+            // a benchmark's scores come highest first (Snapshot): its first measured one is the max
+            if ($s['s'] === 'm') {
+                $range[$s['b']] ??= [$v, $v];
+                $range[$s['b']][0] = $v;
             }
         }
-        return ['cells' => $cells];
+        // the models come by name (Snapshot) and usort is stable: ties stay in name order
+        $models = array_values(array_filter($this->data['models'], fn ($m) => $m['listed']));
+        usort($models, fn ($p, $q) => $q['n_measured'] <=> $p['n_measured']);
+        return ['cells' => $cells, 'range' => (object) $range, 'models' => array_column($models, 'id')];
     }
 
     /** One score in full (an estimate with where it came from); null if there is none. */
@@ -112,15 +133,19 @@ final class Site
                 $maps[] = array_intersect_key($m, array_flip(['id', 'from', 'to', 'method', 'n', 'r2', 'loo', 'n_used']));
             }
         }
-        return ['mappings' => $maps];
+        return ['mappings' => $maps];   // the best first (Snapshot)
     }
 
+    /** The cross-domain fits, and their summary by capability pair (Snapshot::crossSummary). */
     public function cross(): array
     {
-        return ['cross' => array_values(array_filter(
-            $this->data['cross_mappings'] ?? [],
-            fn ($m) => isset($this->listed[$m[0]], $this->listed[$m[1]])
-        ))];
+        return [
+            'cross' => array_values(array_filter(
+                $this->data['cross_mappings'] ?? [],
+                fn ($m) => isset($this->listed[$m[0]], $this->listed[$m[1]])
+            )),
+            'summary' => (object) ($this->data['cross_summary'] ?? []),
+        ];
     }
 
     public function multivariate(): array
@@ -136,6 +161,15 @@ final class Site
     public function harnessTax(): array
     {
         return ['harness_tax' => $this->data['harness_tax'] ?? ['families' => [], 'pairs' => [], 'deltas' => [], 'aggregates' => []]];
+    }
+
+    /** The API page's "Try it" lists: the calibrations (best first) and the harness-tax families. */
+    public function api(): array
+    {
+        return [
+            'mappings' => array_map(fn ($m) => array_intersect_key($m, array_flip(['id', 'from', 'to', 'loo'])), $this->calibration()['mappings']),
+            'families' => array_map(fn ($f) => array_intersect_key($f, array_flip(['family_id', 'label', 'capability'])), $this->data['harness_tax']['families'] ?? []),
+        ];
     }
 
     /** One calibration with its points and curve, the estimates it made and its reverse; null if there is none. */

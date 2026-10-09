@@ -77,6 +77,14 @@
     return out;
   }
 
+  // items grouped by capability, as [capability id, items], in the site's capability order
+  // (a capability the site does not know, last)
+  function byCapability(items, capOfItem) {
+    const groups = groupBy(items, capOfItem);
+    const known = D.capabilities.filter((c) => groups.has(c.id)).map((c) => c.id);
+    return [...known, ...[...groups.keys()].filter((c) => !known.includes(c))].map((c) => [c, groups.get(c)]);
+  }
+
   function buildIndex() {
     ix.bench = new Map(D.benchmarks.map((b) => [b.id, b]));
     ix.benchByKey = new Map(D.benchmarks.map((b) => [b.key, b]));
@@ -87,8 +95,8 @@
     // the site shows only what the backend lists (Snapshot::LISTED); counts come listed already
     ix.listed = D.benchmarks.filter((b) => b.listed);
     ix.home = D.meta.home;   // the home page's benchmark (Snapshot::home)
-    ix.byCap = groupBy(ix.listed, (b) => b.capability);
-    ix.benchesByCap = D.capabilities.filter((c) => ix.byCap.has(c.id)).map((c) => ({ cap: c, benches: ix.byCap.get(c.id) }));
+    ix.listedModels = D.models.filter((m) => m.listed);
+    ix.benchesByCap = byCapability(ix.listed, (b) => b.capability).map(([id, benches]) => ({ cap: ix.cap.get(id), benches }));
   }
   // keeps loaded scores for the tooltips; a full score is never replaced by a matrix cell's partial one
   function remember(scores) {
@@ -337,12 +345,13 @@
   // a benchmark's model counts: measured, plus estimated if any
   const benchCount = (x) => `${x.n_measured}${x.n_estimated ? "+" + x.n_estimated : ""}`;
   const benchChip = (x, b) => `<a class="chip" href="${benchHref(x)}" aria-current="${x.id === b.id}">${esc(x.label)}<span class="cnt">${benchCount(x)}</span></a>`;
-  const byMeasured = (p, q) => q.n_measured - p.n_measured || p.label.localeCompare(q.label);
   const MAX_CHIPS = 8;  // chips per capability on the leaderboard picker and the phones' rail
-  // a capability's chips: up to MAX_CHIPS, the original benchmarks first, then the most measured,
-  // and the open benchmark b if it belongs to the capability but is not among them
-  function capChips(cap, benches, b) {
-    const chips = [...benches.filter((x) => x.featured), ...benches.filter((x) => !x.featured).sort(byMeasured)].slice(0, MAX_CHIPS);
+  // a capability's benchmarks in the picker's order (site.json picker: the original ones first, then the most measured)
+  const pickerOrder = (cap) => (D.picker[cap] || []).map((id) => ix.bench.get(id));
+  // a capability's chips: up to MAX_CHIPS in the picker's order, and the open benchmark b
+  // if it belongs to the capability but is not among them
+  function capChips(cap, b, order = pickerOrder(cap)) {
+    const chips = order.slice(0, MAX_CHIPS);
     if (b.capability === cap && !chips.includes(b)) chips.push(b);
     return chips;
   }
@@ -350,10 +359,10 @@
   // each capability's chips; the rest folds into one "+N more" list
   function pickerHTML(b) {
     pickerExtra = null;
-    return `<nav class="picker" aria-label="Benchmarks">${ix.benchesByCap.map(({ cap, benches }) => {
-      const chips = capChips(cap.id, benches, b);
+    return `<nav class="picker" aria-label="Benchmarks">${ix.benchesByCap.map(({ cap }) => {
+      const order = pickerOrder(cap.id), chips = capChips(cap.id, b, order);
       if (chips.length > MAX_CHIPS) pickerExtra = b;
-      const rest = benches.filter((x) => !chips.includes(x)).sort(byMeasured);
+      const rest = order.filter((x) => !chips.includes(x));
       const more = rest.length ? `<button type="button" class="chip more-btn" aria-expanded="false" aria-controls="more-${esc(cap.id)}">+${rest.length} more</button>
         <div class="more-list" id="more-${esc(cap.id)}" hidden><p class="more-note">By models measured · faint ones have fewer than 5</p>${rest
           .map((x) => `<a class="more-item${x.n_measured < 5 ? " few" : ""}" href="${benchHref(x)}" aria-current="${x.id === b.id}"><span>${esc(x.label)}</span><span class="cnt">${benchCount(x)}</span></a>`)
@@ -421,7 +430,7 @@
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMore(); });
   // phones: the open benchmark's capability as a swipeable row of the same chips as the picker
   function railHTML(b) {
-    const benches = capChips(b.capability, ix.byCap.get(b.capability) || [], b);
+    const benches = capChips(b.capability, b);
     if (benches.length < 2) return "";
     return `<p class="rail-cap">Also in <b>${esc(capLabel(b.capability))}</b></p><nav class="rail chip-row" aria-label="${esc(capLabel(b.capability))} benchmarks">${benches
       .map((x) => benchChip(x, b))
@@ -500,7 +509,7 @@
 
   // "As of …, the highest measured score on X is …": the leaderboard's lede (Pages::benchmarkLead)
   function benchLead(b, scores) {
-    const top = scores.filter((s) => s.s === "m").sort((p, q) => q.v - p.v)[0];
+    const top = scores.find((s) => s.s === "m");   // scores come highest first
     const n = b.n_estimated;
     return [
       top ? `As of ${D.meta.retrieved_at}, the highest measured score on ${b.label} is ${pct(top.v)}% by ${ix.model.get(top.m).name}.` : "",
@@ -565,7 +574,7 @@
   }
 
   function renderBoardRows(b, scores) {
-    const rows = scores.filter(visible).sort((p, q) => q.v - p.v);
+    const rows = scores.filter(visible);   // highest first (data/b/...)
     const hi = Math.max(0.1, ...rows.map((s) => s.v + (s.s === "e" ? s.sd : 0)));
     const { max: axisMax, ticks } = axis(hi);
     const X = (v) => Math.max(0, Math.min(100, (v / axisMax) * 100));
@@ -629,14 +638,8 @@
   function renderMatrix(_, data) {
     setMeta("LLM benchmark score matrix", "Every model on every benchmark: measured LLM scores and calibrated estimates for the missing ones, side by side.");
     const cells = remember(data.cells.map(([m, b, v, k]) => (k ? { m, b, v, s: "e", tier: CELL_TIERS[k], partial: true } : { m, b, v, s: "m" })));
-    const range = new Map();
-    for (const c of cells) {
-      if (c.s !== "m") continue;
-      const r = range.get(c.b);
-      if (!r) range.set(c.b, [c.v, c.v]);
-      else { r[0] = Math.min(r[0], c.v); r[1] = Math.max(r[1], c.v); }
-    }
-    mxd = { byModel: groupBy(cells, (c) => c.m), range };
+    // each column's measured range, and the rows' default order (most measured first)
+    mxd = { byModel: groupBy(cells, (c) => c.m), range: data.range, order: data.models.map((id) => ix.model.get(id)) };
     mx = null;
     main.innerHTML = `<div class="page">
       ${pageHead("Score matrix", "Every model × every benchmark", `Measured cells are tinted by score within each column. Hatched italic cells are estimates;
@@ -682,7 +685,7 @@
 
   function renderMatrixTable() {
     const benches = ix.listed.filter((b) => !prefs.dense || b.dense);
-    let models = D.models.filter((m) => !prefs.dense || m.dense);
+    let models = mxd.order.filter((m) => !prefs.dense || m.dense);
 
     const cellOf = (m, b) => {
       const s = ix.cell.get(m.id + ":" + b.id);
@@ -707,8 +710,6 @@
         const a = cellOf(p, b), c = cellOf(q, b);
         return (c ? c.v : -1) - (a ? a.v : -1) || p.name.localeCompare(q.name);
       });
-    } else {
-      models = models.slice().sort((p, q) => q.n_measured - p.n_measured || p.name.localeCompare(q.name));
     }
 
     const gaps = models.length * benches.length - shown;
@@ -751,7 +752,7 @@
       if (!s) tds += `<td class="gap${brk}">·</td>`;
       else if (s.s === "e") tds += `<td class="e ${s.tier}${brk}" data-tip="${m.id}:${b.id}" tabindex="0">${pct(s.v, 0)}</td>`;
       else {
-        const [lo, hi] = mxd.range.get(b.id);
+        const [lo, hi] = mxd.range[b.id];
         const h = hi > lo ? (s.v - lo) / (hi - lo) : 0.5;
         tds += `<td class="m${brk}" style="--h:${(0.15 + h * 0.85).toFixed(2)}" data-tip="${m.id}:${b.id}">${pct(s.v, 0)}</td>`;
       }
@@ -868,9 +869,9 @@
   // a row of capability chips over items, All first: byCap (items by capability id, and
   // "all"), caps ({ id, label, n }), html(current) and bind(onPick), which presses the clicked chip
   function capFilter(items, capOfItem) {
-    const byCap = groupBy(items, capOfItem);
-    byCap.set("all", items);
-    const caps = [{ id: "all", label: "All" }, ...D.capabilities.filter((c) => byCap.has(c.id))].map((c) => ({ ...c, n: byCap.get(c.id).length }));
+    const groups = byCapability(items, capOfItem);
+    const byCap = new Map([...groups, ["all", items]]);
+    const caps = [{ id: "all", label: "All" }, ...groups.map(([id]) => ({ id, label: capLabel(id) }))].map((c) => ({ ...c, n: byCap.get(c.id).length }));
     const html = (current) => `<div class="pm-caps chip-row" role="group" aria-label="Capability">${caps
       .map((c) => `<button type="button" class="chip" data-cap="${c.id}" aria-pressed="${c.id === current}">${esc(c.label)}<span class="cnt">${c.n}</span></button>`).join("")}</div>`;
     const bind = (onPick) => main.querySelectorAll(".pm-caps .chip").forEach((c) => c.addEventListener("click", () => {
@@ -888,7 +889,6 @@
     const maps = data.mappings;
     const byPair = new Map(maps.map((m) => [m.from + ":" + m.to, m]));
     const chips = capFilter(maps, (m) => capOf(m.from)), nByCap = chips.byCap, caps = chips.caps;
-    const capOrder = new Map(D.capabilities.map((c, i) => [c.id, i]));
     const capName = (cap) => (cap === "all" ? "All capabilities" : capLabel(cap));
     // the cross-domain fits (data/cross.json), by "from:to"; loaded after the page
     let cross = null;
@@ -904,7 +904,7 @@
       const involved = new Set();
       nByCap.get(cap).forEach((m) => { involved.add(m.from); involved.add(m.to); });
       // grouped by capability (stable: within one, the site's order)
-      const vs = D.benchmarks.filter((b) => involved.has(b.id)).sort((a, b) => capOrder.get(a.capability) - capOrder.get(b.capability));
+      const vs = D.benchmarks.filter((b) => involved.has(b.id));   // already in capability order
       return pmTable(vs, (src, dst, pair) => {
         if (src === dst) return `<td class="diag"></td>`;
         if (src.capability !== dst.capability) {
@@ -918,7 +918,7 @@
       });
     }
     function mapList(cap, all) {
-      const rows = nByCap.get(cap).slice().sort((a, b) => a.loo - b.loo);
+      const rows = nByCap.get(cap);   // lowest error first (data/calibration.json)
       const html = (all ? rows : rows.slice(0, LIST_ROWS))
         .map((m) => {
           const f = ix.bench.get(m.from), t = ix.bench.get(m.to);
@@ -930,16 +930,14 @@
         + (!all && rows.length > LIST_ROWS ? `<button type="button" class="btn more-maps">Show all ${rows.length} mappings</button>` : "");
     }
 
-    // capability x capability: the median LOO error of the cross-domain fits that pass the gate
-    function crossTable() {
-      const byCaps = groupBy([...cross.values()], (x) => capOf(x.from) + ":" + capOf(x.to));
+    // capability x capability: the median LOO error of the cross-domain fits that pass the gate (data/cross.json summary)
+    function crossTable(summary) {
       return pmTable(caps.slice(1), (src, dst, pair) => {
         if (src === dst) return `<td class="diag" data-tiptext="${esc(src.label)}: the same capability, calibrated within it (its chip above)"></td>`;
-        const all = byCaps.get(src.id + ":" + dst.id) || [];
-        const ok = all.filter((x) => x.passes && x.loo != null).sort((a, b) => a.loo - b.loo);
-        if (!ok.length) return `<td class="none" data-tiptext="${pair}: ${all.length ? `none of ${all.length} benchmark pairs passes the quality gate` : "no benchmark pairs with enough shared models"}"></td>`;
-        const med = ok[ok.length >> 1].loo, best = ok[0];
-        return `<td class="cell cross" style="background:${lossColor(med * 100, gate)}" data-tiptext="${pair}: median LOO error ${pct(med)} pp; ${ok.length} of ${all.length} benchmark pairs pass the quality gate; best ${esc(ix.bench.get(best.from).label)} → ${esc(ix.bench.get(best.to).label)} (${pct(best.loo)} pp)">${pct(med)}</td>`;
+        const c = summary[src.id + ":" + dst.id];
+        if (!c?.n_pass) return `<td class="none" data-tiptext="${pair}: ${c ? `none of ${c.n} benchmark pairs passes the quality gate` : "no benchmark pairs with enough shared models"}"></td>`;
+        const [from, to, loo] = c.best;
+        return `<td class="cell cross" style="background:${lossColor(c.median * 100, gate)}" data-tiptext="${pair}: median LOO error ${pct(c.median)} pp; ${c.n_pass} of ${c.n} benchmark pairs pass the quality gate; best ${esc(ix.bench.get(from).label)} → ${esc(ix.bench.get(to).label)} (${pct(loo)} pp)">${pct(c.median)}</td>`;
       });
     }
 
@@ -984,7 +982,7 @@
       if (!sum.isConnected) return;   // another page was opened meanwhile
       cross = new Map(d.cross.map(([from, to, method, n, r2, loo, passes]) => [from + ":" + to, { from, to, method, n, r2, loo, passes }]));
       if (!d.cross.length) { sum.innerHTML = `<p class="muted">No cross-domain fits in this build yet.</p>`; return; }
-      swapContent(sum, crossTable());
+      swapContent(sum, crossTable(d.summary));
       if (cap === "all") swapContent($("#pm-wrap"), pairMap(cap));
     }).catch(() => { if (sum.isConnected) sum.innerHTML = `<p class="muted">The cross-domain fits could not be loaded.</p>`; });
   }
@@ -1039,9 +1037,7 @@
       <text class="lbl" transform="translate(16 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${esc(t.label)} score (%)</text>
     </svg>`;
 
-    const estRows = ests
-      .slice()
-      .sort((a, b) => b.v - a.v)
+    const estRows = ests   // highest first (data/calibration/{id}.json)
       .map((s) => {
         const mod = ix.model.get(s.m);
         return `<tr><td>${dot(mod)} ${modelLink(mod)}</td><td class="num">${pct(s.via.from[0].v)}%</td><td class="num"><i>≈${pct(s.v)}%</i></td><td>${confidenceFlag(s.tier)}${s.x ? ' <span class="flag x">extrapolated</span>' : ""}</td></tr>`;
@@ -1170,7 +1166,7 @@
       "How much the same benchmark's measured scores disagree across harnesses and run protocols. Measured scores only, never estimates.");
     const ht = data.harness_tax;
     const TIERS = { agentic: "agentic", knowledge_tool_free: "tool-free", protocol_layer: "protocol layer" };
-    const pairs = ht.pairs.slice().sort((a, b) => (b.mean_abs_pp ?? -1) - (a.mean_abs_pp ?? -1));
+    const pairs = ht.pairs;   // the biggest disagreement first (Snapshot)
     const deltasOf = (p) => ht.deltas[p.id] || [];
     const shortKey = (k) => (k || "").endsWith("/current") ? k.slice(0, -"/current".length) : k || "?";
     let tier = "all";
@@ -1410,26 +1406,28 @@
     ["models/{slug}.json", "One model with all its scores."],
     ["scores.json", "Every score, measured and estimated."],
     ["scores.csv", "The same scores flattened to CSV, for spreadsheets."],
-    ["mappings.json", "Every calibration (fitted mapping between two benchmarks)."],
+    ["mappings.json", "Every calibration (fitted mapping between two benchmarks), lowest error first."],
     ["mappings/{id}.json", "One calibration with its training points, sampled curve and estimates."],
+    ["harness-tax.json", "How much harnesses disagree on the same benchmark: families, pairs, aggregates, audit queue. Measured scores only."],
+    ["harness-tax/{family_id}.json", "One harness-tax family with every per-model delta and its provenance."],
     ["openapi.json", "OpenAPI 3.1 description of this API."],
   ];
   const API_FIELDS = {
     Score: [
       ["model", "string", "Model slug, e.g. <code>gpt-6-astra</code>."],
-      ["benchmark", "string", `Benchmark key <code>name/version</code>, e.g. <code>${ix.home}</code>.`],
+      ["benchmark", "string", "Benchmark key <code>name/version</code>, e.g. <code>terminal-bench-4/current</code>."],
       ["score", "number", "Fraction in [0, 1]. Multiply by 100 for percent."],
       ["source", '"measured" | "estimated"', "Measured scores come from a public leaderboard; estimates are predictions."],
       ["estimate", "Estimate | null", "Present only for estimated scores."],
     ],
     Estimate: [
       ["confidence", '"high" | "medium" | "low"', "Confidence level; see <a href=\"/method\">Method</a> for the rules."],
-      ["error_pp", "number", "Cross-validated error of the calibration, in percentage points (the ± on the site)."],
+      ["error_pp", "number", "Cross-validated error of the fit that made it, in percentage points (the ± on the site)."],
       ["reasons", "string[]", "Why the confidence is not high; empty when it is."],
-      ["extrapolated", "boolean", "The input score lies outside the range the calibration was fitted on."],
-      ["method, method_name", "string", "Curve family, e.g. <code>mm_offset</code> / Michaelis–Menten + offset."],
+      ["extrapolated", "boolean", "An input score lies outside the range the fit was trained on."],
+      ["method, method_name", "string", "Curve family, e.g. <code>mm_offset</code> / Michaelis–Menten + offset; multivariate fits end in <code>_mv</code>, e.g. <code>enet_mv</code> / elastic net."],
       ["kind", '"univariate" | "multivariate"', "One source benchmark, or several combined."],
-      ["mapping_id", "integer | null", "The calibration used; resolve with <code>mappings/{id}.json</code>."],
+      ["mapping_id", "integer | null", "The calibration used; resolve with <code>mappings/{id}.json</code>. Null for multivariate estimates, whose fits v1 does not serve."],
       ["inputs", "{benchmark, score}[]", "The same model's measured scores the estimate was computed from."],
     ],
     Benchmark: [
@@ -1438,12 +1436,14 @@
       ["capability", "string", "Capability group; benchmarks are only calibrated within one."],
       ["harness, source_url", "string", "Evaluation harness and the leaderboard the measured scores come from."],
       ["n_measured, n_estimated", "integer", "Number of scores of each kind."],
+      ["listed", "boolean", "Shown on the site (has estimates and enough models)."],
       ["url, page", "string", "This resource in the API, and on the website."],
     ],
     Model: [
       ["slug, name", "string", "Stable identifier and display name."],
       ["provider, provider_name", "string", "e.g. <code>openai</code> / OpenAI."],
       ["n_measured, n_estimated", "integer", "Number of scores of each kind."],
+      ["listed", "boolean", "Shown on the site (has scores on a listed benchmark)."],
       ["url, page", "string", "This resource in the API, and on the website."],
     ],
     Mapping: [
@@ -1451,8 +1451,37 @@
       ["from, to", "string", "Source and target benchmark keys."],
       ["method, method_name, equation", "string", "Selected curve and its fitted equation (x, y as fractions)."],
       ["n_models, r2, rmse_pp, loo_rmse_pp", "number", "Training size and fit quality; <code>loo_rmse_pp</code> becomes the estimates' <code>error_pp</code>."],
+      ["n_estimates", "integer", "Estimates this calibration produced."],
       ["train_range", "[min, max]", "Source scores the curve was fitted on."],
       ["points, curve", "array", "Detail endpoint only: training points and the sampled curve."],
+      ["url, page", "string", "This resource in the API, and on the website."],
+    ],
+    HarnessFamily: [
+      ["family_id, label", "string", "Stable identifier, e.g. <code>terminal-bench-2-1</code>, and display name."],
+      ["capability", "string", "Capability group."],
+      ["tier", '"agentic" | "knowledge_tool_free" | "protocol_layer" | null', "Agentic: depends on tools or scaffold; tool-free: no tool layer; protocol layer: run-protocol variants within one harness."],
+      ["same_item_set", '"verified" | "needs_audit" | "weak_alignment"', "Whether the versions are known to share the same items."],
+      ["status", '"active" | "candidate"', "Candidates (auto-detected, or awaiting review) stay out of the headline aggregates."],
+      ["versions", "string[]", "The benchmark versions compared."],
+      ["pair_type, audit_note, origin, url", "string", "Pair kind, review note, <code>seed</code> or <code>auto</code>, and the family's endpoint."],
+    ],
+    HarnessPair: [
+      ["family_id, tier, capability, same_item_set, status", "string", "As on its family."],
+      ["pair_type", '"cross_harness" | "protocol_variant"', "Different harnesses, or one harness under different protocols."],
+      ["a, b", "object", "The two versions; every delta is a minus b."],
+      ["n_models, low_overlap", "integer, boolean", "Models measured on both; under 5 is low overlap, kept out of aggregates."],
+      ["mean_abs_pp, median_abs_pp, max_abs_pp", "number | null", "Size of the per-model differences, percentage points."],
+      ["share_gt_5pp, share_gt_10pp", "number | null", "Fraction of models differing by more than 5 and 10 pp."],
+      ["kendall_tau, n_rank_flips", "number | null, integer", "Rank agreement of the two harnesses, and model pairs they order differently."],
+      ["n_positive, n_negative, sign_test_p, directionality", "number", "Sign of the deltas: counts, a two-sided sign test, and the share agreeing with the dominant sign (0.9 or more is systematic)."],
+      ["deltas", "HarnessDelta[]", "Family endpoint only: every model's difference."],
+    ],
+    HarnessDelta: [
+      ["model, name", "string", "Model slug and display name."],
+      ["score_a, score_b", "number", "The two measured scores, fractions in [0, 1]."],
+      ["delta_pp", "number", "(score_a − score_b) × 100."],
+      ["retrieved_a, retrieved_b", "string | null", "When each score was retrieved."],
+      ["family_id, a, b", "string, object", "Audit queue only (<code>audit.outliers</code>, deltas beyond 20 pp): which pair it belongs to."],
     ],
   };
 
@@ -1510,26 +1539,36 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     };
   }
 
-  // data: the calibrations (data/calibration.json), for the "Try it" picker
+  // data: the "Try it" picker's calibrations and harness-tax families (data/api.json)
   function renderApi(_, data) {
     setMeta("Public API", "Free JSON and CSV API for LLM benchmark scores, measured and estimated, with an OpenAPI 3.1 description.");
     const base = API_BASE;
     const samples = codeSamples(base);
-    // every resource the API serves, grouped for the "Try it" picker
-    const tryGroups = [
-      ["Lists", API_ENDPOINTS.map(([p]) => p).filter((p) => !p.includes("{"))],
-      ["Benchmarks", D.benchmarks.map((b) => `benchmarks/${b.key}.json`)],
-      ["Models", D.models.map((m) => `models/${m.slug}.json`)],
-      ["Calibrations", data.mappings.map((m) => m.id).sort((a, b) => a - b).map((id) => `mappings/${id}.json`)],
-    ];
-    const tryDefault = `benchmarks/${ix.home}.json`;
+    // the "Try it" picker: an endpoint, then (for a template) which one by name, as
+    // [optgroup label, [[value, text]]]; the value fills the template's {...} part. Every list
+    // comes ordered: models by name, benchmarks by capability, calibrations lowest error first
+    const capGroups = (items, capOfItem, option) => byCapability(items, capOfItem).map(([cap, xs]) => [capLabel(cap), xs.map(option)]);
+    const tryItems = {
+      "benchmarks/{name}/{version}.json": ix.benchesByCap.map(({ cap, benches }) => [cap.label, benches.map((b) => [b.key, b.label])]),
+      "models/{slug}.json": [["", ix.listedModels.map((m) => [m.slug, m.name])]],
+      "mappings/{id}.json": capGroups(data.mappings, (m) => capOf(m.from), (m) => [String(m.id), `${benchLabel(m.from)} → ${benchLabel(m.to)} (±${pct(m.loo)} pp)`]),
+      "harness-tax/{family_id}.json": capGroups(data.families, (f) => f.capability, (f) => [f.family_id, f.label]),
+    };
+    const tryPath = (ep, item) => (tryItems[ep] && item ? ep.replace(/\{.*\}/, item) : ep);
+    const TRY_EP = "benchmarks/{name}/{version}.json";   // opened first, on the home page's benchmark
+    // an endpoint's items, ix.home selected if it is among them; a build may have none of some (harness-tax families)
+    const itemOptions = (ep) => (tryItems[ep].length ? tryItems[ep]
+      .map(([g, opts]) => {
+        const html = opts.map(([v, t]) => `<option value="${esc(v)}" ${v === ix.home ? "selected" : ""}>${esc(t)}</option>`).join("");
+        return g ? `<optgroup label="${esc(g)}">${html}</optgroup>` : html;
+      }).join("") : `<option value="" disabled selected>none in this build</option>`);
     const fieldTable = (name) => `<div class="card api-obj"><h3 class="h3">${name}</h3><table class="list"><tbody>${API_FIELDS[name]
       .map(([f, t, d]) => `<tr><td class="mono">${f}</td><td class="mono muted">${esc(t)}</td><td>${d}</td></tr>`)
       .join("")}</tbody></table></div>`;
 
     main.innerHTML = `<div class="page">
       ${pageHead("API · v1", "Public API", `Everything on this site is available as plain JSON (and CSV): every benchmark, model,
-        score and calibration, with each estimate's confidence level and error. Free, no key, readable from any origin.`)}
+        score and calibration, and the harness-tax analysis, with each estimate's confidence level and error. Free, no key, readable from any origin.`)}
 
       <div class="api-base-bar">
         <span class="verb">GET</span>
@@ -1546,8 +1585,8 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
 
       <section class="section">
         <h2 class="h2">Endpoints</h2>
-        <p class="muted">All paths are relative to the base URL. Every JSON document also carries
-        <code>api_version</code>, <code>generated_at</code>, <code>data_retrieved_at</code> and <code>counts</code>.</p>
+        <p class="muted">All paths are relative to the base URL. Every JSON document except <code>openapi.json</code> also carries
+        <code>api_version</code>, <code>generated_at</code>, <code>data_retrieved_at</code>, <code>harnesses</code> and <code>counts</code>.</p>
         <div class="list-wrap"><table class="list api-ep"><thead><tr><th></th><th>Path</th><th>Returns</th></tr></thead><tbody>${API_ENDPOINTS
           .map(([path, d]) => `<tr><td><span class="verb">GET</span></td><td class="mono">${path.includes("{") ? esc(path) : `<a href="${esc(base + path)}" target="_blank" rel="noopener">${esc(path)}</a>`}</td><td>${d}</td></tr>`)
           .join("")}</tbody></table></div>
@@ -1556,32 +1595,33 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
       <section class="section">
         <h2 class="h2">Try it</h2>
         <div class="api-try">
-          <label class="sr" for="api-path">Endpoint</label>
-          <span class="mono muted api-base">${esc(base)}</span>
-          <select id="api-path" class="select mono">${tryGroups
-            .map(([g, paths]) => `<optgroup label="${g}">${paths
-              .map((p) => `<option value="${esc(p)}" ${p === tryDefault ? "selected" : ""}>${esc(p)}</option>`).join("")}</optgroup>`)
-            .join("")}</select>
+          <label class="sr" for="api-ep">Endpoint</label>
+          <select id="api-ep" class="select mono">${API_ENDPOINTS
+            .map(([p]) => `<option value="${esc(p)}" ${p === TRY_EP ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>
+          <label class="sr" for="api-item">Which one</label>
+          <select id="api-item" class="select">${itemOptions(TRY_EP)}</select>
           <button type="button" class="btn" id="api-send">Send request</button>
         </div>
+        <div class="api-url mono muted"><span class="verb">GET</span> <span id="api-url"></span></div>
         <div class="api-status mono muted" id="api-status"></div>
         ${codeBox("api-out", "api-out", "Press “Send request” to fetch a live response.")}
       </section>
 
       <section class="section">
         <h2 class="h2">Objects</h2>
-        <div class="grid-2">${["Score", "Estimate", "Benchmark", "Model", "Mapping"].map(fieldTable).join("")}</div>
+        <div class="grid-2">${["Score", "Estimate", "Benchmark", "Model", "Mapping", "HarnessFamily", "HarnessPair", "HarnessDelta"].map(fieldTable).join("")}</div>
       </section>
 
       <section class="section prose">
         <h2>Conventions</h2>
         <ul>
-          <li><b>Scores are fractions</b> in [0, 1]; the site shows them as percentages.</li>
-          <li><b>Estimates are never inputs.</b> Every estimate is computed from the same model's <i>measured</i> scores, listed in <code>estimate.inputs</code>.</li>
-          <li><b>Identifiers:</b> benchmarks are addressed by <code>name/version</code>, models by slug. Both are stable across data updates; mapping ids are not.</li>
+          <li><b>Scores are fractions</b> in [0, 1]; the site shows them as percentages. Fields ending in <code>_pp</code> (errors, harness-tax deltas) are already percentage points.</li>
+          <li><b>Estimates are never inputs.</b> Every estimate is computed from the same model's <i>measured</i> scores, listed in <code>estimate.inputs</code>. The harness-tax analysis uses measured scores only and feeds no estimate.</li>
+          <li><b>Listed:</b> the API serves every benchmark version and model, the site only the listed ones (<code>listed: true</code>). The <code>counts</code> are of listed ones, so <code>benchmarks.json</code> and <code>models.json</code> hold more.</li>
+          <li><b>Identifiers:</b> benchmarks are addressed by <code>name/version</code>, models by slug and harness-tax families by <code>family_id</code>. These are stable across data updates; mapping ids are not.</li>
           <li><b>Freshness:</b> responses always reflect the current database; <code>generated_at</code> says when it was last rebuilt. Responses carry an ETag, so revalidating unchanged data is a cheap 304.</li>
           <li><b>Versioning:</b> <code>v1</code> only gains fields. Anything that would break a client goes to <code>/api/v2/</code>, with <code>v1</code> kept alongside it.</li>
-          <li><b>Errors:</b> an unknown benchmark, model or mapping is a plain HTTP 404.</li>
+          <li><b>Errors:</b> an unknown benchmark, model, mapping or harness-tax family is an HTTP 404, with a small JSON body.</li>
         </ul>
         <h2>Using the data</h2>
         <p>The measured scores are data from <a href="https://benchlm.ai/data" rel="noopener" target="_blank">BenchLM.ai</a>,
@@ -1598,8 +1638,25 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
       $("#api-sample").innerHTML = highlight(samples[lang], SAMPLE_LANG[lang]);
     });
 
+    const epSel = $("#api-ep"), itemSel = $("#api-item");
+    const currentPath = () => tryPath(epSel.value, itemSel.value);
+    // a template with nothing to pick (no harness-tax families in this build) cannot be sent
+    const showUrl = () => {
+      $("#api-url").textContent = API_BASE + currentPath();
+      $("#api-send").disabled = Boolean(tryItems[epSel.value]) && !itemSel.value;
+    };
+    const showItems = () => {
+      const items = tryItems[epSel.value];
+      itemSel.hidden = !items;
+      if (items) itemSel.innerHTML = itemOptions(epSel.value);
+      showUrl();
+    };
+    epSel.addEventListener("change", showItems);
+    itemSel.addEventListener("change", showUrl);
+    showUrl();
+
     const send = async () => {
-      const path = $("#api-path").value;
+      const path = currentPath();
       const out = $("#api-out"), status = $("#api-status");
       status.textContent = "loading…";
       const t0 = performance.now();
@@ -1655,7 +1712,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     [/^\/harness-tax$/, "harness-tax", renderHarnessTax, () => "/data/harness-tax.json"],
     [/^\/method$/, "method", renderMethod],
     [/^\/publications$/, "publications", renderPublications],
-    [/^\/api$/, "api", renderApi, () => "/data/calibration.json"],
+    [/^\/api$/, "api", renderApi, () => "/data/api.json"],
   ];
   const pageOf = (path) => PAGES.find(([re]) => re.test(path));
   const argOf = (page, path) => decodeURIComponent(path.match(page[0])[1] || "");
@@ -1729,7 +1786,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
   function initSearch(openSearch) {
     const input = $("#site-search"), pop = $("#search-pop"), list = $("#search-results"), types = $(".search-types");
     const items = [
-      ...D.models.filter((m) => m.listed).map((m) => ({ type: "model", label: m.name, text: fold(m.name + " " + m.slug), href: modelHref(m),
+      ...ix.listedModels.map((m) => ({ type: "model", label: m.name, text: fold(m.name + " " + m.slug), href: modelHref(m),
         meta: `${D.meta.providers[m.provider] || "Other"} · ${m.n_measured} measured`, weight: m.n_measured, icon: dot(m) })),
       // the listed benchmarks, the original ones first
       ...ix.listed.map((b) => ({ type: "bench", label: b.label, text: fold(b.label + " " + b.key), href: benchHref(b),
