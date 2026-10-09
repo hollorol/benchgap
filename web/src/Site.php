@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Benchgap;
 
 /**
- * The front-end's documents (data/...): each page of app.js loads only its own
+ * The front-end's documents (data/...): each page (assets/js/pages/) loads only its own
  * slice of the site data (Snapshot) instead of every score at once.
  *
  * - site.json: what every page needs (build metadata, capabilities, every

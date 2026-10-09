@@ -11,8 +11,8 @@ namespace Benchgap;
  * the interactive page. llms.txt and llms-full.txt give the same content as
  * Markdown. Everything is read from the public API documents.
  *
- * The titles, descriptions and ledes follow app.js (setMeta and the page
- * headers); keep the two in step.
+ * The titles, descriptions and ledes follow the front-end's pages (assets/js/pages/:
+ * setMeta and the page headers); keep the two in step.
  */
 final class Pages
 {
@@ -440,7 +440,7 @@ final class Pages
             . '<ul>' . implode('', $endpoints) . '</ul>');
     }
 
-    /** the 404 page (as app.js's renderNotFound) */
+    /** the 404 page (as renderNotFound, assets/js/ui.js) */
     public function notFound(): array
     {
         return $this->result('Not found', '', null, <<<'HTML'
@@ -467,7 +467,7 @@ final class Pages
             . 'Measured scores come from public leaderboards (' . implode(', ', $this->index['harnesses']) . ').';
     }
 
-    /** the leaderboard's lede (app.js benchLead), from its scores (highest first) */
+    /** the leaderboard's lede (benchLead, assets/js/pages/board.js), from its scores (highest first) */
     private function benchmarkLead(array $b, array $scores): string
     {
         $top = array_values(array_filter($scores, fn ($s) => $s['source'] === 'measured'))[0] ?? null;
@@ -481,7 +481,7 @@ final class Pages
         return trim($lead);
     }
 
-    /** the model page's lede (app.js modelLead) */
+    /** the model page's lede (modelLead, assets/js/pages/model.js) */
     private function modelLead(array $m): string
     {
         return "As of {$this->date}, {$m['name']} ({$m['provider_name']}) has measured scores on {$m['n_measured']} benchmark"

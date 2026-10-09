@@ -7,7 +7,7 @@ DirectoryIndex index.html
 DirectorySlash Off
 
 <IfModule mod_deflate.c>
-  AddOutputFilterByType DEFLATE text/html text/css text/csv text/markdown application/javascript application/json image/svg+xml
+  AddOutputFilterByType DEFLATE text/html text/css text/csv text/markdown text/javascript application/javascript application/json image/svg+xml
 </IfModule>
 
 <IfModule mod_headers.c>
@@ -18,8 +18,9 @@ DirectorySlash Off
   <FilesMatch "\.(css|js|json|html|svg)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
-  # app.js and style.css as the pages link them (?v=<their content's hash>, serve.php) never change either
-  <If "%{QUERY_STRING} =~ /^v=[0-9a-f]+$/">
+  # app.js and style.css as the pages link them (?v=<their content's hash>, serve.php) never change either,
+  # nor do app.js's chunks, named by their content (deploy.yml)
+  <If "%{QUERY_STRING} =~ /^v=[0-9a-f]+$/ || %{REQUEST_URI} =~ m#^/assets/chunks/#">
     Header set Cache-Control "public, max-age=31536000, immutable"
   </If>
   <Files "openapi.json">

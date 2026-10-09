@@ -39,6 +39,10 @@ def server(gapfilled_db, tmp_path_factory):
     shutil.copytree(WEB, web, ignore=shutil.ignore_patterns("vendor", "config.php"))
     (web / "vendor").symlink_to(WEB / "vendor")
     (web / "config.php").write_text(f"<?php return ['dsn' => 'sqlite:{db_path}'];\n")
+    # chunks as the bundled site has them (deploy.yml): shared code, and a page's own
+    (web / "assets" / "chunks").mkdir()
+    for chunk in ["chunk-SHARED.js", "board-PAGE.js"]:
+        (web / "assets" / "chunks" / chunk).write_text("")
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -76,11 +80,14 @@ def php(code: str) -> str:
     ).stdout
 
 
-def test_app_js_names_each_function_once():
-    # a second function declaration of a name silently replaces the first in the whole file
-    # (they are hoisted), which breaks every page that used the first
-    names = re.findall(r"^\s*function (\w+)\(", (WEB / "assets" / "app.js").read_text(), re.M)
-    assert not {n for n in names if names.count(n) > 1}
+def test_front_end_modules_name_each_function_once():
+    # a second declaration of a function inside another one silently replaces the first (they are
+    # hoisted), which breaks whatever used the first; the front-end is app.js and its modules (js/)
+    for path in [WEB / "assets" / "app.js", *(WEB / "assets" / "js").rglob("*.js")]:
+        if "vendor" in path.parts:
+            continue
+        names = re.findall(r"^\s*function (\w+)\(", path.read_text(), re.M)
+        assert not {n for n in names if names.count(n) > 1}, path
 
 
 def test_reliability_tiers():
@@ -281,13 +288,13 @@ def test_api(server):
 
 
 def test_api_is_described_everywhere(server):
-    """The endpoints are the same in index.json, openapi.json and the API page (app.js API_ENDPOINTS),
+    """The endpoints are the same in index.json, openapi.json and the API page (js/pages/api.js API_ENDPOINTS),
     and every object has exactly the fields its openapi schema describes."""
     spec = json.loads((WEB / "api" / "v1" / "openapi.json").read_text())
     paths = {p.lstrip("/") for p in spec["paths"]}
     assert set(get_json(server, "/api/v1/")["endpoints"].values()) | {"index.json"} == paths
-    page = re.search(r"const API_ENDPOINTS = \[(.*?)\n  \];", (WEB / "assets" / "app.js").read_text(), re.S).group(1)
-    assert set(re.findall(r'^    \["([^"]+)"', page, re.M)) == paths
+    page = re.search(r"const API_ENDPOINTS = \[(.*?)\n\];", (WEB / "assets" / "js" / "pages" / "api.js").read_text(), re.S).group(1)
+    assert set(re.findall(r'^  \["([^"]+)"', page, re.M)) == paths
 
     schemas = spec["components"]["schemas"]
 
@@ -346,7 +353,10 @@ def test_pages_and_sitemap(server):
         data = re.findall(r'<link rel="preload" href="(/data/[^"]+)" as="fetch"', body)
         assert data[0] == "/data/site.json" and len(data) == (1 if path in ("/method", "/publications") else 2), path
         assert all(get_json(server, url) for url in data), path
-        assert re.search(r'<script src="/assets/app\.js\?v=[0-9a-f]+" defer', body), path
+        assert re.search(r'<script type="module" src="/assets/app\.js\?v=[0-9a-f]+">', body), path
+        # on the bundled site, the shared chunks and the page's own load alongside app.js
+        chunks = re.findall(r'<link rel="modulepreload" href="/assets/chunks/([^"]+)">', body)
+        assert chunks == ["chunk-SHARED.js", *(["board-PAGE.js"] if path == "/" or path.startswith("/b/") else [])], path
         assert re.search(r'<link rel="stylesheet" href="/assets/style\.css\?v=[0-9a-f]+">', body), path
     _, board = get(server, "/b/aa-terminal-bench21/current")
     assert "the highest measured score on AA Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]

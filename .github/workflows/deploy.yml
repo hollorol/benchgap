@@ -47,9 +47,15 @@ jobs:
         env:
           PYTHONWARNINGS: ignore
 
-      # the repo keeps the readable source; only the uploaded copy is minified
-      - name: Minify app.js and style.css
-        run: npx --yes esbuild@0.28.2 web/assets/app.js web/assets/style.css --minify --target=es2020 --outdir=web/assets --allow-overwrite
+      # the repo keeps the readable source (ES modules the browser loads as they are); the uploaded
+      # copy is bundled and minified: app.js (the router and what every page shares) and a chunk per
+      # page under assets/chunks/, named by content (.htaccess keeps them), loaded when the page opens
+      - name: Bundle app.js, minify style.css
+        run: |
+          npx --yes esbuild@0.28.2 web/assets/app.js --bundle --splitting --format=esm --minify --target=es2020 \
+            --outdir=web/assets --chunk-names='chunks/[name]-[hash]' --allow-overwrite
+          npx --yes esbuild@0.28.2 web/assets/style.css --minify --outdir=web/assets --allow-overwrite
+          rm -r web/assets/js
 
       - name: Upload web/ over FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0

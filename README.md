@@ -67,7 +67,7 @@ benchgap/
 │   ├── html_report.py           # self-contained HTML report (matplotlib, base64 PNGs)
 │   └── cli.py                   # command-line interface
 ├── web/                         # benchgap.net (see "Website")
-│   ├── index.html, assets/      # vanilla JS front-end (app.js, style.css, fonts)
+│   ├── index.html, assets/      # front-end: app.js (router), js/ (a module per page, lit-html), style.css, fonts
 │   ├── serve.php                # Slim 4 backend: pages, site data, public API, llms.txt
 │   ├── .htaccess                # Apache: routing to serve.php, cache headers
 │   ├── src/
@@ -134,8 +134,9 @@ directory); pass `--db` to use a different database file.
 
 ## Website (benchgap.net)
 
-[benchgap.net](https://benchgap.net) lives in `web/`: a vanilla JS front-end
-and a small [Slim 4](https://www.slimframework.com/) backend (`serve.php`)
+[benchgap.net](https://benchgap.net) lives in `web/`: a plain JavaScript front-end
+(ES modules, with [lit-html](https://lit.dev/docs/libraries/standalone-templates/)
+as its only library) and a small [Slim 4](https://www.slimframework.com/) backend (`serve.php`)
 that computes the site's data and the public API from the benchgap database.
 Every push to `main` deploys `web/`
 (`.github/workflows/deploy.yml`), and every day `.github/workflows/update-data.yml`
@@ -153,6 +154,14 @@ It serves `web/` as benchgap.net does (Apache with PHP, `web/.htaccess`) from th
 database at `data/benchgap.db`: build it with the pipeline (Usage), or put a
 copy of a built one there; nothing is recomputed. `BENCHGAP_DB=other.db` serves another file and
 `BENCHGAP_PORT=9000` another port. Edits in `web/` show on reload.
+
+The front-end needs no build step and no npm: the browser loads `web/assets/app.js`
+and its modules (`web/assets/js/`, lit-html vendored as one file in `js/vendor/`)
+as they are. `app.js` is the router; each page is a module of `js/pages/`, loaded
+when the page is first opened, that draws the page as a lit-html template, so a
+redraw (a filter, a sort, another benchmark) updates only what changed. The
+deploy bundles them with esbuild: `app.js` with the code every page shares, and
+a chunk per page under `assets/chunks/`, which `serve.php` preloads with the page.
 
 The front-end never loads the whole data set: every page loads the shared
 benchmark and model lists (`/data/site.json`) and only its own slice of the
