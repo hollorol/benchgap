@@ -77,6 +77,8 @@ final class Api
                 'scores_csv' => 'scores.csv',
                 'mappings' => 'mappings.json',
                 'mapping' => 'mappings/{id}.json',
+                'harness_tax' => 'harness-tax.json',
+                'harness_tax_family' => 'harness-tax/{family_id}.json',
                 'openapi' => 'openapi.json',
             ],
             'confidence_levels' => $this->data['meta']['confidence_levels'],
@@ -141,6 +143,119 @@ final class Api
             'loo_rmse_pp' => self::pp($m['loo']),
             'alone_loo_rmse_pp' => self::pp($m['alone']),
         ], $this->data['cross_multi_mappings'] ?? []);
+    }
+
+    /**
+     * The harness-tax analysis: the families, every pair with its metrics, the tier
+     * aggregates and the audit queue. Measured scores only; never used for estimates.
+     */
+    public function harnessTax(): array
+    {
+        return $this->about + [
+            'measured_only' => true,
+            'families' => array_map($this->harnessFamilyObject(...), $this->data['harness_tax']['families'] ?? []),
+            'pairs' => array_map($this->harnessPairObject(...), $this->data['harness_tax']['pairs'] ?? []),
+            'aggregates' => $this->data['harness_tax']['aggregates'] ?? [],
+            'audit' => ['outliers' => $this->outliers()],
+            'url' => self::URL . '/harness-tax.json',
+        ];
+    }
+
+    /** One family's pairs with every per-model delta and its provenance; null if there is none. */
+    public function harnessTaxFamily(string $familyId): ?array
+    {
+        $families = array_values(array_filter($this->data['harness_tax']['families'] ?? [], fn ($f) => $f['family_id'] === $familyId));
+        if (!$families) {
+            return null;
+        }
+        $deltas = $this->data['harness_tax']['deltas'] ?? [];
+        $pairs = array_values(array_filter($this->data['harness_tax']['pairs'] ?? [], fn ($p) => $p['family_id'] === $familyId));
+        return $this->about + [
+            'measured_only' => true,
+            'family' => $this->harnessFamilyObject($families[0]),
+            'pairs' => array_map(fn ($p) => $this->harnessPairObject($p)
+                + ['deltas' => array_map($this->harnessDeltaObject(...), $deltas[$p['id']] ?? [])], $pairs),
+        ];
+    }
+
+    // a per-model |delta| beyond this lands in the audit queue (harness_tax.OUTLIER_PP)
+    private const OUTLIER_PP = 20.0;
+
+    /** The audit queue: per-model deltas beyond OUTLIER_PP, with both scores' provenance. */
+    private function outliers(): array
+    {
+        $byId = [];
+        foreach ($this->data['harness_tax']['pairs'] ?? [] as $p) {
+            $byId[$p['id']] = $p;
+        }
+        $out = [];
+        foreach ($this->data['harness_tax']['deltas'] ?? [] as $pairId => $deltas) {
+            foreach ($deltas as $d) {
+                if (abs($d['delta_pp']) > self::OUTLIER_PP) {
+                    $p = $byId[$pairId];
+                    $out[] = $this->harnessDeltaObject($d)
+                        + ['family_id' => $p['family_id'], 'a' => $p['a'], 'b' => $p['b']];
+                }
+            }
+        }
+        return $out;
+    }
+
+    private function harnessFamilyObject(array $f): array
+    {
+        return [
+            'family_id' => $f['family_id'],
+            'label' => $f['label'],
+            'capability' => $f['capability'],
+            'tier' => $f['tier'],
+            'same_item_set' => $f['same_item_set'],
+            'status' => $f['status'],
+            'pair_type' => $f['pair_type'],
+            'audit_note' => $f['audit_note'],
+            'origin' => $f['origin'],
+            'versions' => $f['versions'],
+            'url' => self::URL . '/harness-tax/' . rawurlencode($f['family_id']) . '.json',
+        ];
+    }
+
+    private function harnessPairObject(array $p): array
+    {
+        return [
+            'family_id' => $p['family_id'],
+            'tier' => $p['tier'],
+            'capability' => $p['capability'],
+            'pair_type' => $p['pair_type'],
+            'same_item_set' => $p['same_item_set'],
+            'status' => $p['status'],
+            'low_overlap' => $p['low_overlap'],
+            'a' => $p['a'],
+            'b' => $p['b'],
+            'n_models' => $p['n'],
+            'mean_abs_pp' => $p['mean_abs_pp'],
+            'median_abs_pp' => $p['median_abs_pp'],
+            'max_abs_pp' => $p['max_abs_pp'],
+            'share_gt_5pp' => $p['share_gt_5'],
+            'share_gt_10pp' => $p['share_gt_10'],
+            'kendall_tau' => $p['kendall_tau'],
+            'n_rank_flips' => $p['n_rank_flips'],
+            'n_positive' => $p['n_positive'],
+            'n_negative' => $p['n_negative'],
+            'sign_test_p' => $p['sign_p'],
+            'directionality' => $p['directionality'],
+        ];
+    }
+
+    private function harnessDeltaObject(array $d): array
+    {
+        return [
+            'model' => $d['slug'],
+            'name' => $d['name'],
+            'score_a' => $d['score_a'],
+            'score_b' => $d['score_b'],
+            'delta_pp' => $d['delta_pp'],
+            'retrieved_a' => $d['retrieved_a'],
+            'retrieved_b' => $d['retrieved_b'],
+        ];
     }
 
     /** One mapping with its points, curve and the estimates it produced. */

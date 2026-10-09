@@ -127,6 +127,65 @@ CREATE INDEX IF NOT EXISTS idx_scores_model ON scores(model_id);
 CREATE INDEX IF NOT EXISTS idx_scores_version ON scores(version_id);
 """
 
+# the harness-tax analysis layer (harness_tax.py): the same benchmark's measured
+# scores under different harnesses, never used for estimates. Kept apart from
+# SCHEMA so an existing database can add the tables alone (ensured on every run).
+HARNESS_TAX_SCHEMA = """
+CREATE TABLE IF NOT EXISTS harness_tax_families (
+    family_id     TEXT PRIMARY KEY,
+    label         TEXT NOT NULL,
+    capability    TEXT NOT NULL,
+    tier          TEXT,
+    same_item_set TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    pair_type     TEXT,
+    audit_note    TEXT,
+    origin        TEXT NOT NULL DEFAULT 'seed',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS harness_tax_pairs (
+    id            INTEGER PRIMARY KEY,
+    family_id     TEXT NOT NULL REFERENCES harness_tax_families(family_id) ON DELETE CASCADE,
+    version_a_id  INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    version_b_id  INTEGER NOT NULL REFERENCES benchmark_versions(id),
+    pair_type     TEXT NOT NULL,
+    n_models      INTEGER NOT NULL,
+    mean_abs_pp   REAL,
+    median_abs_pp REAL,
+    max_abs_pp    REAL,
+    share_gt_5    REAL,
+    share_gt_10   REAL,
+    kendall_tau   REAL,
+    n_rank_flips  INTEGER NOT NULL,
+    n_positive    INTEGER NOT NULL,
+    n_negative    INTEGER NOT NULL,
+    sign_p        REAL,
+    directionality REAL,
+    low_overlap   INTEGER NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (family_id, version_a_id, version_b_id)
+);
+
+CREATE TABLE IF NOT EXISTS harness_tax_deltas (
+    pair_id  INTEGER NOT NULL REFERENCES harness_tax_pairs(id) ON DELETE CASCADE,
+    model_id INTEGER NOT NULL REFERENCES models(id),
+    score_a  REAL NOT NULL,
+    score_b  REAL NOT NULL,
+    delta_pp REAL NOT NULL,
+    PRIMARY KEY (pair_id, model_id)
+);
+
+-- the one row of aggregates the API serves (computed once, not recomposed from pairs)
+CREATE TABLE IF NOT EXISTS harness_tax_aggregates (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    aggregates_json TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+SCHEMA = SCHEMA + HARNESS_TAX_SCHEMA
+
 
 def connect(path: str | Path, readonly: bool = False) -> sqlite3.Connection:
     """Open (creating if needed) the benchgap database with foreign keys on, or an existing one read-only."""

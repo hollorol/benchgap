@@ -101,6 +101,10 @@ function found(?array $document, Request $request): array
 function html(Pages $pages, array $page, Request $request, ?string $data = null): string
 {
     $template = file_get_contents(__DIR__ . '/index.html');
+    // the local dev stack (compose.yaml) counts no visits: BENCHGAP_ANALYTICS=off leaves the analytics script out
+    if (getenv('BENCHGAP_ANALYTICS') === 'off') {
+        $template = preg_replace('~<script data-host="https://app\.analyzati\.com"[^>]*></script>\n~', '', $template);
+    }
     // app.js and style.css by their content, so browsers can keep them (.htaccess) and still get each new upload
     foreach (['/assets/app.js', '/assets/style.css'] as $asset) {
         $template = str_replace("\"$asset\"", "\"$asset?v=" . hash_file('crc32b', __DIR__ . $asset) . '"', $template);
@@ -154,6 +158,7 @@ $app->group('/data', function (RouteCollectorProxy $data) {
     $data->get('/calibration.json', fn (Request $rq, Response $rs) => send($rs, site()->calibration()));
     $data->get('/cross.json', fn (Request $rq, Response $rs) => send($rs, site()->cross()));
     $data->get('/multivariate.json', fn (Request $rq, Response $rs) => send($rs, site()->multivariate()));
+    $data->get('/harness-tax.json', fn (Request $rq, Response $rs) => send($rs, site()->harnessTax()));
     $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->mapping((int) $a['id']), $rq)));
 });
@@ -172,7 +177,9 @@ $app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (P
 $app->get('/calibration/{id:[0-9]+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->mapping((int) $a['id']), data('calibration', $a['id'])));
 $app->get('/multivariate', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->multivariate(), data('multivariate')));
+$app->get('/harness-tax', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->harnessTax(), data('harness-tax')));
 $app->get('/method', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->methodPage()));
+$app->get('/publications', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->publications()));
 $app->get('/api', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->apiPage(), data('calibration')));
 
 $app->group('/api/v1', function (RouteCollectorProxy $v1) {
@@ -187,6 +194,9 @@ $app->group('/api/v1', function (RouteCollectorProxy $v1) {
     $v1->get('/mappings.json', fn (Request $rq, Response $rs) => send($rs, api()->mappings()));
     $v1->get('/mappings/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(api()->mapping((int) $a['id']), $rq)));
+    $v1->get('/harness-tax.json', fn (Request $rq, Response $rs) => send($rs, api()->harnessTax()));
+    $v1->get('/harness-tax/{family_id:[a-z0-9][a-z0-9._-]*}.json', fn (Request $rq, Response $rs, array $a) =>
+        send($rs, found(api()->harnessTaxFamily(rawurldecode($a['family_id'])), $rq)));
 })->add(fn (Request $request, Handler $handler) => $handler->handle($request)->withHeader('Access-Control-Allow-Origin', '*'));
 
 $app->run();

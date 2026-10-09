@@ -12,7 +12,9 @@
  *   /calibration            predictability matrix + list of mappings
  *   /calibration/<id>       one fitted mapping (scatter + curve)
  *   /multivariate           each benchmark from several others (fit + predicted vs measured)
+ *   /harness-tax            how harnesses disagree about the same models (measured scores only)
  *   /method                 methodology
+ *   /publications           the papers behind the method, and how benchgap relates
  *   /api                    public API documentation (api/v1/)
  */
 (function () {
@@ -425,10 +427,10 @@
       .map((x) => benchChip(x, b))
       .join("")}</nav>`;
   }
-  // scrolls a row of pills (phones only) so its current one is in the middle
-  const phone = matchMedia("(max-width: 760px)");
-  function centerIn(row, selector) {
-    const chip = phone.matches && row && row.querySelector(selector);
+  // scrolls a row of pills (phones only; the site nav up to tablets, as the CSS) so its current one is in the middle
+  const phone = matchMedia("(max-width: 760px)"), pillNav = matchMedia("(max-width: 1000px)");
+  function centerIn(row, selector, when = phone) {
+    const chip = when.matches && row && row.querySelector(selector);
     if (chip) row.scrollLeft += chip.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - chip.offsetWidth) / 2;
   }
   const centerRail = () => centerIn($("#bench-rail .rail"), '[aria-current="true"]');
@@ -1159,13 +1161,97 @@
     });
   }
 
+  // --- page: harness tax --------------------------------------------------------
+  // data: the harness-tax analysis (data/harness-tax.json, benchgap harness-tax): the pairs
+  // of the same benchmark measured under different harnesses, each with its metrics and
+  // per-model deltas. Measured scores only; nothing here feeds the estimates.
+  function renderHarnessTax(_, data) {   // its lede is also in src/Pages.php
+    setMeta("The harness tax: how much harnesses disagree",
+      "How much the same benchmark's measured scores disagree across harnesses and run protocols. Measured scores only, never estimates.");
+    const ht = data.harness_tax;
+    const TIERS = { agentic: "agentic", knowledge_tool_free: "tool-free", protocol_layer: "protocol layer" };
+    const pairs = ht.pairs.slice().sort((a, b) => (b.mean_abs_pp ?? -1) - (a.mean_abs_pp ?? -1));
+    const deltasOf = (p) => ht.deltas[p.id] || [];
+    const shortKey = (k) => (k || "").endsWith("/current") ? k.slice(0, -"/current".length) : k || "?";
+    let tier = "all";
+
+    // one pair's measured scores against each other, on one scale, with the y = x line
+    function htScatter(p) {
+      const ds = deltasOf(p);
+      if (!ds.length) return '<p class="muted">No model was measured on both.</p>';
+      const W = 300, H = 300, L = 40, R = 10, T = 10, B = 38;
+      const vals = ds.flatMap((d) => [d.score_a, d.score_b]);
+      const { min: lo, max: hi, ticks } = axis(Math.max(...vals) + 0.02, Math.min(...vals) - 0.02);
+      const clamp = (v) => Math.min(hi, Math.max(lo, v));
+      const px = (v) => L + ((clamp(v) - lo) / (hi - lo)) * (W - L - R), py = (v) => H - B - ((clamp(v) - lo) / (hi - lo)) * (H - T - B);
+      let grid = "";
+      for (const v of ticks) grid += `<line class="gl" x1="${px(v)}" x2="${px(v)}" y1="${T}" y2="${H - B}"/><text x="${px(v)}" y="${H - B + 16}" text-anchor="middle">${Math.round(v * 100)}</text>`
+        + `<line class="gl" x1="${L}" x2="${W - R}" y1="${py(v)}" y2="${py(v)}"/><text x="${L - 6}" y="${py(v) + 4}" text-anchor="end">${Math.round(v * 100)}</text>`;
+      const dots = ds.map((d) => `<circle class="pt" cx="${px(d.score_a).toFixed(1)}" cy="${py(d.score_b).toFixed(1)}"
+        data-tiptext="${esc(d.name)}: ${pct(d.score_a)}% on ${esc(shortKey(p.a.key))}, ${pct(d.score_b)}% on ${esc(shortKey(p.b.key))} (Δ ${d.delta_pp >= 0 ? "+" : "−"}${Math.abs(d.delta_pp).toFixed(1)} pp)"/>`).join("");
+      return `<svg class="plot mv-plot" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(shortKey(p.a.key))} against ${esc(shortKey(p.b.key))} measured scores">
+        ${grid}<line class="ax" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/><line class="ax" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
+        <line class="ideal" x1="${px(lo)}" y1="${py(lo)}" x2="${px(hi)}" y2="${py(hi)}"/>${dots}
+        <text class="lbl" x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">${esc(shortKey(p.a.key))} (%)</text>
+        <text class="lbl" transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">${esc(shortKey(p.b.key))} (%)</text></svg>`;
+    }
+    function htCard(p) {
+      const name = (v) => `${esc(shortKey(v.key))} <small>· ${esc(v.harness || "?")}</small>`;
+      const flags = [
+        p.low_overlap ? '<span class="flag low">low overlap</span>' : "",
+        p.same_item_set === "needs_audit" ? '<span class="flag medium">item set needs audit</span>' : "",
+        p.same_item_set === "weak_alignment" ? '<span class="flag low">weak item-set alignment</span>' : "",
+        p.status === "candidate" ? '<span class="flag x">candidate family</span>' : "",
+        p.pair_type === "protocol_variant" ? '<span class="flag x">protocol variant</span>' : "",
+        deltasOf(p).some((d) => Math.abs(d.delta_pp) > 20) ? '<span class="flag low">audit queue</span>' : "",
+      ].filter(Boolean).join(" ");
+      const m = (label, v) => `<dt>${label}</dt><dd>${v}</dd>`;
+      const n = p.n_positive + p.n_negative;
+      return `<article class="card mv-fit${p.low_overlap ? " ht-low" : ""}">
+        <div class="mv-info">
+          <div class="mv-formula">${name(p.a)}<span class="mv-op">vs</span>${name(p.b)}</div>
+          <dl class="kv">
+            ${m("models", p.n)}
+            ${m("mean |Δ|", p.mean_abs_pp == null ? "—" : `${p.mean_abs_pp.toFixed(1)} pp`)}
+            ${m("median |Δ|", p.median_abs_pp == null ? "—" : `${p.median_abs_pp.toFixed(1)} pp`)}
+            ${m("max |Δ|", p.max_abs_pp == null ? "—" : `${p.max_abs_pp.toFixed(1)} pp`)}
+            ${m("Kendall τ", p.kendall_tau == null ? "—" : p.kendall_tau.toFixed(2))}
+            ${m("rank flips", p.n_rank_flips)}
+            ${m("direction", n ? `${p.n_positive} up / ${p.n_negative} down` : "—")}
+            ${m("sign test p", p.sign_p == null ? "—" : p.sign_p.toFixed(3))}
+            ${m(">5 pp", p.share_gt_5 == null ? "—" : pct(p.share_gt_5, 0) + "%")}
+            ${m(">10 pp", p.share_gt_10 == null ? "—" : pct(p.share_gt_10, 0) + "%")}
+          </dl>
+          <p class="mv-flags">${flags}</p>
+        </div>
+        ${htScatter(p)}
+      </article>`;
+    }
+    function htList() {
+      const shown = pairs.filter((p) => tier === "all" || p.tier === tier);
+      return shown.length ? shown.map(htCard).join("") : '<p class="muted">No pairs in this tier.</p>';
+    }
+    const agg = ht.aggregates || {};
+    const tiers = agg.by_tier || {};
+    const tierLine = Object.entries(tiers).map(([t, s]) => `${TIERS[t] || t}: ${s.pooled_mean_abs_pp == null ? "n/a" : s.pooled_mean_abs_pp.toFixed(1) + " pp"}`).join(" · ");
+    const ratio = agg.headline && agg.headline.ratio;
+    main.innerHTML = `<div class="page">
+      ${pageHead("Harness tax", "The same benchmark, measured differently", esc("The same benchmark, run under different harnesses or protocols, disagrees about the same models - on the agentic benchmarks by far more than on the tool-free ones. Measured scores only: no estimate enters this page. Each point below is one model's score under the one harness against the other; the diagonal is agreement."))}
+      <section class="section">
+        <div class="mv-sort"><span class="ctl-label">Tier</span>${segHTML("Tier", [["all", "all"], ...Object.entries(TIERS)], tier)}</div>
+        <p class="muted">Pooled mean |Δ| over reportable pairs - ${esc(tierLine) || "n/a"}. Verified families only, the agentic vs tool-free ratio: <b>${ratio == null ? "n/a" : ratio.toFixed(1) + "x"}</b>.</p>
+        <div class="mv-list" id="ht-list">${htList()}</div>
+      </section></div>`;
+    bindSeg($(".mv-sort .seg"), (k) => { tier = k; hideTip(); swapContent($("#ht-list"), htList()); });
+  }
+
   // --- page: method -----------------------------------------------------------
   function renderMethod() {
     const r = D.meta.confidence_levels, g = D.meta.quality_gate, c = D.meta.counts.confidence;
-    setMeta("How missing benchmark scores are estimated", "How benchgap estimates missing LLM benchmark scores: calibration curves, leave-one-out validation and confidence levels.");
+    setMeta("How missing benchmark scores are estimated", "How benchgap estimates missing LLM benchmark scores: calibration curves, multivariate mappings, leave-one-out validation and confidence levels.");
     main.innerHTML = `<div class="page">
       ${pageHead("Method", "How the gaps are filled, and when not to trust it", esc(ABOUT))}
-      <nav class="jump chip-row" aria-label="On this page">${[["data", "The data"], ["calibrating", "Calibrating"], ["filling", "Filling a gap"], ["confidence", "Confidence"], ["caveats", "Caveats"]]
+      <nav class="jump chip-row" aria-label="On this page">${[["data", "The data"], ["calibrating", "Calibrating"], ["together", "Several together"], ["filling", "Filling a gap"], ["confidence", "Confidence"], ["views", "Analysis views"], ["harness", "Harness tax"], ["caveats", "Caveats"]]
         .map(([id, label]) => `<a class="chip" href="#${id}">${label}</a>`).join("")}</nav>
       <article class="prose">
         <h2 id="data">The data</h2>
@@ -1184,9 +1270,21 @@
         and the held-out score is predicted. That error, in percentage points, is the “±” shown next to every estimate. A pair keeps no mapping at all
         unless its best curve reaches R² ≥ ${g.min_r2} and an error of at most ${g.max_loo_pp} pp; poorly fitting pairs leave their gaps empty rather than filling them with noise.</p>
 
+        <h2 id="together">Several benchmarks together</h2>
+        <p>One benchmark often does not pin a score down, so for each target a <b>multivariate mapping</b> predicts it from several
+        same-capability benchmarks at once. Two searches run and the one with the lower leave-one-out error is kept: an
+        <b>elastic net</b> fitted over a growing pool of candidates, whose lasso part drives useless sources' coefficients to exactly zero,
+        and a <b>greedy forward search</b> that tries every candidate at each step. On whatever features each lands, two families compete
+        by the same cross-validated error: the linear elastic net, and a multivariate Michaelis–Menten curve - the sources combined into a
+        weighted index, mapped through the same saturating shape as the univariate curves.</p>
+        <p>A multivariate mapping is stored only if it passes the same quality gate and beats the target's best single calibration.
+        A lasso-selected single source may be stored (on little overlap its shrinkage can beat every univariate curve), but a
+        one-feature nonlinear fit is not - that is the univariate pipeline's job.</p>
+
         <h2 id="filling">Filling a gap</h2>
         <p>For a model missing a score, every mapping into that benchmark from a benchmark the model <i>was</i> measured on is a candidate; the one
-        with the lowest cross-validated error wins. Multivariate mappings (several source benchmarks combined) compete on the same footing when available.
+        with the lowest cross-validated error wins. A multivariate mapping is preferred when the model is measured on all of its source
+        benchmarks and its error is lower; a model missing one of the sources simply falls back to the univariate path.
         Estimates are never used to make further estimates: inputs are always measured scores.</p>
 
         <h2 id="confidence">Confidence levels</h2>
@@ -1208,6 +1306,21 @@
         <p>Hover over, tap or focus any estimate to see exactly which benchmark it came from, the curve used, and which warnings applied.
         The leaderboard and matrix can hide low-confidence estimates (<i>+ reliable estimates</i>) or all of them (<i>Measured only</i>).</p>
 
+        <h2 id="views">Analysis views</h2>
+        <p>Two pages show fits that never produce an estimate. The <a href="/calibration">calibration page</a> also shows how well benchmarks of
+        <i>different</i> capabilities predict each other - curiosity only, since no estimate crosses a capability. The
+        <a href="/multivariate">multivariate view</a> fits each benchmark from several of any capability and plots every model's
+        cross-validated prediction. Both are analyses over the same measured scores; the estimates come only from the same-capability
+        calibrations and multivariate mappings above.</p>
+
+        <h2 id="harness">The harness tax</h2>
+        <p>Each benchmark version records whose run it is: the model's own published numbers, or one of the evaluation harnesses'
+        own runs (${esc(D.meta.harnesses.join(", "))}). The same benchmark measured under two harnesses disagrees about the same models -
+        by double-digit percentage points on the agentic benchmarks, by around a point on the tool-free knowledge ones.
+        <a href="/harness-tax">The harness tax</a> measures this from measured scores only: pairs of the same benchmark's versions,
+        per-model deltas with their provenance, and a sign test separating a systematic tax from noise. It never feeds the estimates;
+        it is why each of them holds for the source leaderboard's evaluation setup only.</p>
+
         <h2 id="caveats">Caveats</h2>
         <ul>
           <li>Estimates are predictions, not measurements. A model can genuinely over- or under-perform what its other scores imply.</li>
@@ -1216,6 +1329,75 @@
           <li>The error bars are point estimates of typical error, not credible intervals. A probabilistic version is on the roadmap.</li>
         </ul>
       </article></div>`;
+  }
+
+  // --- page: publications --------------------------------------------------------
+  // the papers on predicting benchmark scores; the same content is the static page in src/Pages.php
+  const PAPERS = [
+    ["You Don't Need to Run Every Eval", "Zeng & Papailiopoulos", 2026, "2606.24020", "a model's other benchmark scores",
+      "the model × benchmark score matrix is nearly rank-2; matrix completion in logit space (BenchPress)",
+      "the closest relative: the same gapfilling problem with one global factor model. benchgap keeps local, explicit calibrations per benchmark pair, each with its own cross-validated error, and refuses to transfer across capabilities."],
+    ["Sloth: scaling laws for LLM skills to predict multi-benchmark performance across families", "Polo et al.", 2024, "2412.06540", "training compute and latent skills",
+      "scaling laws over low-dimensional skill factors, within and across model families",
+      "predicts hypothetical models and needs training metadata. benchgap maps an existing model from its measured scores alone, which is all closed API models publish."],
+    ["Observational Scaling Laws and the Predictability of Language Model Performance", "Ruan et al.", 2024, "2405.10938", "simple benchmarks and compute",
+      "a latent capability variable regressed onto downstream benchmarks",
+      "the same score-from-scores idea, anchored to compute. benchgap is compute-agnostic, so it also works for models whose training details are unknown."],
+    ["From Benchmarks to Skills: Low-Rank Factors for LLM Evaluation", "Maimon et al.", 2025, "2507.20208", "a subset of a model's scores",
+      "psychometric low-rank factorization; profiling a model from a few tasks",
+      "closest in the fill-the-profile goal, but in latent space. benchgap stays in observable benchmark space and shows the fitted curve for every pair."],
+    ["Efficient Benchmarking Is Just Feature Selection and Multiple Regression", "Bowyer et al.", 2026, "2605.25773", "a small coreset of benchmark items",
+      "feature selection plus regression to predict full-benchmark scores",
+      "the item-level analogue of the multivariate view's elastic net, whose lasso part selects the useful benchmarks."],
+    ["metabench: A Sparse Benchmark of Reasoning and Knowledge in Large Language Models", "Kipnis et al.", 2024, "2407.12844", "a sparse (~3%) subset of items",
+      "item-level distillation that preserves scores and rankings",
+      "item-level. benchgap works from published aggregate scores, so it needs no access to benchmark items at all."],
+    ["Look Before you Leap: Estimating LLM Benchmark Scores from Descriptions", "Park et al.", 2025, "2509.20645", "a redacted text description of the task",
+      "an LLM as the regressor (the PRECOG corpus); no evaluation runs at all",
+      "predicts before any evaluation exists; benchgap predicts after a model has some measured scores. Complementary ends of the pipeline."],
+    ["How predictable is language model benchmark performance?", "Owen", 2024, "2401.04757", "training compute",
+      "empirical analysis of benchmark performance across five orders of magnitude of compute",
+      "a different input: predictability against compute, not scores from scores."],
+    ["How Benchmark Prediction from Fewer Data Misses the Mark", "Zhang et al.", 2025, "2506.07673", null,
+      "a systematic evaluation of 11 score-prediction methods across 19 benchmarks",
+      "the caution this site's guardrails are built around: predictors fail on models unlike their calibration set."],
+    ["PredictaBoard: Benchmarking LLM Score Predictability", "Pacchiardi et al.", 2025, "2502.14445", null,
+      "benchmarks score predictability itself, via assessors that anticipate a model's errors",
+      "instance-level predictability rather than score-level estimation; a complementary lens on the same uncertainty."],
+  ];
+  // what sets benchgap apart from the papers above (HTML)
+  const RELATED_WORK = [
+    "<b>Capability gating.</b> A factor model imputes between any two benchmarks. benchgap calibrates only within a capability group, so a model never evaluated on vision keeps that gap instead of inheriting an estimate from text benchmarks.",
+    "<b>No estimate recursion.</b> Every input to an estimate is a measured score; an estimate never feeds another estimate. A factor model completes a matrix that already contains its own outputs.",
+    "<b>Per-cell error.</b> Each estimate carries its own leave-one-out error and confidence level, and a pair whose best curve still fits poorly keeps no mapping at all. The papers above report one aggregate error over held-out cells.",
+    "<b>The shared limit.</b> As How Benchmark Prediction from Fewer Data Misses the Mark shows, every method in this line misestimates models unlike its calibration set. Confidence levels flag the known risk factors - extrapolation, small fits, weak R² - but nothing here detects a genuinely novel model.",
+  ];
+
+  // the multivariate view against the papers above (HTML paragraphs)
+  const MULTIVARIATE_WORK = [
+    "Predicting one benchmark from several others jointly is where benchgap meets the papers above head-on: BenchPress, Sloth and From Benchmarks to Skills do the same thing through latent factors over the whole score matrix. The <a href=\"/multivariate\">multivariate view</a> does it with explicit features - the measured benchmarks themselves, named in every fit - selected per target benchmark.",
+    "The selection echoes Efficient Benchmarking Is Just Feature Selection and Multiple Regression, one level up: they select items, benchgap selects benchmarks. An elastic net whose lasso part zeroes the useless candidates runs alongside a greedy forward search trying every one; on the features they find, a linear fit and a multivariate Michaelis–Menten curve compete by cross-validated error.",
+    "What a joint model has and a per-target fit does not is strength borrowed across all benchmarks at once - BenchPress finds most of the score matrix is two numbers per model. benchgap trades that for fits a reader can check: every feature is a real benchmark, and every fit carries its own cross-validated error and a measured-vs-predicted scatter. These mappings are the deterministic precursor of that joint model: a Bayesian network over benchmark scores, imputing every gap with one coherent posterior, is where the roadmap points.",
+  ];
+
+  function renderPublications() {
+    setMeta("Publications: the research behind benchgap", "Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.");
+    const rows = PAPERS.map(([title, authors, year, id, from, approach, relation]) => `<tr>
+        <td><a href="https://arxiv.org/abs/${id}" rel="noopener" target="_blank">${esc(title)}</a><br><span class="muted">${esc(`${authors}, ${year}`)}</span></td>
+        <td data-label="Predicts from">${from ? esc(from) : "—"}</td>
+        <td data-label="Approach">${esc(approach)}</td>
+        <td data-label="How benchgap relates">${esc(relation)}</td></tr>`).join("");
+    main.innerHTML = `<div class="page">
+      ${pageHead("Publications", "The research behind the gapfilling", esc("benchgap is one entry in an active research line: predicting a model's benchmark scores without running every evaluation. These are the papers closest to what this site does, and how they relate to it."))}
+      <section class="section"><div class="list-wrap"><table class="list papers">
+        <thead><tr><th>Paper</th><th>Predicts from</th><th>Approach</th><th>How benchgap relates</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></section>
+      <section class="section"><h2 class="h2">The multivariate predictions</h2>
+        <article class="prose">${MULTIVARIATE_WORK.map((p) => `<p>${p}</p>`).join("")}</article>
+      </section>
+      <section class="section"><h2 class="h2">Where benchgap differs</h2>
+        <article class="prose"><ul>${RELATED_WORK.map((item) => `<li>${item}</li>`).join("")}</ul></article>
+      </section></div>`;
   }
 
   // --- page: API ----------------------------------------------------------------
@@ -1470,7 +1652,9 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     [/^\/calibration$/, "calibration", renderCalibration, () => "/data/calibration.json"],
     [/^\/calibration\/(\d+)$/, "calibration", renderMapping, (id) => `/data/calibration/${id}.json`],
     [/^\/multivariate$/, "multivariate", renderMultivariate, () => "/data/multivariate.json"],
+    [/^\/harness-tax$/, "harness-tax", renderHarnessTax, () => "/data/harness-tax.json"],
     [/^\/method$/, "method", renderMethod],
+    [/^\/publications$/, "publications", renderPublications],
     [/^\/api$/, "api", renderApi, () => "/data/calibration.json"],
   ];
   const pageOf = (path) => PAGES.find(([re]) => re.test(path));
@@ -1521,7 +1705,7 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
     const nav = page ? page[1] : "";
     const inPlace = page ? page[2](arg, data) : renderNotFound("Page not found.");
     document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-    centerIn($(".nav"), '[aria-current="page"]');
+    centerIn($(".nav"), '[aria-current="page"]', pillNav);
     booted();
     if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
   }

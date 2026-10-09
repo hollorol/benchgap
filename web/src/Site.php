@@ -131,6 +131,13 @@ final class Site
         ))];
     }
 
+    /** The harness-tax analysis (families, pairs, per-model deltas, aggregates), without slice filtering:
+     *  the analysis is over the registered families, not the site's listed benchmarks. */
+    public function harnessTax(): array
+    {
+        return ['harness_tax' => $this->data['harness_tax'] ?? ['families' => [], 'pairs' => [], 'deltas' => [], 'aggregates' => []]];
+    }
+
     /** One calibration with its points and curve, the estimates it made and its reverse; null if there is none. */
     public function mapping(int $id): ?array
     {

@@ -412,6 +412,130 @@
           }
         }
       }
+    },
+    "/harness-tax.json": {
+      "get": {
+        "summary": "The harness-tax analysis",
+        "description": "How much the same benchmark's measured scores disagree across harnesses and run protocols: families, every pair with its metrics, aggregates by tier/capability and the audit queue. Measured scores only; never used for estimates.",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "families",
+                        "pairs",
+                        "aggregates",
+                        "audit"
+                      ],
+                      "properties": {
+                        "measured_only": {
+                          "type": "boolean"
+                        },
+                        "families": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/HarnessFamily"
+                          }
+                        },
+                        "pairs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/HarnessPair"
+                          }
+                        },
+                        "aggregates": {
+                          "type": "object",
+                          "description": "Pooled mean |delta| by tier, capability and family, plus the verified-only headline set and its agentic vs tool-free ratio."
+                        },
+                        "audit": {
+                          "type": "object",
+                          "properties": {
+                            "outliers": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/HarnessDelta"
+                              },
+                              "description": "Per-model deltas beyond 20 pp."
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
+    },
+    "/harness-tax/{family_id}.json": {
+      "get": {
+        "summary": "Get one harness-tax family",
+        "description": "One family's pairs with every per-model delta and its provenance (both scores' retrieval dates; source URLs on the pair's versions).",
+        "parameters": [
+          {
+            "name": "family_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Family identifier, e.g. terminal-bench-2-1."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/About"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "family",
+                        "pairs"
+                      ],
+                      "properties": {
+                        "measured_only": {
+                          "type": "boolean"
+                        },
+                        "family": {
+                          "$ref": "#/components/schemas/HarnessFamily"
+                        },
+                        "pairs": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/HarnessPairDetail"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such resource"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -772,6 +896,311 @@
                   },
                   "minItems": 2,
                   "maxItems": 2
+                }
+              }
+            }
+          }
+        ]
+      },
+      "HarnessFamily": {
+        "type": "object",
+        "required": [
+          "family_id",
+          "label",
+          "capability",
+          "same_item_set",
+          "status",
+          "versions"
+        ],
+        "properties": {
+          "family_id": {
+            "type": "string",
+            "description": "Stable family identifier, e.g. terminal-bench-2-1."
+          },
+          "label": {
+            "type": "string"
+          },
+          "capability": {
+            "type": "string"
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "agentic",
+              "knowledge_tool_free",
+              "protocol_layer",
+              null
+            ],
+            "description": "agentic: tool/scaffold-dependent; knowledge_tool_free: no tool layer; protocol_layer: within-harness protocol variants."
+          },
+          "same_item_set": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "needs_audit",
+              "weak_alignment"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "candidate"
+            ],
+            "description": "candidate: auto-detected or awaiting item-set review; excluded from headline aggregates."
+          },
+          "pair_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "audit_note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "seed",
+              "auto"
+            ]
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "harness": {
+                  "type": "string"
+                },
+                "n": {
+                  "type": "integer",
+                  "description": "Measured models on this version."
+                }
+              }
+            }
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "HarnessPair": {
+        "type": "object",
+        "required": [
+          "family_id",
+          "pair_type",
+          "n_models",
+          "a",
+          "b"
+        ],
+        "properties": {
+          "family_id": {
+            "type": "string"
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "capability": {
+            "type": "string"
+          },
+          "pair_type": {
+            "type": "string",
+            "enum": [
+              "cross_harness",
+              "protocol_variant"
+            ]
+          },
+          "same_item_set": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "low_overlap": {
+            "type": "boolean",
+            "description": "Fewer than 5 shared models: shown greyed, out of aggregates."
+          },
+          "a": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "source_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "description": "First-listed version; delta sign is a minus b."
+          },
+          "b": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "harness": {
+                "type": "string"
+              },
+              "source_url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "n_models": {
+            "type": "integer",
+            "description": "Models measured on both versions."
+          },
+          "mean_abs_pp": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "median_abs_pp": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "max_abs_pp": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "share_gt_5pp": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "share_gt_10pp": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "kendall_tau": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Kendall tau-b of the two harnesses' score vectors."
+          },
+          "n_rank_flips": {
+            "type": "integer"
+          },
+          "n_positive": {
+            "type": "integer"
+          },
+          "n_negative": {
+            "type": "integer"
+          },
+          "sign_test_p": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Two-sided exact binomial sign test against p = 0.5."
+          },
+          "directionality": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Fraction agreeing with the dominant sign; >= 0.9 is systematic bias."
+          }
+        }
+      },
+      "HarnessDelta": {
+        "type": "object",
+        "required": [
+          "model",
+          "score_a",
+          "score_b",
+          "delta_pp"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "Model slug."
+          },
+          "name": {
+            "type": "string"
+          },
+          "score_a": {
+            "type": "number"
+          },
+          "score_b": {
+            "type": "number"
+          },
+          "delta_pp": {
+            "type": "number",
+            "description": "(score_a - score_b) * 100."
+          },
+          "retrieved_a": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the a-side score was retrieved."
+          },
+          "retrieved_b": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "family_id": {
+            "type": "string",
+            "description": "Audit queue entries only."
+          },
+          "a": {
+            "type": "object",
+            "description": "Audit queue entries only: the version score_a belongs to."
+          },
+          "b": {
+            "type": "object"
+          }
+        }
+      },
+      "HarnessPairDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HarnessPair"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "deltas": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HarnessDelta"
                 }
               }
             }

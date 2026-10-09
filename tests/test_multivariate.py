@@ -233,7 +233,7 @@ def synth_db(tmp_path_factory):
     conn = connect(tmp / "seed.db")
     init_db(conn)
     ingest_csv(conn, seed)
-    fit_mappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
+    fit_mappings(conn)
     fit_multimappings(conn, MIN_PAIRS, MIN_R2, MAX_LOO_RMSE)
     gapfill(conn)
     yield conn

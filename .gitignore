@@ -14,6 +14,7 @@ data/report.html
 # fit results reused between runs (benchgap fit/multifit --cache .fit-cache)
 .fit-cache/
 dist/
+build/
 
 # website: Composer installs vendor/ (CI does it before deploying); config.php holds the MySQL credentials
 web/vendor/
@@ -23,3 +24,8 @@ web/config.php
 .agents/
 .claude/
 skills-lock.json
+
+# harness-tax outputs (benchgap harness-tax and scripts/export_paper.py)
+data/harness_tax.json
+data/harness_tax_history.jsonl
+exports/

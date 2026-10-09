@@ -260,6 +260,8 @@ def test_pages_and_sitemap(server):
         "/api": "Public API",
         "/calibration": "LLM benchmark calibrations",
         "/multivariate": "Multivariate LLM benchmark predictions",
+        "/harness-tax": "The harness tax: how much harnesses disagree",
+        "/publications": "Publications: the research behind benchgap",
         f"/calibration/{mapping['id']}": "calibration",
         "/b/aa-terminal-bench21/current": "AA Terminal-Bench 2.1 leaderboard",
         f"/model/{model['slug']}": f"{model['name']} benchmark scores",
@@ -272,7 +274,7 @@ def test_pages_and_sitemap(server):
         assert '<main id="main" class="wrap" tabindex="-1"><div class="page">' in body, path
         # the data app.js renders the page from loads alongside app.js; app.js and style.css by their content
         data = re.findall(r'<link rel="preload" href="(/data/[^"]+)" as="fetch"', body)
-        assert data[0] == "/data/site.json" and len(data) == (1 if path == "/method" else 2), path
+        assert data[0] == "/data/site.json" and len(data) == (1 if path in ("/method", "/publications") else 2), path
         assert all(get_json(server, url) for url in data), path
         assert re.search(r'<script src="/assets/app\.js\?v=[0-9a-f]+" defer', body), path
         assert re.search(r'<link rel="stylesheet" href="/assets/style\.css\?v=[0-9a-f]+">', body), path
@@ -288,7 +290,7 @@ def test_pages_and_sitemap(server):
     assert headers["Content-Type"].startswith("application/xml")
     index = get_json(server, "/api/v1/")
     n = index["counts"]
-    assert sitemap.count("<loc>") == 6 + n["benchmarks"] + n["models"] + n["mappings"]
+    assert sitemap.count("<loc>") == 8 + n["benchmarks"] + n["models"] + n["mappings"]
     assert f"<loc>{model['page']}</loc>" in sitemap and "<lastmod>" in sitemap
 
 

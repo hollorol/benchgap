@@ -11,6 +11,8 @@ from . import __version__
 from .db import connect, init_db, parse_version_spec
 from .fit import fit_mappings
 from .gapfill import gapfill
+from .families import load_families
+from .harness_tax import MIN_OVERLAP
 from .ingest import ingest_csv
 from .report import (
     DEFAULT_MIN_BENCHMARKS,
@@ -93,6 +95,40 @@ def cmd_gapfill(args: argparse.Namespace) -> None:
             f" via {f['method']}{mark}"
         )
     print(f"gapfilled {len(filled)} missing scores")
+
+
+def cmd_harness_tax(args: argparse.Namespace) -> None:
+    from . import harness_tax
+
+    conn = _conn(args)
+    try:
+        analysis = harness_tax.run(
+            conn,
+            families=load_families(Path(args.families)) if args.families else None,
+            min_overlap=args.min_overlap,
+            output=Path(args.output) if args.output else None,
+            history=Path(args.history) if args.history else None,
+        )
+    except harness_tax.HarnessTaxError as e:
+        sys.exit(f"error: {e}")
+    candidates = [f for f in analysis["families"] if f.get("origin") == "auto"]
+    for f in candidates:
+        print(f"candidate family (auto-detected, review before promoting): {f['family_id']}"
+              f" [{f['versions'][0]['name']} + {len(f['versions']) - 1} more]")
+    for o in analysis["audit"]["outliers"]:
+        print(f"audit: |{o['delta_pp']:.1f} pp| on {o['family_id']} (model {o['model_id']})")
+    ratio = analysis["aggregates"]["headline"]["ratio"]
+    print(
+        f"{len(analysis['pairs'])} pairs over {len(analysis['families'])} families"
+        f" ({sum(1 for p in analysis['pairs'] if p['low_overlap'])} low-overlap,"
+        f" {len(analysis['audit']['outliers'])} outliers);"
+        f" harness tax: agentic vs tool-free headline ratio"
+        f" {f'{ratio:.1f}x' if ratio is not None else 'n/a'}"
+    )
+    if args.output:
+        print(f"wrote {args.output}")
+    if args.history:
+        print(f"appended {args.history}")
 
 
 def cmd_multifit(args: argparse.Namespace) -> None:
@@ -266,6 +302,28 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("gapfill", help="fill missing scores using fitted mappings").set_defaults(
         func=cmd_gapfill
     )
+
+    htax = sub.add_parser(
+        "harness-tax",
+        help="measure how much harnesses disagree about the same models (never used for estimates)",
+    )
+    htax.add_argument(
+        "--families", metavar="JSON",
+        help="benchmark family registry to use instead of the packaged families.json",
+    )
+    htax.add_argument(
+        "--min-overlap", type=int, default=MIN_OVERLAP,
+        help=f"pairs with fewer shared models are stored but flagged low_overlap (default {MIN_OVERLAP})",
+    )
+    htax.add_argument(
+        "--output", default="data/harness_tax.json", metavar="JSON",
+        help="write the full analysis here",
+    )
+    htax.add_argument(
+        "--history", default="data/harness_tax_history.jsonl", metavar="JSONL",
+        help="append each run's per-pair stats here (never rewritten)",
+    )
+    htax.set_defaults(func=cmd_harness_tax)
 
     mfit = sub.add_parser(
         "multifit",

@@ -28,7 +28,9 @@ final class Pages
         '/matrix' => ['Score matrix', 'every model on every benchmark'],
         '/calibration' => ['Calibration', 'which benchmarks predict which, and how well'],
         '/multivariate' => ['Multivariate', 'each benchmark predicted from several others together, with every model\'s cross-validated prediction'],
+        '/harness-tax' => ['Harness tax', 'how much harnesses disagree about the same models on the same benchmark, measured scores only'],
         '/method' => ['Method', 'how the missing scores are estimated, and when not to trust them'],
+        '/publications' => ['Publications', 'the papers on predicting benchmark scores without running every eval, and how benchgap relates to them'],
         '/api' => ['API', 'free JSON and CSV API, no key'],
     ];
 
@@ -271,13 +273,159 @@ final class Pages
             . $this->table(['Model', 'Fit', 'Models', 'Error', 'Best one alone'], $rows));
     }
 
+    public function harnessTax(): array
+    {
+        $doc = $this->api->harnessTax();
+        $tiers = $doc['aggregates']['by_tier'] ?? [];
+        $headline = $doc['aggregates']['headline'] ?? [];
+        $ratio = $headline['ratio'] ?? null;
+        $lede = 'The same benchmark, run under different harnesses or protocols, disagrees about the same models - '
+            . 'on the agentic benchmarks by far more than on the tool-free ones. Measured scores only: no estimate enters this page.';
+        $tiersText = implode(' · ', array_map(
+            fn ($tier, $t) => "{$tier}: " . ($t['pooled_mean_abs_pp'] === null ? 'n/a' : number_format($t['pooled_mean_abs_pp'], 1) . ' pp'),
+            array_keys($tiers), $tiers
+        ));
+        $pairs = $doc['pairs'];
+        usort($pairs, fn ($x, $y) => ($y['mean_abs_pp'] ?? -1.0) <=> ($x['mean_abs_pp'] ?? -1.0));
+        $rows = array_map(fn ($p) => [
+            self::esc(self::pairName($p['a']['key'])) . ' (' . self::esc($p['a']['harness'] ?? '?') . ') vs '
+                . self::esc(self::pairName($p['b']['key'])) . ' (' . self::esc($p['b']['harness'] ?? '?') . ')'
+                . '<br><span class="muted">' . self::esc(implode(' · ', array_filter([
+                    $p['tier'] ?? 'untiered', $p['pair_type'], $p['same_item_set'],
+                    $p['status'] === 'candidate' ? 'candidate family' : null,
+                    $p['low_overlap'] ? 'low overlap' : null,
+                    $p['family_id'],
+                ]))) . '</span>',
+            $p['n_models'],
+            $p['mean_abs_pp'] === null ? '—' : number_format($p['mean_abs_pp'], 1) . ' pp',
+            $p['kendall_tau'] === null ? '—' : number_format($p['kendall_tau'], 2),
+            ($p['n_models'] === 0 || ($p['n_positive'] + $p['n_negative']) === 0)
+                ? '—'
+                : "{$p['n_positive']} up / {$p['n_negative']} down",
+        ], $pairs);
+        $outliers = count($doc['audit']['outliers']);
+        return $this->result('The harness tax: how much harnesses disagree',
+            'How much the same benchmark\'s measured scores disagree across harnesses and run protocols, benchmark family by family. Measured scores only.',
+            '/harness-tax',
+            $this->header('Harness tax', 'The same benchmark, measured differently',
+                '<p class="lede">' . self::esc($lede) . '</p>'
+                . "<p>Pooled mean |delta| by tier - $tiersText; verified families only, the agentic vs tool-free ratio is "
+                . ($ratio === null ? 'n/a' : number_format($ratio, 1) . 'x') . '.</p>')
+            . $this->table(['Pair', 'Models', 'Mean |Δ|', 'Kendall τ', 'Direction'], $rows)
+            . '<p class="muted">Measured scores only, never estimates; every per-model delta keeps both scores\' retrieval '
+                . 'dates and source URLs in the <a href="/api/v1/harness-tax.json">API</a>. Families whose item sets are not '
+                . 'verified are flagged and stay out of the headline aggregates; low-overlap pairs are greyed on the '
+                . '<a href="/harness-tax">interactive page</a>; ' . $outliers . ' per-model delta' . ($outliers === 1 ? '' : 's')
+                . ' beyond 20 pp sit in the audit queue.</p>');
+    }
+
+    /** a pair side's key without the trailing /current (the site shows the bare name) */
+    private static function pairName(string $key): string
+    {
+        [$name, $version] = array_pad(explode('/', $key, 2), 2, null);
+        return $version === null || $version === 'current' ? $name : $key;
+    }
+
     public function methodPage(): array
     {
         return $this->result('How missing benchmark scores are estimated',
-            'How benchgap estimates missing LLM benchmark scores: calibration curves, leave-one-out validation and confidence levels.', '/method',
+            'How benchgap estimates missing LLM benchmark scores: calibration curves, multivariate mappings, leave-one-out validation and confidence levels.', '/method',
             $this->header('Method', 'How the gaps are filled, and when not to trust it', '<p class="lede">' . self::esc(self::ABOUT) . '</p>')
             . '<ul>' . implode('', array_map(fn ($item) => "<li>$item</li>", $this->rules())) . '</ul>');
     }
+
+    public function publications(): array
+    {        $rows = array_map(fn ($p) => [
+            '<a href="https://arxiv.org/abs/' . self::esc($p['id']) . '" rel="noopener" target="_blank">' . self::esc($p['title']) . '</a>'
+                . '<br><span class="muted">' . self::esc("{$p['authors']}, {$p['year']}") . '</span>',
+            $p['from'] === null ? '—' : self::esc($p['from']),
+            self::esc($p['approach']),
+            self::esc($p['relation']),
+        ], self::PAPERS);
+        $lede = 'benchgap is one entry in an active research line: predicting a model\'s benchmark scores without running '
+            . 'every evaluation. These are the papers closest to what this site does, and how they relate to it.';
+        return $this->result('Publications: the research behind benchgap',
+            'Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.',
+            '/publications',
+            $this->header('Publications', 'The research behind the gapfilling', '<p class="lede">' . self::esc($lede) . '</p>')
+            . $this->table(['Paper', 'Predicts from', 'Approach', 'How benchgap relates'], $rows)
+            . '<section class="section"><h2 class="h2">The multivariate predictions</h2><article class="prose">'
+            . implode('', array_map(fn ($p) => "<p>$p</p>", self::MULTIVARIATE_WORK))
+            . '</article></section>'
+            . '<section class="section"><h2 class="h2">Where benchgap differs</h2><ul>'
+            . implode('', array_map(fn ($item) => "<li>$item</li>", self::RELATED_WORK))
+            . '</ul></section>');
+    }
+
+    /** the papers closest to what benchgap does (publications): what a score is predicted from and how they relate */
+    private const PAPERS = [
+        ['title' => 'You Don\'t Need to Run Every Eval', 'authors' => 'Zeng & Papailiopoulos', 'year' => 2026, 'id' => '2606.24020',
+            'from' => 'a model\'s other benchmark scores',
+            'approach' => 'the model × benchmark score matrix is nearly rank-2; matrix completion in logit space (BenchPress)',
+            'relation' => 'the closest relative: the same gapfilling problem with one global factor model. benchgap keeps local, explicit calibrations per benchmark pair, each with its own cross-validated error, and refuses to transfer across capabilities.'],
+        ['title' => 'Sloth: scaling laws for LLM skills to predict multi-benchmark performance across families', 'authors' => 'Polo et al.', 'year' => 2024, 'id' => '2412.06540',
+            'from' => 'training compute and latent skills',
+            'approach' => 'scaling laws over low-dimensional skill factors, within and across model families',
+            'relation' => 'predicts hypothetical models and needs training metadata. benchgap maps an existing model from its measured scores alone, which is all closed API models publish.'],
+        ['title' => 'Observational Scaling Laws and the Predictability of Language Model Performance', 'authors' => 'Ruan et al.', 'year' => 2024, 'id' => '2405.10938',
+            'from' => 'simple benchmarks and compute',
+            'approach' => 'a latent capability variable regressed onto downstream benchmarks',
+            'relation' => 'the same score-from-scores idea, anchored to compute. benchgap is compute-agnostic, so it also works for models whose training details are unknown.'],
+        ['title' => 'From Benchmarks to Skills: Low-Rank Factors for LLM Evaluation', 'authors' => 'Maimon et al.', 'year' => 2025, 'id' => '2507.20208',
+            'from' => 'a subset of a model\'s scores',
+            'approach' => 'psychometric low-rank factorization; profiling a model from a few tasks',
+            'relation' => 'closest in the fill-the-profile goal, but in latent space. benchgap stays in observable benchmark space and shows the fitted curve for every pair.'],
+        ['title' => 'Efficient Benchmarking Is Just Feature Selection and Multiple Regression', 'authors' => 'Bowyer et al.', 'year' => 2026, 'id' => '2605.25773',
+            'from' => 'a small coreset of benchmark items',
+            'approach' => 'feature selection plus regression to predict full-benchmark scores',
+            'relation' => 'the item-level analogue of the multivariate view\'s elastic net, whose lasso part selects the useful benchmarks.'],
+        ['title' => 'metabench: A Sparse Benchmark of Reasoning and Knowledge in Large Language Models', 'authors' => 'Kipnis et al.', 'year' => 2024, 'id' => '2407.12844',
+            'from' => 'a sparse (~3%) subset of items',
+            'approach' => 'item-level distillation that preserves scores and rankings',
+            'relation' => 'item-level. benchgap works from published aggregate scores, so it needs no access to benchmark items at all.'],
+        ['title' => 'Look Before you Leap: Estimating LLM Benchmark Scores from Descriptions', 'authors' => 'Park et al.', 'year' => 2025, 'id' => '2509.20645',
+            'from' => 'a redacted text description of the task',
+            'approach' => 'an LLM as the regressor (the PRECOG corpus); no evaluation runs at all',
+            'relation' => 'predicts before any evaluation exists; benchgap predicts after a model has some measured scores. Complementary ends of the pipeline.'],
+        ['title' => 'How predictable is language model benchmark performance?', 'authors' => 'Owen', 'year' => 2024, 'id' => '2401.04757',
+            'from' => 'training compute',
+            'approach' => 'empirical analysis of benchmark performance across five orders of magnitude of compute',
+            'relation' => 'a different input: predictability against compute, not scores from scores.'],
+        ['title' => 'How Benchmark Prediction from Fewer Data Misses the Mark', 'authors' => 'Zhang et al.', 'year' => 2025, 'id' => '2506.07673',
+            'from' => null,
+            'approach' => 'a systematic evaluation of 11 score-prediction methods across 19 benchmarks',
+            'relation' => 'the caution this site\'s guardrails are built around: predictors fail on models unlike their calibration set.'],
+        ['title' => 'PredictaBoard: Benchmarking LLM Score Predictability', 'authors' => 'Pacchiardi et al.', 'year' => 2025, 'id' => '2502.14445',
+            'from' => null,
+            'approach' => 'benchmarks score predictability itself, via assessors that anticipate a model\'s errors',
+            'relation' => 'instance-level predictability rather than score-level estimation; a complementary lens on the same uncertainty.'],
+    ];
+
+    /** the multivariate view against the papers above (publications page, HTML paragraphs) */
+    private const MULTIVARIATE_WORK = [
+        'Predicting one benchmark from several others jointly is where benchgap meets the papers above head-on: '
+        . 'BenchPress, Sloth and From Benchmarks to Skills do the same thing through latent factors over the whole score matrix. '
+        . 'The <a href="/multivariate">multivariate view</a> does it with explicit features - the measured benchmarks themselves, '
+        . 'named in every fit - selected per target benchmark.',
+        'The selection echoes Efficient Benchmarking Is Just Feature Selection and Multiple Regression, one level up: '
+        . 'they select items, benchgap selects benchmarks. An elastic net whose lasso part zeroes the useless candidates '
+        . 'runs alongside a greedy forward search trying every one; on the features they find, a linear fit and a '
+        . 'multivariate Michaelis–Menten curve compete by cross-validated error.',
+        'What a joint model has and a per-target fit does not is strength borrowed across all benchmarks at once - '
+        . 'BenchPress finds most of the score matrix is two numbers per model. benchgap trades that for fits a reader can check: '
+        . 'every feature is a real benchmark, and every fit carries its own cross-validated error and a measured-vs-predicted scatter. '
+        . 'These mappings are the deterministic precursor of that joint model: a Bayesian network over benchmark scores, '
+        . 'imputing every gap with one coherent posterior, is where the roadmap points.',
+    ];
+
+    /** what sets benchgap apart from the papers above (publications page, HTML list items) */
+    private const RELATED_WORK = [
+        '<b>Capability gating.</b> A factor model imputes between any two benchmarks. benchgap calibrates only within a capability group, so a model never evaluated on vision keeps that gap instead of inheriting an estimate from text benchmarks.',
+        '<b>No estimate recursion.</b> Every input to an estimate is a measured score; an estimate never feeds another estimate. A factor model completes a matrix that already contains its own outputs.',
+        '<b>Per-cell error.</b> Each estimate carries its own leave-one-out error and confidence level, and a pair whose best curve still fits poorly keeps no mapping at all. The papers above report one aggregate error over held-out cells.',
+        '<b>The shared limit.</b> As How Benchmark Prediction from Fewer Data Misses the Mark shows, every method in this line misestimates models unlike its calibration set. Confidence levels flag the known risk factors - extrapolation, small fits, weak R² - but nothing here detects a genuinely novel model.',
+    ];
+
 
     public function apiPage(): array
     {
@@ -353,8 +501,14 @@ final class Pages
                 . 'and the one with the lowest leave-one-out cross-validated error is kept. That error, in percentage points, is the ± shown with every estimate.',
             "A pair keeps no calibration unless its best curve reaches R² ≥ {$g['min_r2']} and an error of at most {$g['max_loo_pp']} pp; such gaps stay empty.",
             'A missing score is estimated from the best calibration out of a benchmark the model was measured on. Estimates are never used to make further estimates.',
+            'Several same-capability benchmarks may be combined into a multivariate mapping: an elastic net whose lasso zeroes the useless sources or a greedy forward search finds the features, '
+                . 'and then a linear fit and a multivariate Michaelis–Menten curve compete. It is stored only if it passes the gate and beats the target\'s best single calibration, '
+                . 'and preferred for a model measured on all of its sources - a model missing one source falls back to the univariate path.',
+            'Cross-domain predictability and the multivariate view are analyses only: no estimate crosses a capability.',
             "Confidence: <b>high</b> for an error up to {$r['high_max_pp']} pp, <b>medium</b> up to {$r['medium_max_pp']} pp, <b>low</b> above; "
                 . "extrapolation, a fit on fewer than {$r['min_reliable_n']} models or R² below {$r['min_informative_r2']} each lower it by one level.",
+            'The harness tax (see <a href="/harness-tax">/harness-tax</a>) measures how much harnesses disagree about the same models on the same benchmark, from measured scores only; '
+                . 'it never feeds the estimates, and it is why each of them holds for its source harness\'s evaluation setup only.',
             'Estimates are predictions, not measurements, and hold for the source leaderboard\'s evaluation setup only.',
         ];
     }
