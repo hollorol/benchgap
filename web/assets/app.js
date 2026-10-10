@@ -125,20 +125,6 @@ document.addEventListener("click", (e) => {
   go(path);
 });
 
-// a link's page starts loading when the pointer rests on it (or a finger touches it), so most
-// of the wait is over by the click
-let hovered = null;
-function prefetch(path) {
-  const page = path && pageOf(path);
-  if (page) fetchPage(page, argOf(page, path)).catch(() => {});
-}
-document.addEventListener("pointerover", (e) => {
-  clearTimeout(hovered);
-  const path = sitePath(e.target);
-  if (path && path !== location.pathname) hovered = setTimeout(prefetch, 50, path);
-}, { passive: true });
-document.addEventListener("touchstart", (e) => prefetch(sitePath(e.target)), { passive: true });
-
 // links from before pages had their own paths: #/model/x -> /model/x
 if (location.hash.startsWith("#/")) history.replaceState(null, "", "/" + location.hash.slice(2));
 // the first page's code and data load alongside the site's (route() then finds them loading)
