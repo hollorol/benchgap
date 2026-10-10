@@ -167,7 +167,7 @@ export function swap(el, template) {
 }
 
 // scrolls a row of pills (phones only; the site nav up to tablets, as the CSS) so its current one is in the middle
-export const phone = matchMedia("(max-width: 760px)"), pillNav = matchMedia("(max-width: 1000px)");
+export const phone = matchMedia("(max-width: 760px)"), pillNav = matchMedia("(max-width: 1040px)");
 export function centerIn(row, selector, when = phone) {
   const chip = when.matches && row && row.querySelector(selector);
   if (chip) row.scrollLeft += chip.getBoundingClientRect().left - row.getBoundingClientRect().left - (row.clientWidth - chip.offsetWidth) / 2;

@@ -111,8 +111,10 @@ button, input, select { font: inherit; color: inherit; }
 .brand-word em { color: var(--accent); }
 .brand-word.small { font-size: 1.3rem; }
 .nav { display: flex; gap: .2rem; min-width: 0; overflow-x: auto; scrollbar-width: none; }   /* never pushes the tools out */
+/* the nine pages fit beside the brand and the search box, and with the search folded to its button
+   (max-width: 1280px), down to 1041px; below that they are a row of pills */
 .nav a {
-  text-decoration: none; color: var(--muted); padding: .35rem .7rem; border-radius: 999px;
+  text-decoration: none; color: var(--muted); padding: .35rem .5rem; border-radius: 999px;
   font-size: .9rem; font-weight: 500; white-space: nowrap; transition: color .15s, background .15s;
 }
 .nav a:hover { color: var(--ink); }
@@ -124,7 +126,7 @@ button, input, select { font: inherit; color: inherit; }
 /* search: the box widens while in use; results open in a panel under it */
 .search { position: relative; }
 .search input {
-  width: 240px; height: 34px; padding: 0 .8rem; border-radius: 999px;
+  width: 220px; height: 34px; padding: 0 .8rem; border-radius: 999px;
   border: 1px solid var(--rule-strong); background: var(--card); font-size: .85rem;
   transition: width .2s cubic-bezier(.2, .7, .2, 1), border-color .15s;
 }
@@ -176,7 +178,6 @@ button, input, select { font: inherit; color: inherit; }
 .search-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 @media (max-width: 1280px) {
   .topbar-in { position: relative; gap: .8rem; }
-  .nav a { padding-inline: .5rem; }   /* with the search folded to its button, the eight pages fit beside the brand down to 1001px */
   .search { display: none; }
   .search-btn { display: grid; }
   .topbar.searching .search {
@@ -190,7 +191,7 @@ button, input, select { font: inherit; color: inherit; }
   .search-types button { height: 36px; }
 }
 /* phones and tablets: the pages become a swipeable row of pills under the brand */
-@media (max-width: 1000px) {
+@media (max-width: 1040px) {
   .topbar-in { height: auto; flex-wrap: wrap; padding-block: 6px 8px; gap: 6px; }
   .brand-mark { width: 24px; height: 24px; }
   .nav { order: 3; width: calc(100% + 2 * var(--gutter)); margin-inline: calc(-1 * var(--gutter)); padding-inline: var(--gutter); gap: 4px; overflow-x: auto; scrollbar-width: none; }
