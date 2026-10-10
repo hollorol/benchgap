@@ -162,7 +162,8 @@ final class Site
     /**
      * The model-compare view's numbers: every model's general performance (the mean
      * percentile of its measured scores across the listed benchmarks) as [model, general,
-     * n], strongest first, and the frontier (its top tenth among dense models). Measured
+     * n, the benchmarks it stands on], strongest first, and the frontier (its top tenth among
+     * dense models). Measured
      * scores only; never used for estimates.
      */
     public function compare(): array

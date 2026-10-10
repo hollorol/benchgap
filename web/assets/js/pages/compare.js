@@ -5,9 +5,13 @@ import { hideTip } from "../tip.js";
 import { fold, ranked, mark, listbox } from "../search.js";
 import { dot, pageHead, legend, seg, showSeg, fresh, renderNotFound } from "../ui.js";
 
+// a model below the frontier is held against the frontier models sharing at least this share of the
+// most measured benchmarks any of them shares with it (Compare::SHARED_FLOOR)
+const SHARED_FLOOR = 2 / 3;
 // the page's lede (Pages::COMPARE_INTRO)
 const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. "
-  + "Pick two models, or one and the frontier model closest to it in general performance.";
+  + "Pick two models, or one and the frontier model to hold it against: its closest rival in general performance, "
+  + "or for a model below the frontier the closest of the frontier models it shares the most benchmarks with.";
 const GENERAL_TIP = "General performance: the mean percentile of a model's measured scores across the listed benchmarks. "
   + "The frontier is its strongest tenth. Measured scores only.";
 const cmpHref = (a, b, from) =>
@@ -21,28 +25,36 @@ let page = null;   // the open pair: its models, how B was chosen, the standings
 let open = null;   // the capabilities opened (ids); null: the one with the most benchmarks in common
 
 // data: every model's general performance and the frontier (data/compare.json, Compare.php):
-// general is the mean percentile of a model's measured scores across the listed benchmarks,
-// the frontier is its strongest tenth. Two models (/compare/<a>/<b>), or one model (/compare/<a>)
-// and the frontier model closest to it - of one provider (/compare/<a>/from/<p>), or of any - a
-// pick that follows the field. Returns true when the page was already open (only the pair changed).
+// general is the mean percentile of a model's measured scores across the listed benchmarks (and
+// the benchmarks it stands on), the frontier is its strongest tenth. Two models (/compare/<a>/<b>),
+// or one model (/compare/<a>) and the frontier model to hold it against - of one provider
+// (/compare/<a>/from/<p>), or of any - a pick that follows the field. Returns true when the page was already open (only the pair changed).
 // The models' scores load after; the signal drops them if another page or pair was opened meanwhile.
 export function renderCompare(data, arg, signal) {
   const parts = location.pathname.split("/").slice(2).filter(Boolean).map(decodeURIComponent);
-  const general = new Map(data.compare.general.map(([id, g, n]) => [id, { g, n }]));   // by model id
+  const general = new Map(data.compare.general.map(([id, g, n, on]) => [id, { g, n, on }]));   // by model id
   const rankOf = new Map(data.compare.general.map(([id], i) => [id, i + 1]));          // strongest first
   const frontier = data.compare.frontier.filter(([id]) => ix.model.has(id));          // strongest first
-  // the frontier model closest in general performance to m (never m itself), of one provider or
-  // of any; a provider with no frontier model of its own falls back to the whole frontier
-  const closestFrontier = (m, provider) => {
-    const pool = provider && provider !== "any" ? frontier.filter((f) => ix.model.get(f[0]).provider === provider) : frontier;
+  const isFrontier = new Set(frontier.map(([id]) => id));
+  // the frontier model to hold m against (never m itself), of one provider or of any (a provider
+  // with no frontier model of its own: any): a frontier model's closest rival in general
+  // performance; for a model below the frontier, the closest of those it shares at least
+  // SHARED_FLOOR of the most measured benchmarks with (none shared: the closest of all); for a
+  // model with no standing, the strongest (as Compare::pick)
+  const frontierPick = (m, provider) => {
+    const others = frontier.filter(([id]) => id !== m.id);
+    const own = others.filter(([id]) => ix.model.get(id).provider === provider);
+    let pool = own.length ? own : others;
     const t = general.get(m.id);
-    let best = null, bestD = Infinity;
-    for (const f of pool) {
-      if (f[0] === m.id) continue;
-      if (t && Math.abs(f[1] - t.g) < bestD) { bestD = Math.abs(f[1] - t.g); best = f; }
-      if (best === null) best = f;   // m has no standing: the strongest of the pool
+    if (!pool.length || !t) return pool.length ? ix.model.get(pool[0][0]) : null;
+    if (!isFrontier.has(m.id)) {
+      const mine = new Set(t.on), shared = pool.map(([, , , on]) => on.filter((b) => mine.has(b)).length);
+      const floor = SHARED_FLOOR * Math.max(...shared);
+      pool = pool.filter((f, i) => shared[i] >= floor);
     }
-    return best ? ix.model.get(best[0]) : (pool !== frontier ? closestFrontier(m, "any") : null);
+    let best = pool[0];
+    for (const f of pool) if (Math.abs(f[1] - t.g) < Math.abs(best[1] - t.g)) best = f;
+    return ix.model.get(best[0]);
   };
   const fromParts = parts[1] === "from" ? (parts[2] || "any") : null;
   const auto = parts.length < 2 || fromParts !== null;   // /compare, /compare/<a> and /compare/<a>/from/<p>
@@ -54,7 +66,7 @@ export function renderCompare(data, arg, signal) {
   if (!auto && parts[1] && !B) return renderNotFound(`No model “${parts[1]}”.`);
   if (A && B && A.id === B.id) return renderNotFound("Pick two different models to compare.");
   if (!A) A = ix.listedModels[0] || null;
-  if (!B && auto) B = A && closestFrontier(A, from);
+  if (!B && auto) B = A && frontierPick(A, from);
   if (!A || !B) return renderNotFound("Nothing to compare: no models with scores.");
   setMeta(parts.length ? `${A.name} vs ${B.name} benchmark scores` : "Compare two LLM models",
     `Compare two LLM models benchmark by benchmark: ${A.name} vs ${B.name}, measured scores and estimates side by side.`,
@@ -66,7 +78,7 @@ export function renderCompare(data, arg, signal) {
   const frontierProviders = [...new Set(frontier.map(([id]) => ix.model.get(id).provider))]
     .sort((x, y) => providerLabel(x).localeCompare(providerLabel(y)));
   const prev = page && (page.sa ? page : page.prev);
-  page = { prev: inPlace ? prev : null, A, B, auto, from, general, rankOf, nStanding: data.compare.general.length, isFrontier: new Set(frontier.map(([id]) => id)), frontierProviders, sa: null, sb: null, failed: false };
+  page = { prev: inPlace ? prev : null, A, B, auto, from, general, rankOf, nStanding: data.compare.general.length, isFrontier, frontierProviders, sa: null, sb: null, failed: false };
   draw();
 
   // both models' scores load in (cached by the model pages' own visits); the body draws when they are in
@@ -177,18 +189,28 @@ const picker = (which) => html`<div class="search-pop cmp-pop" ${ref(panelIn)} @
     <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> pick · <kbd>Esc</kbd> close</p>
   </div>`;
 
+// why B was picked for A (frontierPick)
+function pickReason({ A, B, from, general, isFrontier }) {
+  const of = from !== "any" && B.provider === from ? `of ${providerLabel(from)} ` : "";
+  const gA = general.get(A.id);
+  if (!gA) return `the strongest frontier model ${of}(${A.name} has no measured standing)`;
+  if (isFrontier.has(A.id)) return `the frontier model ${of}closest to ${A.name}`;
+  const mine = new Set(gA.on), n = general.get(B.id).on.filter((b) => mine.has(b)).length;
+  return n ? `the frontier model ${of}closest to ${A.name} of those measured on the most benchmarks with it (${n} shared)`
+    : `the frontier model ${of}closest to ${A.name}; none shares a measured benchmark with it`;
+}
+
 // one model's card: its picker (a face that opens a box to type in) and its standing; B's also
 // says how it was chosen
 function slot(p, which) {
   const { A, B, auto, from } = p;
   const m = which === "A" ? A : B;
   const g = p.general.get(m.id);
-  const sub = which === "B" && auto
-    ? `Picked for you: the frontier model ${from !== "any" && B.provider === from ? `of ${providerLabel(from)} ` : ""}closest to ${A.name}`
+  const sub = which === "B" && auto ? `Picked for you: ${pickReason(p)}`
     : `${providerLabel(m.provider)} · ${m.n_measured} measured · ${m.n_estimated} estimated`;
   return html`<div class="card cmp-slot">
       <div class="cmp-slot-head"><span class="ctl-label">Model ${which}</span>${which === "B"
-        ? seg("How model B is chosen", [["frontier", "Closest frontier"], ["pick", "Pick a model"]], auto ? "frontier" : "pick",
+        ? seg("How model B is chosen", [["frontier", "Frontier match"], ["pick", "Pick a model"]], auto ? "frontier" : "pick",
           (k) => go(k === "frontier" ? cmpHref(A.slug, null, "any") : cmpHref(A.slug, B.slug)))
         : nothing}</div>
       <div class="cmp-picker">

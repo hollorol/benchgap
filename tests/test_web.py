@@ -277,15 +277,16 @@ def test_page_data_slices_the_site_data(server):
             per_bench.setdefault(s["b"], []).append(s["v"])
     for vs in per_bench.values():
         vs.sort()
-    sums, ns = {}, {}
+    sums, ns, on = {}, {}, {}
     for s in scores:
         if s["s"] != "m" or s["b"] not in listed or len(per_bench[s["b"]]) < 2:
             continue
         p = bisect.bisect_left(per_bench[s["b"]], s["v"]) / (len(per_bench[s["b"]]) - 1)
         sums[s["m"]] = sums.get(s["m"], 0.0) + p
         ns[s["m"]] = ns.get(s["m"], 0) + 1
+        on.setdefault(s["m"], []).append(s["b"])
     general = sorted(
-        ([m, round(sums[m] / ns[m], 4), ns[m]] for m in ns), key=lambda r: (-r[1], -r[2], r[0])
+        ([m, round(sums[m] / ns[m], 4), ns[m], sorted(on[m])] for m in ns), key=lambda r: (-r[1], -r[2], r[0])
     )
     dense = {m["id"] for m in whole["models"] if m["dense"]}
     frontier = [g for g in general if g[0] in dense][: max(1, math.ceil(len([g for g in general if g[0] in dense]) / 10))]
@@ -394,22 +395,43 @@ def test_pages_and_sitemap(server):
     _, board = get(server, "/b/aa-terminal-bench21/current")
     assert "the highest measured score on AA Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]
     assert model["page"] == f"https://benchgap.net/model/{model['slug']}"
-    # the compare pages: a pair, and one model with its closest frontier model picked for it
+    # the compare pages: a pair, and one model with the frontier model to hold it against picked for it
+    # (Compare::pick): a frontier model's closest rival; for one below the frontier, the closest of the
+    # frontier models sharing at least 2/3 of the most benchmarks any shares with it; the strongest for
+    # one with no standing
+    compare = get_json(server, "/data/compare.json")["compare"]
+    site = get_json(server, "/data/site.json")
+    by_id = {m["id"]: m for m in site["models"]}
+    by_slug = {m["slug"]: m for m in site["models"]}
+    standing = {r[0]: r for r in compare["general"]}
+
+    def pick(slug, provider=None):
+        a = by_slug[slug]["id"]
+        others = [f for f in compare["frontier"] if f[0] != a]
+        pool = [f for f in others if by_id[f[0]]["provider"] == provider] or others
+        if a not in standing:
+            return by_id[pool[0][0]]
+        if len(others) == len(compare["frontier"]):
+            shared = [len(set(standing[a][3]) & set(f[3])) for f in pool]
+            pool = [f for f, n in zip(pool, shared) if n >= 2 / 3 * max(shared)]
+        return by_id[min(pool, key=lambda f: abs(f[1] - standing[a][1]))[0]]
+
+    assert compare["frontier"]
+    below = next(r for r in reversed(compare["general"]) if r[0] not in {f[0] for f in compare["frontier"]})
+    for slug in (model["slug"], by_id[compare["frontier"][0][0]]["slug"], by_id[below[0]]["slug"]):
+        _, auto = get(server, f"/compare/{slug}")
+        assert f"<title>{by_slug[slug]['name']} vs {pick(slug)['name']} benchmark scores · benchgap</title>" in auto
+        assert "is the frontier model" in auto or "is the strongest frontier model" in auto
     pair_model = get_json(server, "/api/v1/models.json")["models"][1]
     _, pair = get(server, f"/compare/{model['slug']}/{pair_model['slug']}")
     assert f"<title>{model['name']} vs {pair_model['name']} benchmark scores · benchgap</title>" in pair
     assert '<meta name="robots" content="noindex">' in pair and "mean percentile of a model" in pair
-    _, auto = get(server, f"/compare/{model['slug']}")
-    assert "is the frontier model closest to" in auto
     assert '<link rel="canonical" href="https://benchgap.net/compare">' in get(server, "/compare")[1]
-    # the closest frontier model of one provider (a provider that has one)
-    compare = get_json(server, "/data/compare.json")["compare"]
-    site = get_json(server, "/data/site.json")
-    by_id = {m["id"]: m for m in site["models"]}
-    assert compare["frontier"]
+    # the frontier model of one provider (a provider that has one)
     provider = by_id[compare["frontier"][0][0]]["provider"]
     _, scoped = get(server, f"/compare/{model['slug']}/from/{provider}")
-    assert "rank #" in scoped and ("is the frontier model of" in scoped or "is the frontier model closest to" in scoped)
+    assert "rank #" in scoped
+    assert f"<title>{model['name']} vs {pick(model['slug'], provider)['name']} benchmark scores · benchgap</title>" in scoped
     for path in ["/b/no-such/benchmark", "/model/no-such-model", "/calibration/999999", "/no-such-page",
                  "/compare/no-such-model", f"/compare/{model['slug']}/{model['slug']}",
                  f"/compare/{model['slug']}/from/no-such-provider"]:

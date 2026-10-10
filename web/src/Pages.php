@@ -27,12 +27,13 @@ final class Pages
         . 'listed benchmarks; the frontier is its strongest tenth. Measured scores only - never estimates.';
     // the compare page's lede (js/pages/compare.js LEDE); the definition above rides along on the pair pages
     private const COMPARE_INTRO = 'Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. '
-        . 'Pick two models, or one and the frontier model closest to it in general performance.';
+        . 'Pick two models, or one and the frontier model to hold it against: its closest rival in general performance, '
+        . 'or for a model below the frontier the closest of the frontier models it shares the most benchmarks with.';
     // the pages besides those of each benchmark, model and calibration: title and summary for llms.txt
     private const PAGES = [
         '/' => ['Leaderboard', 'one benchmark at a time, measured and estimated scores ranked together'],
         '/matrix' => ['Score matrix', 'every model on every benchmark'],
-        '/compare' => ['Compare', 'two models side by side on every benchmark, or one against the closest frontier model'],
+        '/compare' => ['Compare', 'two models side by side on every benchmark, or one against a frontier model picked for it'],
         '/calibration' => ['Calibration', 'which benchmarks predict which, and how well'],
         '/multivariate' => ['Multivariate', 'each benchmark predicted from several others together, with every model\'s cross-validated prediction'],
         '/harness-tax' => ['Harness tax', 'how much harnesses disagree about the same models on the same benchmark, measured scores only'],
@@ -214,8 +215,8 @@ final class Pages
     /**
      * The compare page's pair summary (app.js renders the interactive page): the two
      * models' scores on the benchmarks both have one, and their standings. One model
-     * (or none) picks the frontier model closest to it - of one provider, or of any;
-     * a named pair stays a pair.
+     * (or none) picks the frontier model to hold it against (Compare::pick) - of one
+     * provider, or of any; a named pair stays a pair.
      */
     public function compare(?string $a = null, ?string $b = null, ?string $from = null): ?array
     {
@@ -238,12 +239,12 @@ final class Pages
                 $f['n'],
             ], $doc['frontier']);
             return $this->result('Compare two LLM models',
-                'Compare two LLM models benchmark by benchmark: measured scores and estimates side by side, or one against the closest frontier model.',
+                'Compare two LLM models benchmark by benchmark: measured scores and estimates side by side, or one against a frontier model picked for it.',
                 '/compare',
                 $this->header('Model compare', 'Two models, head to head', '<p class="lede">' . self::esc(self::COMPARE_INTRO) . '</p>')
                 . $this->table(['Frontier model', 'General performance', 'Measured on'], $rows)
                 . '<p class="muted">Pick two models on the <a href="/compare">interactive page</a>, or one and '
-                    . 'the closest frontier model is chosen for it - of one provider, or of any.</p>');
+                    . 'a frontier model is picked for it - of one provider, or of any.</p>');
         }
         $ma = $this->models[$a];
         $auto = $b === null;
@@ -254,7 +255,7 @@ final class Pages
             return null;
         }
         if ($auto) {
-            $b = Compare::closest($doc['frontier'], $general[$a]['general'] ?? null, $a, $from)['slug'] ?? null;
+            $b = Compare::pick($doc['frontier'], $a, $general[$a] ?? null, $from)['slug'] ?? null;
         }
         if ($b === null || $b === $a) {
             return null;
@@ -285,12 +286,21 @@ final class Pages
         ], array_keys($shared));
         $pick = '';
         if ($auto) {
-            $pick = ' <b>' . self::esc($mb['name']) . '</b> is the frontier model '
-                . ($from !== null && $mb['provider'] === $from ? 'of ' . self::esc($mb['provider_name']) . ' ' : '')
-                . 'closest to <b>' . self::esc($ma['name']) . '</b> in general performance';
+            $of = $from !== null && $mb['provider'] === $from ? 'of ' . self::esc($mb['provider_name']) . ' ' : '';
+            $nameA = '<b>' . self::esc($ma['name']) . '</b>';
+            $shared = isset($general[$a]) ? count(array_intersect($general[$a]['benchmarks'], $general[$b]['benchmarks'])) : 0;
+            $pick = ' <b>' . self::esc($mb['name']) . '</b> is ' . match (true) {
+                !isset($general[$a]) => "the strongest frontier model $of($nameA has no measured standing)",
+                isset($frontier[$a]) => "the frontier model {$of}closest to $nameA in general performance",
+                $shared > 0 => "the frontier model {$of}closest to $nameA in general performance of those measured on the most benchmarks with it ($shared shared)",
+                default => "the frontier model {$of}closest to $nameA in general performance",
+            };
             if (isset($general[$a], $general[$b])) {
                 $gap = ($general[$b]['general'] - $general[$a]['general']) * 100;
                 $pick .= $gap === 0.0 ? ' (even with it)' : sprintf(' (%.1f points %s)', abs($gap), $gap > 0 ? 'ahead of it' : 'behind it');
+            }
+            if (isset($general[$a]) && !isset($frontier[$a]) && $shared === 0) {
+                $pick .= ' - no frontier model shares a measured benchmark with it';
             }
             $pick .= '; the interactive page follows it as the field moves.';
         }

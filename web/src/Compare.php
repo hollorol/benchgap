@@ -16,12 +16,22 @@ namespace Benchgap;
  *
  * The frontier is the top tenth of the dense models (Snapshot::DENSE) by
  * general performance - the strongest field a model can reasonably be held
- * against - and the closest frontier model of one is the frontier model whose
- * general performance differs from it the least, itself excepted.
+ * against. The frontier model one is held against (pick()) is, for a frontier
+ * model, its closest rival in general performance; for a model below the
+ * frontier, the closest of the frontier models it shares the most measured
+ * benchmarks with (at least two thirds as many as the best-covered one) - the
+ * closest of all would be the same weakest frontier model for most of them.
  */
 final class Compare
 {
-    /** The compare document of a snapshot: general performance per model, and the frontier. */
+    // a model below the frontier is held against the frontier models sharing at least this share
+    // of the most measured benchmarks any of them shares with it (as SHARED_FLOOR, compare.js)
+    public const SHARED_FLOOR = 2 / 3;
+
+    /**
+     * The compare document of a snapshot: general performance per model, as [model, general,
+     * n, the benchmarks (ids) it stands on], strongest first, and the frontier (the same rows).
+     */
     public static function compute(array $data): array
     {
         $listed = array_fill_keys(array_column(array_filter($data['benchmarks'], fn ($b) => $b['listed']), 'id'), true);
@@ -58,6 +68,7 @@ final class Compare
 
         $sum = [];
         $n = [];
+        $on = [];   // model id => the benchmarks it stands on
         foreach ($data['scores'] as $s) {
             if ($s['s'] !== 'm' || !isset($listed[$s['b']])) {
                 continue;
@@ -68,10 +79,12 @@ final class Compare
             }
             $sum[$s['m']] = ($sum[$s['m']] ?? 0) + $p;
             $n[$s['m']] = ($n[$s['m']] ?? 0) + 1;
+            $on[$s['m']][] = $s['b'];
         }
         $general = [];
         foreach ($n as $m => $count) {
-            $general[] = [(int) $m, round($sum[$m] / $count, 4), $count];
+            sort($on[$m]);
+            $general[] = [(int) $m, round($sum[$m] / $count, 4), $count, $on[$m]];
         }
         usort($general, fn ($x, $y) => $y[1] <=> $x[1] ?: $y[2] <=> $x[2] ?: $x[0] <=> $y[0]);
 
@@ -82,29 +95,33 @@ final class Compare
     }
 
     /**
-     * The frontier model closest in general performance to $target (a model's general
-     * score), the model $excludeSlug itself excepted: of $provider's frontier models, or
-     * of the whole frontier when it has none (or $provider is null); with no $target (a
-     * model with no standing), the strongest of them. Null if there is none. $frontier
-     * holds the rows Api::compare() shapes (with 'slug', 'provider' and 'general'),
-     * strongest first; ties keep the stronger row. (As closestFrontier, assets/js/pages/compare.js)
+     * The frontier model model $slug is held against, itself excepted: of $provider's frontier
+     * models, or of the whole frontier when it has none (or $provider is null). A frontier
+     * model gets its closest rival in general performance; a model below the frontier the
+     * closest of those it shares at least two thirds as many measured benchmarks with as the
+     * best-covered one (SHARED_FLOOR; none shared: the closest of all); $model null (a model
+     * with no standing) the strongest. Null if there is none. $frontier and $model are rows Api::compare() shapes (with 'slug', 'provider',
+     * 'general' and 'benchmarks'), the frontier strongest first; ties keep the stronger row.
+     * (As frontierPick, assets/js/pages/compare.js)
      */
-    public static function closest(array $frontier, ?float $target, string $excludeSlug, ?string $provider = null): ?array
+    public static function pick(array $frontier, string $slug, ?array $model, ?string $provider = null): ?array
     {
-        if ($provider !== null) {
-            return self::closest(array_filter($frontier, fn ($f) => $f['provider'] === $provider), $target, $excludeSlug)
-                ?? self::closest($frontier, $target, $excludeSlug);
+        $others = array_values(array_filter($frontier, fn ($f) => $f['slug'] !== $slug));
+        $own = array_values(array_filter($others, fn ($f) => $f['provider'] === $provider));
+        $pool = $own ?: $others;
+        if (!$pool || $model === null) {
+            return $pool[0] ?? null;
         }
-        $best = null;
-        $bestD = null;
-        foreach ($frontier as $f) {
-            if ($f['slug'] === $excludeSlug) {
-                continue;
-            }
-            $d = $target === null ? 0 : abs($f['general'] - $target);
-            if ($best === null || $d < $bestD) {
+        if (count($others) === count($frontier)) {   // below the frontier: of the best-covered ones
+            $mine = array_flip($model['benchmarks']);
+            $shared = array_map(fn ($f) => count(array_intersect_key(array_flip($f['benchmarks']), $mine)), $pool);
+            $floor = self::SHARED_FLOOR * max($shared);
+            $pool = array_values(array_filter($pool, fn ($f, $i) => $shared[$i] >= $floor, ARRAY_FILTER_USE_BOTH));
+        }
+        $best = $pool[0];
+        foreach ($pool as $f) {
+            if (abs($f['general'] - $model['general']) < abs($best['general'] - $model['general'])) {
                 $best = $f;
-                $bestD = $d;
             }
         }
         return $best;

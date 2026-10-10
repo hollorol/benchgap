@@ -165,6 +165,7 @@ final class Api
             'provider' => $this->model[$r[0]]['provider'],
             'general' => $r[1],
             'n' => $r[2],
+            'benchmarks' => $r[3],
         ], $rows);
         return ['general' => $shape($doc['general']), 'frontier' => $shape($doc['frontier'])];
     }
