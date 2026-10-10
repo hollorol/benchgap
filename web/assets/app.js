@@ -37,12 +37,13 @@ const lazy = (importer) => {
 const board = lazy(() => import("./js/pages/board.js"));
 const calibration = lazy(() => import("./js/pages/calibration.js"));
 // the site's pages (keep in step with serve.php): path, nav item, module (code), its renderer
-// (render) and the URL of the page's data (none: the page needs only site.json). A renderer gets
-// the data and the path's argument, sets the page's meta and returns true if it updated the page
-// in place; its data is null if the server has none for the argument (404)
+// (render), the URL of the page's data (none: the page needs only site.json) and the part of it
+// drawn again in place when it is open already (busy, dimmed while the next data loads). A renderer
+// gets the data and the path's argument, sets the page's meta and returns true if it updated the
+// page in place; its data is null if the server has none for the argument (404)
 const PAGES = [
-  { re: /^\/$/, nav: "board", code: board, render: "renderBoard", data: () => "/data/home.json" },
-  { re: /^\/b\/(.+)$/, nav: "board", code: board, render: "renderBoard", data: boardUrl },
+  { re: /^\/$/, nav: "board", code: board, render: "renderBoard", data: () => "/data/home.json", busy: "#board-sec" },
+  { re: /^\/b\/(.+)$/, nav: "board", code: board, render: "renderBoard", data: boardUrl, busy: "#board-sec" },
   { re: /^\/model\/(.+)$/, nav: "", code: lazy(() => import("./js/pages/model.js")), render: "renderModel", data: modelUrl },
   { re: /^\/matrix$/, nav: "matrix", code: lazy(() => import("./js/pages/matrix.js")), render: "renderMatrix", data: () => "/data/matrix.json" },
   { re: /^\/compare(?:\/.*)?$/, nav: "compare", code: lazy(() => import("./js/pages/compare.js")), render: "renderCompare", data: () => "/data/compare.json" },
@@ -64,6 +65,20 @@ const fetchPage = (page, arg) => Promise.all([
 
 let shownPath = null;   // the path the page was last rendered (or is being loaded) for
 const scrollToHash = () => { const el = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1))); if (el) el.scrollIntoView(); return !!el; };
+// the links to the page being opened are current at once, not when its data is in: its nav item,
+// and the page's own links that mark one current (the leaderboard's benchmarks)
+function markCurrent(nav, path) {
+  document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+  centerIn($(".nav"), '[aria-current="page"]', pillNav);
+  main.querySelectorAll("a[aria-current]").forEach((a) => a.setAttribute("aria-current", String(a.pathname === path)));
+}
+// what is dimmed while the page being opened loads: one thing at a time, a newer route's taking over
+let busy = null;
+function setBusy(el) {
+  if (busy) busy.removeAttribute("aria-busy");
+  busy = el;
+  if (el) el.setAttribute("aria-busy", "true");
+}
 async function route() {
   hideTip();
   const path = location.pathname;
@@ -71,27 +86,26 @@ async function route() {
   shownPath = path;
   const page = pageOf(path);
   const arg = page ? argOf(page, path) : "";
+  markCurrent(page ? page.nav : "", path);
   let module = null, data = null;
   if (page) {
-    // the current page stays (dimmed if it takes a moment) until the new one's code and data are in
-    main.setAttribute("aria-busy", "true");
+    // the current page stays until the new one's code and data are in: dimmed if it takes a
+    // moment, or, open already, only its part drawn again, dimmed at once
+    setBusy((page.busy && main.querySelector(page.busy)) || main);
     try {
       [module, data] = await fetchPage(page, arg);
     } catch (err) {
       if (shownPath !== path) return;   // another page was opened meanwhile
       shownPath = null;
-      main.removeAttribute("aria-busy");
+      setBusy(null);
       // a page's code from before the site was updated is gone: load the page anew
       if (err.code && drawn) return location.reload();
       return renderError(err);
     }
     if (shownPath !== path) return;
-    main.removeAttribute("aria-busy");
   }
-  const nav = page ? page.nav : "";
+  setBusy(null);
   const inPlace = page ? module[page.render](data, arg) : renderNotFound("Page not found.");
-  document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === nav ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-  centerIn($(".nav"), '[aria-current="page"]', pillNav);
   if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
 }
 

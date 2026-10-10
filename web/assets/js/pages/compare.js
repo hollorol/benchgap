@@ -3,7 +3,7 @@ import { html, nothing, repeat, render, ref } from "../vendor/lit-html.js";
 import { D, ix, $, pct, prefs, load, modelUrl, remember, visible, benchHref, setMeta, show, go } from "../core.js";
 import { hideTip } from "../tip.js";
 import { fold, ranked, mark } from "../search.js";
-import { dot, pageHead, legend, seg, showSeg, renderNotFound } from "../ui.js";
+import { dot, pageHead, legend, seg, showSeg, fresh, renderNotFound } from "../ui.js";
 
 // the page's lede (Pages::COMPARE_INTRO)
 const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. "
@@ -13,8 +13,6 @@ const GENERAL_TIP = "General performance: the mean percentile of a model's measu
 const cmpHref = (a, b, from) =>
   `/compare/${encodeURIComponent(a)}${b ? "/" + encodeURIComponent(b) : (from && from !== "any" ? "/from/" + encodeURIComponent(from) : "")}`;
 const providerName = (p) => D.meta.providers[p] || p;
-// tpl in a new element whenever key changes, so it plays its entrance (.cmp-fresh) for the new value
-const fresh = (key, tpl) => repeat([key], (k) => k, () => tpl);
 
 let page = null;   // the open pair: its models, how B was chosen, the standings and both models' scores
                   // (and .prev, the pair shown, dimmed, until they are in)
@@ -203,15 +201,15 @@ function slot(p, which) {
         <button type="button" class="cmp-face" id="cmp-face-${which}" aria-haspopup="listbox" aria-expanded="${picking?.which === which}"
           aria-label="Model ${which}: ${m.name}. Change" @click=${() => (picking?.which === which ? closePicker(false) : openPicker(which))}>
           <span class="dot" data-p="${m.provider}" aria-hidden="true"></span>
-          <span class="cmp-picked">${fresh(m.id, html`<span class="cmp-name cmp-fresh">${m.name}</span>`)}${fresh(sub, html`<span class="cmp-sub cmp-fresh">${sub}</span>`)}</span>
+          <span class="cmp-picked">${fresh(m.id, html`<span class="cmp-name fresh">${m.name}</span>`)}${fresh(sub, html`<span class="cmp-sub fresh">${sub}</span>`)}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         </button>
         ${picking?.which === which ? picker(which) : nothing}
       </div>
       <dl class="kv">
         <dt><span data-tiptext="${GENERAL_TIP}" tabindex="0">general ⓘ</span></dt>
-        <dd>${fresh(m.id, html`<span class="cmp-fresh">${g ? pct(g.g) : "—"}${p.isFrontier.has(m.id) ? html` <span class="flag high">frontier</span>` : nothing}</span>`)}</dd>
-        <dt>rank</dt><dd>${fresh(m.id, html`<span class="cmp-fresh">${g ? `#${p.rankOf.get(m.id)} of ${p.nStanding}` : "no measured standing"}</span>`)}</dd>
+        <dd>${fresh(m.id, html`<span class="fresh">${g ? pct(g.g) : "—"}${p.isFrontier.has(m.id) ? html` <span class="flag high">frontier</span>` : nothing}</span>`)}</dd>
+        <dt>rank</dt><dd>${fresh(m.id, html`<span class="fresh">${g ? `#${p.rankOf.get(m.id)} of ${p.nStanding}` : "no measured standing"}</span>`)}</dd>
       </dl>
       ${which === "B" ? html`<div class="cmp-from-fold${auto ? "" : " closed"}" ?inert=${!auto}><div><div class="cmp-from">
           <label class="ctl-label" for="cmp-from">Frontier of</label>
@@ -267,7 +265,7 @@ function body(p) {
   return html`
     <div class="controls cmp-show">${showSeg(() => { hideTip(); draw(); })}</div>
     <section class="cmp-verdict" aria-label="Verdict">
-      ${fresh(`${A.id}:${B.id}:${prefs.show}:${detail}`, html`<div class="cmp-fresh"><p class="say">${say}</p><p class="muted">${detail}</p></div>`)}
+      ${fresh(`${A.id}:${B.id}:${prefs.show}:${detail}`, html`<div class="fresh"><p class="say">${say}</p><p class="muted">${detail}</p></div>`)}
       ${n ? split(A, B, tally, n) : nothing}
     </section>
     <section class="cmp-sec">
@@ -297,9 +295,9 @@ function split(A, B, t, n) {
 
 // the column heads over the mirrored bars (on phones: which bar is whose)
 const flyHead = (A, B) => html`<div class="fly fly-head">
-    <span class="ha">${fresh(A.id, html`<span class="cmp-fresh">${A.name}</span>`)} <span class="dot" data-p="${A.provider}" aria-hidden="true"></span></span>
+    <span class="ha">${fresh(A.id, html`<span class="fresh">${A.name}</span>`)} <span class="dot" data-p="${A.provider}" aria-hidden="true"></span></span>
     <span class="hn">benchmark · gap</span>
-    <span class="hb"><span class="dot" data-p="${B.provider}" aria-hidden="true"></span> ${fresh(B.id, html`<span class="cmp-fresh">${B.name}</span>`)}</span>
+    <span class="hb"><span class="dot" data-p="${B.provider}" aria-hidden="true"></span> ${fresh(B.id, html`<span class="fresh">${B.name}</span>`)}</span>
     <span class="hp">Top bar: ${A.name} · bottom bar: ${B.name}</span>
   </div>`;
 
@@ -310,14 +308,14 @@ function fly(b, x, y, A, B) {
   const est = (x && x.s === "e") || (y && y.s === "e");
   const bar = (s) => (s ? html`<span class="bar ${s.s === "e" ? "e " + s.tier : "m"}" style="width:${Math.min(100, s.v * 100)}%"></span>` : nothing);
   const val = (s, m, side) => (s
-    ? html`<div class="fv ${side}${s.s === "e" ? " est" : ""}" data-tip="${m.id}:${b.id}" tabindex="0">${fresh(`${s.s}${s.v}`, html`<span class="cmp-fresh">${s.s === "e" ? "≈" : ""}${pct(s.v)}%</span>`)}</div>`
+    ? html`<div class="fv ${side}${s.s === "e" ? " est" : ""}" data-tip="${m.id}:${b.id}" tabindex="0">${fresh(`${s.s}${s.v}`, html`<span class="fresh">${s.s === "e" ? "≈" : ""}${pct(s.v)}%</span>`)}</div>`
     : html`<div class="fv ${side} none">—</div>`);
   let delta;
-  if (d === null) delta = html`<span class="fd est cmp-fresh">one side only</span>`;
-  else if (Math.abs(d) < 0.05) delta = html`<span class="fd cmp-fresh">even</span>`;
+  if (d === null) delta = html`<span class="fd est fresh">one side only</span>`;
+  else if (Math.abs(d) < 0.05) delta = html`<span class="fd fresh">even</span>`;
   else {
     const lead = d > 0 ? A : B, num = `${est ? "≈" : ""}${Math.abs(d).toFixed(1)}`;
-    delta = html`<span class="fd cmp-fresh${est ? " est" : ""}"><span class="to-a" aria-hidden="true">${d > 0 ? "◀ " : ""}</span><span class="dot" data-p="${lead.provider}" aria-hidden="true"></span>${num}<span class="to-b" aria-hidden="true">${d < 0 ? " ▶" : ""}</span><span class="sr"> pp, ${lead.name} ahead</span></span>`;
+    delta = html`<span class="fd fresh${est ? " est" : ""}"><span class="to-a" aria-hidden="true">${d > 0 ? "◀ " : ""}</span><span class="dot" data-p="${lead.provider}" aria-hidden="true"></span>${num}<span class="to-b" aria-hidden="true">${d < 0 ? " ▶" : ""}</span><span class="sr"> pp, ${lead.name} ahead</span></span>`;
   }
   return html`<div class="fly">
       <div class="ftrack l" data-p="${A.provider}">${bar(x)}</div>
@@ -364,7 +362,7 @@ function capabilities(p, pair) {
     return html`<div class="cmp-cap">
         <button type="button" aria-expanded="${isOpen}" @click=${() => toggle(cap.id)}>
           <span class="cap-name">${cap.label}<span class="mono">${rows.length}</span></span>
-          ${fresh(summary, html`<span class="cap-sum cmp-fresh">${summary}</span>`)}
+          ${fresh(summary, html`<span class="cap-sum fresh">${summary}</span>`)}
           <span class="cmp-lean" aria-hidden="true">${lean}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </button>

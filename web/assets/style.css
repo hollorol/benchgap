@@ -212,7 +212,15 @@ main[aria-busy="true"] { opacity: .55; transition-delay: .15s; }
 @keyframes boot-timeout { to { visibility: visible; } }
 .page { animation: rise .45s cubic-bezier(.2, .7, .2, 1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .page, .reveal > * { animation: none !important; } }
+/* the part of a page drawn again for the next path (app.js PAGES .busy): dimmed at once while its
+   data loads, the link clicked already current, so the page answers the click before the server */
+.in-place { transition: opacity .2s; }
+.in-place[aria-busy="true"] { opacity: .45; }
+/* what changes with the data in place plays an entrance (ui.js fresh()): new text fades up */
+.fresh { animation: fresh .38s cubic-bezier(.2, .7, .2, 1) both; }
+span.fresh { display: inline-block; }
+@keyframes fresh { from { opacity: 0; transform: translateY(5px); } }
+@media (prefers-reduced-motion: reduce) { .page, .reveal > *, .fresh { animation: none !important; } .in-place { transition: none; } }
 
 .eyebrow {
   font: 600 .72rem/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
@@ -408,6 +416,7 @@ h1, h2, h3 { font-weight: 400; margin: 0; }
 .axis .ticks span { position: absolute; bottom: 5px; transform: translateX(-50%); }
 .row {
   min-height: 34px; border-bottom: 1px solid var(--rule); cursor: default;
+  background: var(--paper);   /* a row sliding past another (ui.js flip()) covers it */
 }
 /* the browser skips rows out of view (a long board, a folded tail) until they scroll in */
 .row { content-visibility: auto; contain-intrinsic-size: auto 35px; }
@@ -428,6 +437,10 @@ h1, h2, h3 { font-weight: 400; margin: 0; }
 .bar.e.medium { --tc: var(--conf-medium); }
 .bar.e.low { --tc: var(--conf-low); background: repeating-linear-gradient(-45deg, var(--conf-low) 0 1.3px, transparent 1.3px 6px); box-shadow: none; outline: 1.4px dashed var(--conf-low); outline-offset: 1px; opacity: .85; }
 .whisker { position: absolute; top: 3px; bottom: 3px; border-left: 1.4px solid var(--ink-2); border-right: 1.4px solid var(--ink-2); }
+/* a row kept for another benchmark or filter: its bar and whisker slide to the new score (its place, ui.js flip()) */
+.row .bar { transition: width .55s cubic-bezier(.2, .7, .2, 1); }
+.row .whisker { transition: left .55s cubic-bezier(.2, .7, .2, 1), width .55s cubic-bezier(.2, .7, .2, 1); }
+@media (prefers-reduced-motion: reduce) { .row .bar, .row .whisker { transition: none; } }
 .whisker::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1.4px; background: var(--ink-2); }
 .row .val { text-align: right; font: 500 .9rem var(--mono); font-feature-settings: "tnum"; white-space: nowrap; }
 .row.e .val { font-style: italic; color: var(--ink-2); }
@@ -580,13 +593,11 @@ table.mx { width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 .cmp-body[aria-busy="true"] { opacity: .45; transition-delay: .1s; }
 .cmp-body:empty { min-height: 40vh; }
 /* what changes with the pair plays an entrance: new text fades up, bars slide to their new length */
-.cmp-fresh { display: inline-block; animation: cmp-in .38s cubic-bezier(.2, .7, .2, 1) both; }
-div.cmp-fresh, .cmp-name.cmp-fresh, .cmp-sub.cmp-fresh, .fd.cmp-fresh { display: block; }
-@keyframes cmp-in { from { opacity: 0; transform: translateY(5px); } }
-.fly:not(.fly-head) { animation: cmp-in .38s cubic-bezier(.2, .7, .2, 1) both; }
+.cmp-name.fresh, .cmp-sub.fresh, .fd.fresh { display: block; }
+.fly:not(.fly-head) { animation: fresh .38s cubic-bezier(.2, .7, .2, 1) both; }
 .ftrack .bar, .cmp-lean span { transition: width .55s cubic-bezier(.2, .7, .2, 1), background-color .35s; }
 @media (prefers-reduced-motion: reduce) {
-  .cmp-fresh, .fly { animation: none; }
+  .fly { animation: none; }
   .cmp-from-fold, .ftrack .bar, .cmp-lean span, .cmp-split-bar span, .cmp-body { transition: none; }
 }
 /* the verdict: who leads where both were measured, one square per benchmark in its leader's colour */

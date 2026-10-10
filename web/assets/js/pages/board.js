@@ -2,7 +2,7 @@
 import { html, nothing, repeat, guard } from "../vendor/lit-html.js";
 import { ABOUT, D, ix, prefs, $, main, pct, docs, boardUrl, remember, capLabel, visible, benchHref, modelHref, setMeta, show, go } from "../core.js";
 import { hideTip } from "../tip.js";
-import { legend, showSeg, tierFlag, track, axis, reduceMotion, ease, toggleList, centerIn, renderNotFound } from "../ui.js";
+import { legend, showSeg, tierFlag, track, axis, reduceMotion, ease, toggleList, flip, fresh, centerIn, renderNotFound } from "../ui.js";
 
 // a benchmark's model counts: measured, plus estimated if any
 const benchCount = (x) => `${x.n_measured}${x.n_estimated ? "+" + x.n_estimated : ""}`;
@@ -28,7 +28,7 @@ const picker = (b) => html`<nav class="picker" aria-label="Benchmarks">${ix.benc
   return html`<div class="picker-row"><div class="cap">${cap.label}</div><div class="chips">${chips.map((x) => benchChip(x, b))}${more}</div></div>`;
 })}</nav>`;
 
-// a "+N more" button opens its list and closes any other; Escape closes it
+// a "+N more" button opens its list and closes any other; picking a benchmark in it or Escape closes it
 const setMore = (btn, open) => {
   btn.setAttribute("aria-expanded", String(open));
   toggleList(document.getElementById(btn.getAttribute("aria-controls")), open);
@@ -38,7 +38,10 @@ const closeMore = (except) => main.querySelectorAll('.more-btn[aria-expanded="tr
 });
 document.addEventListener("click", (e) => {
   const btn = e.target.closest && e.target.closest(".more-btn");
-  if (!btn) return;
+  if (!btn) {
+    if (e.target.closest && e.target.closest(".more-item")) closeMore();
+    return;
+  }
   const open = btn.getAttribute("aria-expanded") !== "true";
   closeMore(btn);
   setMore(btn, open);
@@ -111,8 +114,10 @@ export function renderBoard(data, key) {
   else setMeta(`${b.label} leaderboard`, `${b.label} leaderboard: ${b.n_measured} measured and ${b.n_estimated} estimated LLM scores, each estimate with its error and confidence.`);
   const inPlace = !!$("#board-sec");
   board = { b, scores };
-  draw();
-  if (inPlace) closeMore();
+  if (inPlace) {
+    flip($("#board-sec"), ".row", draw);   // the rows of models on both boards slide to their new places
+    closeMore();
+  } else draw();
   centerRail();
   return inPlace;
 }
@@ -120,7 +125,7 @@ export function renderBoard(data, key) {
 // the page; the hero and the pickers are drawn again only for another benchmark
 function draw() {
   const { b, scores } = board;
-  show(html`<div class="page">${guard([], hero)}${guard([b], () => picker(b))}${guard([b], () => pickerMobile(b))}<section id="board-sec">${boardBody(b, scores)}</section></div>`);
+  show(html`<div class="page">${guard([], hero)}${guard([b], () => picker(b))}${guard([b], () => pickerMobile(b))}<section id="board-sec" class="in-place">${boardBody(b, scores)}</section></div>`);
 }
 
 // header, controls and legend for one benchmark and its scores, then the rows
@@ -128,7 +133,7 @@ function boardBody(b, all) {
   const nEst = b.n_estimated;
   const nLow = all.filter((s) => s.s === "e" && s.tier === "low").length;
   return html`
-      <div class="board-head">
+      ${fresh(b.id, html`<div class="board-head fresh">
         <div>
           <div class="eyebrow">${capLabel(b.capability)}</div>
           <h2 class="h2" style="margin-top:.4rem">${b.label}</h2>
@@ -136,8 +141,8 @@ function boardBody(b, all) {
         <div class="src">${b.n_measured} measured · <i>${nEst} estimated</i>${nLow ? ` (${nLow} low confidence)` : ""}
           ${b.source_url ? html` · source: <a href="${b.source_url}" rel="noopener" target="_blank">${host(b.source_url)}</a>` : nothing}</div>
       </div>
-      <p class="lede board-lead">${benchLead(b, all)}</p>
-      <div class="controls">${showSeg(() => { hideTip(); draw(); })}</div>
+      <p class="lede board-lead fresh">${benchLead(b, all)}</p>`)}
+      <div class="controls">${showSeg(() => { hideTip(); flip($("#board-sec"), ".row", draw); })}</div>
       ${legend()}
       <div id="board-rows">${boardRows(b, all)}</div>
       ${nEst === 0 ? html`<p class="muted" style="margin-top:1rem">No estimates for this benchmark: no same-capability benchmark calibrates it well enough (see <a href="/calibration">Calibration</a>).</p>` : nothing}`;
@@ -177,7 +182,7 @@ function boardRows(b, scores) {
     const rank = est ? `≈${from + i + 1}` : String(from + i + 1);
     // (one line, and the dot and link written out rather than dot() and modelLink(): a leaderboard
     // has hundreds of rows, and every node and nested template in a row is paid for in each)
-    return html`<div class="row ${est ? "e " + s.tier : "m"}" data-p="${m.provider}"><div class="rank ${est ? "est" : ""}">${rank}</div><div class="who"><span class="dot" data-p="${m.provider}" aria-hidden="true"></span><a href="${modelHref(m)}">${m.name}</a>${tierFlag(s)}</div><div class="track" data-tip="${s.m}:${s.b}" tabindex="0" aria-label="${m.name}: ${est ? "estimated " : ""}${pct(s.v)} percent">${track(s, X, ticks)}</div><div class="val">${est ? "≈" : ""}${pct(s.v)}%${est ? html`<span class="pm">±${pct(s.sd)}</span>` : nothing}</div></div>`;
+    return html`<div class="row ${est ? "e " + s.tier : "m"}" data-p="${m.provider}" data-key="${s.m}"><div class="rank ${est ? "est" : ""}">${rank}</div><div class="who"><span class="dot" data-p="${m.provider}" aria-hidden="true"></span><a href="${modelHref(m)}">${m.name}</a>${tierFlag(s)}</div><div class="track" data-tip="${s.m}:${s.b}" tabindex="0" aria-label="${m.name}: ${est ? "estimated " : ""}${pct(s.v)} percent">${track(s, X, ticks)}</div><div class="val">${est ? "≈" : ""}${pct(s.v)}%${est ? html`<span class="pm">±${pct(s.sd)}</span>` : nothing}</div></div>`;
   }));
   const tail = tailCut(rows);
   const open = tailOpen === b.id;

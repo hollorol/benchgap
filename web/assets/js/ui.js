@@ -1,5 +1,5 @@
 /* The pieces several pages are made of: fragments (templates), controls, animations, axes and colours. */
-import { html, svg, render, nothing, ref, guard } from "./vendor/lit-html.js";
+import { html, svg, render, nothing, ref, guard, repeat } from "./vendor/lit-html.js";
 import { store, prefs, byCapability, capLabel, modelHref, setMeta, show } from "./core.js";
 import { hideTip } from "./tip.js";
 
@@ -166,6 +166,40 @@ export function swap(el, template) {
     const to = el.offsetHeight;
     ease(el, [{ opacity: 0, transform: "translateY(6px)", height: from + "px" }, { opacity: 1, transform: "none", height: to + "px" }], 280);
   };
+}
+// tpl in a new element whenever key changes, so it plays its entrance (.fresh) for the new value
+export const fresh = (key, tpl) => repeat([key], (k) => k, () => tpl);
+
+// redraws with update() and slides the items (selector, each with its data-key) in root from where
+// they were to where the redraw put them; the new ones fade in, one after another. Only the items in
+// view are measured and moved: a leaderboard has hundreds of rows, and a row from out of view (or to
+// it) would only streak across the page
+export function flip(root, selector, update) {
+  if (!root || reduceMotion.matches) return update();
+  const vh = innerHeight, from = new Map();
+  // the items in view in document order, each with its box (a moving one where it is shown now)
+  const inView = (each) => {
+    for (const el of root.querySelectorAll(selector)) {
+      const r = el.getBoundingClientRect();
+      if (r.top >= vh) break;
+      if (r.bottom > 0) each(el, r);
+    }
+  };
+  inView((el, r) => from.set(el.dataset.key, r.top));
+  update();
+  // the last redraw's moves still running: their items are measured where the new redraw put them
+  (root.flips || []).forEach((a) => a.cancel());
+  root.flips = [];
+  let entering = 0;
+  inView((el, r) => {
+    const top = from.get(el.dataset.key);
+    if (top === undefined || Math.abs(top - r.top) > vh) {
+      root.flips.push(el.animate([{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }],
+        { duration: 320, delay: 90 + Math.min(entering++, 18) * 16, easing: EASE, fill: "backwards" }));
+    } else if (Math.abs(top - r.top) > 0.5) {
+      root.flips.push(el.animate([{ transform: `translateY(${top - r.top}px)` }, { transform: "none" }], { duration: 460, easing: EASE }));
+    }
+  });
 }
 
 // scrolls a row of pills (phones only; the site nav up to tablets, as the CSS) so its current one is in the middle
