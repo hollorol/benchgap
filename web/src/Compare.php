@@ -83,14 +83,17 @@ final class Compare
 
     /**
      * The frontier model closest in general performance to $target (a model's general
-     * score), the model $excludeSlug itself excepted; null if there is none. $frontier
-     * holds the rows Api::compare() shapes (with 'slug' and 'general'), strongest first;
-     * ties keep the stronger row.
+     * score), the model $excludeSlug itself excepted: of $provider's frontier models, or
+     * of the whole frontier when it has none (or $provider is null); with no $target (a
+     * model with no standing), the strongest of them. Null if there is none. $frontier
+     * holds the rows Api::compare() shapes (with 'slug', 'provider' and 'general'),
+     * strongest first; ties keep the stronger row. (As closestFrontier, assets/js/pages/compare.js)
      */
-    public static function closest(array $frontier, ?float $target, ?string $excludeSlug = null): ?array
+    public static function closest(array $frontier, ?float $target, string $excludeSlug, ?string $provider = null): ?array
     {
-        if ($target === null) {
-            return null;
+        if ($provider !== null) {
+            return self::closest(array_filter($frontier, fn ($f) => $f['provider'] === $provider), $target, $excludeSlug)
+                ?? self::closest($frontier, $target, $excludeSlug);
         }
         $best = null;
         $bestD = null;
@@ -98,7 +101,7 @@ final class Compare
             if ($f['slug'] === $excludeSlug) {
                 continue;
             }
-            $d = abs($f['general'] - $target);
+            $d = $target === null ? 0 : abs($f['general'] - $target);
             if ($best === null || $d < $bestD) {
                 $best = $f;
                 $bestD = $d;

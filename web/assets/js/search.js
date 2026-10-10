@@ -1,6 +1,6 @@
 /* The top bar's search: models and benchmarks, filtered by type. */
 import { html, render } from "./vendor/lit-html.js";
-import { D, ix, $, store, capLabel, benchHref, modelHref, go } from "./core.js";
+import { ix, $, store, capLabel, providerLabel, benchHref, modelHref, go } from "./core.js";
 import { dot } from "./ui.js";
 
 export const fold = (t) => t.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
@@ -34,6 +34,31 @@ export function mark(label, q) {
   }
   return out;
 }
+// the option the arrow keys are on in a combobox's list: marked aria-selected, scrolled to and named
+// by the box's aria-activedescendant. The options are <li role="option" id="{prefix}{i}">, each with
+// an <a data-i="{i}">; the pointer moving over one makes it the active one
+export function listbox(input, list, prefix) {
+  const lb = {
+    active: -1,
+    set(i) {
+      list.querySelector('[aria-selected="true"]')?.setAttribute("aria-selected", "false");
+      lb.active = i;
+      const li = i >= 0 && list.querySelector(`#${prefix}${i}`);
+      if (li) { li.setAttribute("aria-selected", "true"); li.scrollIntoView({ block: "nearest" }); input.setAttribute("aria-activedescendant", li.id); }
+      else input.removeAttribute("aria-activedescendant");
+    },
+    // ArrowDown (down) or ArrowUp over n options, wrapping around
+    step(down, n) {
+      if (n) lb.set((lb.active + (down ? 1 : n - 1 + (lb.active < 0 ? 1 : 0))) % n);
+    },
+  };
+  list.addEventListener("mousemove", (e) => {
+    const a = e.target.closest("a[data-i]");
+    if (a && Number(a.dataset.i) !== lb.active) lb.set(Number(a.dataset.i));
+  });
+  return lb;
+}
+
 const SEARCH_TYPES = [["all", "All"], ["model", "Models"], ["bench", "Benchmarks"]];
 const SEARCH_GROUPS = Object.fromEntries(SEARCH_TYPES.slice(1));
 const BENCH_ICON = html`<svg class="srch-ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="7" width="3" height="7" rx=".6"/><rect x="6.5" y="3" width="3" height="11" rx=".6"/><rect x="11" y="9" width="3" height="5" rx=".6"/></svg>`;
@@ -42,14 +67,15 @@ function initSearch(openSearch) {
   const input = $("#site-search"), pop = $("#search-pop"), list = $("#search-results"), types = $(".search-types");
   const items = [
     ...ix.listedModels.map((m) => ({ type: "model", label: m.name, text: fold(m.name + " " + m.slug), href: modelHref(m),
-      meta: `${D.meta.providers[m.provider] || "Other"} · ${m.n_measured} measured`, weight: m.n_measured, icon: dot(m) })),
+      meta: `${providerLabel(m.provider)} · ${m.n_measured} measured`, weight: m.n_measured, icon: dot(m) })),
     // the listed benchmarks, the original ones first
     ...ix.listed.map((b) => ({ type: "bench", label: b.label, text: fold(b.label + " " + b.key), href: benchHref(b),
       meta: `${capLabel(b.capability)} · ${b.n_measured} measured`, weight: b.n_measured + (b.featured ? 1e4 : 0), icon: BENCH_ICON })),
   ];
   let type = store.get("search-type", "all");
   if (!SEARCH_TYPES.some(([t]) => t === type)) type = "all";
-  let shown = [], active = -1;
+  const lb = listbox(input, list, "srch-");
+  let shown = [];
 
   function draw() {
     const q = input.value.trim();
@@ -74,15 +100,7 @@ function initSearch(openSearch) {
     }
     if (!shown.length) rows.push(html`<li class="srch-empty" role="presentation">No ${type === "model" ? "model" : type === "bench" ? "benchmark" : "model or benchmark"} matches “${q}”.</li>`);
     render(rows, list);
-    setActive(q && shown.length ? 0 : -1);
-  }
-  function setActive(i) {
-    const old = list.querySelector('[aria-selected="true"]');
-    if (old) old.setAttribute("aria-selected", "false");
-    active = i;
-    const li = i >= 0 && $("#srch-" + i);
-    if (li) { li.setAttribute("aria-selected", "true"); li.scrollIntoView({ block: "nearest" }); input.setAttribute("aria-activedescendant", li.id); }
-    else input.removeAttribute("aria-activedescendant");
+    lb.set(q && shown.length ? 0 : -1);
   }
   const isOpen = () => !pop.hidden;
   function open() {
@@ -110,10 +128,10 @@ function initSearch(openSearch) {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (!isOpen()) return open();
-      if (shown.length) setActive((active + (e.key === "ArrowDown" ? 1 : shown.length - 1 + (active < 0 ? 1 : 0))) % shown.length);
+      lb.step(e.key === "ArrowDown", shown.length);
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const it = shown[active >= 0 ? active : 0];
+      const it = shown[Math.max(lb.active, 0)];
       if (it && isOpen()) pick(it);
     } else if (e.key === "Escape") {
       if (isOpen()) { e.stopPropagation(); close(); }
@@ -133,10 +151,6 @@ function initSearch(openSearch) {
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
     e.preventDefault();
     pick(shown[Number(a.dataset.i)]);
-  });
-  list.addEventListener("mousemove", (e) => {
-    const a = e.target.closest("a[data-i]");
-    if (a && Number(a.dataset.i) !== active) setActive(Number(a.dataset.i));
   });
   // the click's path as it was dispatched: still right if the clicked element has since been redrawn
   const box = $(".search");

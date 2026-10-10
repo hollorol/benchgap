@@ -69,8 +69,8 @@ final class Site
             'capabilities' => $this->data['capabilities'],
             'benchmarks' => $this->data['benchmarks'],
             'models' => $this->data['models'],
-            'picker' => $this->data['picker'] ?? [],
-            'holdout' => $this->data['holdout'],
+            'picker' => $this->data['picker'],
+            'holdout' => $this->data['holdout']['headline'],   // the method page's numbers (null until it has been run)
         ];
     }
 
@@ -144,17 +144,17 @@ final class Site
     {
         return [
             'cross' => array_values(array_filter(
-                $this->data['cross_mappings'] ?? [],
+                $this->data['cross_mappings'],
                 fn ($m) => isset($this->listed[$m[0]], $this->listed[$m[1]])
             )),
-            'summary' => (object) ($this->data['cross_summary'] ?? []),
+            'summary' => (object) $this->data['cross_summary'],
         ];
     }
 
     public function multivariate(): array
     {
         return ['multivariate' => array_values(array_filter(
-            $this->data['cross_multi_mappings'] ?? [],
+            $this->data['cross_multi_mappings'],
             fn ($m) => isset($this->listed[$m['to']]) && !array_diff_key(array_flip($m['from']), $this->listed)
         ))];
     }
@@ -167,14 +167,16 @@ final class Site
      */
     public function compare(): array
     {
-        return ['compare' => Compare::compute($this->data)];
+        return ['compare' => $this->data['compare']];
     }
 
-    /** The harness-tax analysis (families, pairs, per-model deltas, aggregates), without slice filtering:
+    /** The harness-tax analysis (pairs, per-model deltas with both scores, aggregates), without slice filtering:
      *  the analysis is over the registered families, not the site's listed benchmarks. */
     public function harnessTax(): array
     {
-        return ['harness_tax' => $this->data['harness_tax'] ?? ['families' => [], 'pairs' => [], 'deltas' => [], 'aggregates' => []]];
+        $ht = $this->data['harness_tax'];
+        $deltas = array_map(fn ($ds) => array_map(fn ($d) => array_intersect_key($d, array_flip(['name', 'score_a', 'score_b', 'delta_pp'])), $ds), $ht['deltas']);
+        return ['harness_tax' => ['pairs' => $ht['pairs'], 'deltas' => (object) $deltas, 'aggregates' => $ht['aggregates']]];
     }
 
     /** The API page's "Try it" lists: the calibrations (best first) and the harness-tax families. */
@@ -182,7 +184,7 @@ final class Site
     {
         return [
             'mappings' => array_map(fn ($m) => array_intersect_key($m, array_flip(['id', 'from', 'to', 'loo'])), $this->calibration()['mappings']),
-            'families' => array_map(fn ($f) => array_intersect_key($f, array_flip(['family_id', 'label', 'capability'])), $this->data['harness_tax']['families'] ?? []),
+            'families' => array_map(fn ($f) => array_intersect_key($f, array_flip(['family_id', 'label', 'capability'])), $this->data['harness_tax']['families']),
         ];
     }
 

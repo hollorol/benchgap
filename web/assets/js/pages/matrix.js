@@ -7,16 +7,20 @@ import { dot, pageHead, legend, showSeg, phone } from "../ui.js";
 // a matrix cell's kind (src/Site.php CELL_KINDS): measured, or an estimate's confidence
 const CELL_TIERS = [null, "high", "medium", "low"];
 let mxd = null;   // the matrix's cells by model, each benchmark's range of measured scores (for the tint), the columns
+let sortCol = null;   // the benchmark (id) the rows are sorted by; null: the default order
 
 // data: every listed benchmark's cells (data/matrix.json), as [model, benchmark, value, kind]; an
 // estimate's cell is partial: where it came from loads when its tooltip opens (tip.js details())
 export function renderMatrix(data) {
   setMeta("LLM benchmark score matrix", "Every model on every benchmark: measured LLM scores and calibrated estimates for the missing ones, side by side.");
-  const cells = remember(data.cells.map(([m, b, v, k]) => (k ? { m, b, v, s: "e", tier: CELL_TIERS[k], partial: true } : { m, b, v, s: "m" })));
-  // each column's measured range, and the rows' default order (most measured first)
-  // and the columns, all or the dense core: the same lists every time, so a redraw that keeps them keeps the rows
-  mxd = { byModel: groupBy(cells, (c) => c.m), range: data.range, order: data.models.map((id) => ix.model.get(id)),
-    benches: { all: ix.listed, dense: ix.listed.filter((b) => b.dense) } };
+  // built once per document: opened again, the page reuses its cells
+  if (mxd?.data !== data) {
+    const cells = remember(data.cells.map(([m, b, v, k]) => (k ? { m, b, v, s: "e", tier: CELL_TIERS[k], partial: true } : { m, b, v, s: "m" })));
+    // each column's measured range, and the rows' default order (most measured first)
+    // and the columns, all or the dense core: the same lists every time, so a redraw that keeps them keeps the rows
+    mxd = { data, byModel: groupBy(cells, (c) => c.m), range: data.range, order: data.models.map((id) => ix.model.get(id)),
+      benches: { all: ix.listed, dense: ix.listed.filter((b) => b.dense) } };
+  }
   mx = null;
   drawMatrix();
 }
@@ -47,7 +51,7 @@ const onScroll = {
   passive: true,
 };
 // a column header ranks the models by its benchmark; again, back to the default order
-const sortBy = (el) => { const id = Number(el.dataset.sort); prefs.sortCol = prefs.sortCol === id ? null : id; drawMatrix(); };
+const sortBy = (el) => { const id = Number(el.dataset.sort); sortCol = sortCol === id ? null : id; drawMatrix(); };
 function onSortClick(e) { const el = e.target.closest("[data-sort]"); if (el) sortBy(el); }
 function onSortKey(e) {
   const el = e.target.closest("[data-sort]");
@@ -86,8 +90,8 @@ function drawMatrix() {
     }
     return any;
   });
-  if (prefs.sortCol && benches.some((b) => b.id === prefs.sortCol)) {
-    const b = ix.bench.get(prefs.sortCol);
+  if (sortCol && benches.some((b) => b.id === sortCol)) {
+    const b = ix.bench.get(sortCol);
     models = models.slice().sort((p, q) => {
       const a = cellOf(p, b), c = cellOf(q, b);
       return (c ? c.v : -1) - (a ? a.v : -1) || p.name.localeCompare(q.name);
@@ -120,7 +124,7 @@ function matrixHead(c0, c1, colW) {
   return html`<tr class="caps"><th class="corner" rowspan="2">Model</th>${padTh(c0, colW)}${spans
       .map((sp) => html`<th colspan="${sp.n}" class="${mxBrk(benches, sp.j).trim()}" title="${capLabel(sp.cap)}"><span class="cap-l">${capLabel(sp.cap)}</span></th>`)}${padTh(benches.length - c1, colW)}</tr>
     <tr class="cols">${padTh(c0, colW)}${benches.slice(c0, c1)
-      .map((b, k) => html`<th class="${prefs.sortCol === b.id ? "sorted" : ""}${mxBrk(benches, c0 + k)}"><span class="colh" data-sort="${b.id}" role="button" tabindex="0" title="Sort by ${b.label}">${b.label}</span></th>`)}${padTh(benches.length - c1, colW)}</tr>`;
+      .map((b, k) => html`<th class="${sortCol === b.id ? "sorted" : ""}${mxBrk(benches, c0 + k)}"><span class="colh" data-sort="${b.id}" role="button" tabindex="0" title="Sort by ${b.label}">${b.label}</span></th>`)}${padTh(benches.length - c1, colW)}</tr>`;
 }
 
 function matrixCell(m, b, j) {
@@ -159,7 +163,7 @@ function paintMatrix(force) {
     c0: Math.max(0, v0 - MX_COLS), c1: Math.min(nC, v1 + MX_COLS),
   };
   mx.win = win;
-  render(guard([mx.benches, win.c0, win.c1, colW, prefs.sortCol], () => matrixHead(win.c0, win.c1, colW)), head);
+  render(guard([mx.benches, win.c0, win.c1, colW, sortCol], () => matrixHead(win.c0, win.c1, colW)), head);
   const pad = (rows) => (rows > 0 ? html`<tr class="mx-pad" aria-hidden="true"><td colspan="${nC + 1}" style="height:${rows * rowH}px"></td></tr>` : nothing);
   render(html`${pad(win.r0)}${repeat(mx.models.slice(win.r0, win.r1), (m) => m.id, (m) => guard([mx.benches, win.c0, win.c1, colW, prefs.show], () => matrixRow(m, win.c0, win.c1, colW)))}${pad(nR - win.r1)}`, table.tBodies[0]);
   hideStaleTip();

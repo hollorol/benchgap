@@ -1,8 +1,8 @@
 /* Two models head to head: who leads where both were measured, then every benchmark by capability. */
 import { html, nothing, repeat, render, ref } from "../vendor/lit-html.js";
-import { D, ix, $, pct, prefs, load, modelUrl, remember, visible, benchHref, setMeta, show, go } from "../core.js";
+import { D, ix, $, pct, prefs, load, modelUrl, remember, visible, providerLabel, benchHref, setMeta, show, go } from "../core.js";
 import { hideTip } from "../tip.js";
-import { fold, ranked, mark } from "../search.js";
+import { fold, ranked, mark, listbox } from "../search.js";
 import { dot, pageHead, legend, seg, showSeg, fresh, renderNotFound } from "../ui.js";
 
 // the page's lede (Pages::COMPARE_INTRO)
@@ -12,7 +12,9 @@ const GENERAL_TIP = "General performance: the mean percentile of a model's measu
   + "The frontier is its strongest tenth. Measured scores only.";
 const cmpHref = (a, b, from) =>
   `/compare/${encodeURIComponent(a)}${b ? "/" + encodeURIComponent(b) : (from && from !== "any" ? "/from/" + encodeURIComponent(from) : "")}`;
-const providerName = (p) => D.meta.providers[p] || p;
+
+// who leads on a benchmark: 1 for A, -1 for B, 0 for even (less than 0.05 pp apart, as the rows show it)
+const lead = (x, y) => (Math.abs(x.v - y.v) < 0.0005 ? 0 : Math.sign(x.v - y.v));
 
 let page = null;   // the open pair: its models, how B was chosen, the standings and both models' scores
                   // (and .prev, the pair shown, dimmed, until they are in)
@@ -23,7 +25,8 @@ let open = null;   // the capabilities opened (ids); null: the one with the most
 // the frontier is its strongest tenth. Two models (/compare/<a>/<b>), or one model (/compare/<a>)
 // and the frontier model closest to it - of one provider (/compare/<a>/from/<p>), or of any - a
 // pick that follows the field. Returns true when the page was already open (only the pair changed).
-export function renderCompare(data) {
+// The models' scores load after; the signal drops them if another page or pair was opened meanwhile.
+export function renderCompare(data, arg, signal) {
   const parts = location.pathname.split("/").slice(2).filter(Boolean).map(decodeURIComponent);
   const general = new Map(data.compare.general.map(([id, g, n]) => [id, { g, n }]));   // by model id
   const rankOf = new Map(data.compare.general.map(([id], i) => [id, i + 1]));          // strongest first
@@ -61,7 +64,7 @@ export function renderCompare(data) {
   picking = null;
   // the providers whose frontier model can fill B: those with one, by name
   const frontierProviders = [...new Set(frontier.map(([id]) => ix.model.get(id).provider))]
-    .sort((x, y) => providerName(x).localeCompare(providerName(y)));
+    .sort((x, y) => providerLabel(x).localeCompare(providerLabel(y)));
   const prev = page && (page.sa ? page : page.prev);
   page = { prev: inPlace ? prev : null, A, B, auto, from, general, rankOf, nStanding: data.compare.general.length, isFrontier: new Set(frontier.map(([id]) => id)), frontierProviders, sa: null, sb: null, failed: false };
   draw();
@@ -69,12 +72,12 @@ export function renderCompare(data) {
   // both models' scores load in (cached by the model pages' own visits); the body draws when they are in
   const at = page;
   Promise.all([load(modelUrl(A.slug)), load(modelUrl(B.slug))]).then(([da, db]) => {
-    if (page !== at) return;   // another pair was opened meanwhile
+    if (signal.aborted) return;
     at.sa = remember(da.scores);
     at.sb = remember(db.scores);
     draw();
   }, () => {
-    if (page !== at) return;
+    if (signal.aborted) return;
     at.failed = true;
     draw();
   });
@@ -97,11 +100,11 @@ function draw() {
 }
 
 // --- the model pickers: a box to type in over the models, filtered as you type ------------
-let picking = null;   // the open picker ("A" or "B"), its results and the one the arrow keys are on
+let picking = null;   // the open picker ("A" or "B"), its results and its list (search.js listbox)
 let models = null;    // the listed models as search items (search.js ranked)
 const MAX_SHOWN = 60;
 const pickerItems = () => (models ??= ix.listedModels.map((m) => ({
-  m, label: m.name, weight: m.n_measured, text: fold(`${m.name} ${m.slug} ${providerName(m.provider)}`),
+  m, label: m.name, weight: m.n_measured, text: fold(`${m.name} ${m.slug} ${providerLabel(m.provider)}`),
 })));
 // where picking slug for model `which` leads: the other side's model swaps the two; a new A keeps
 // how B is chosen, a new B pins the pair
@@ -111,7 +114,7 @@ function pickHref(which, slug) {
   return which === "A" ? cmpHref(slug, auto ? null : B.slug, auto ? from : null) : cmpHref(A.slug, slug);
 }
 function openPicker(which) {
-  picking = { which, shown: [], active: -1, input: null, list: null };
+  picking = { which, shown: [], input: null, list: null, lb: null };
   hideTip();
   draw();
 }
@@ -130,36 +133,29 @@ function drawResults() {
   const current = (which === "A" ? page.A : page.B).id, other = (which === "A" ? page.B : page.A).id;
   picking.shown = pool.slice(0, MAX_SHOWN);
   render(html`<li class="srch-group" role="presentation">${q ? "Models" : "Most measured"}<span>${picking.shown.length < pool.length ? `${picking.shown.length} of ${pool.length}` : q ? pool.length : ""}</span></li>
-    ${picking.shown.map(({ m }, i) => html`<li role="option" id="cmp-opt-${i}" aria-selected="false"><a href="${pickHref(which, m.slug)}" tabindex="-1" data-i="${i}">${dot(m)}<span class="srch-name">${q ? mark(m.name, q) : m.name}</span><span class="srch-meta">${providerName(m.provider)} · ${m.n_measured} measured${
+    ${picking.shown.map(({ m }, i) => html`<li role="option" id="cmp-opt-${i}" aria-selected="false"><a href="${pickHref(which, m.slug)}" tabindex="-1" data-i="${i}">${dot(m)}<span class="srch-name">${q ? mark(m.name, q) : m.name}</span><span class="srch-meta">${providerLabel(m.provider)} · ${m.n_measured} measured${
       m.id === current ? " · picked" : m.id === other ? ` · model ${which === "A" ? "B" : "A"}: swaps them` : ""}</span></a></li>`)}
     ${pool.length ? nothing : html`<li class="srch-empty" role="presentation">No model matches “${q}”.</li>`}`, list);
-  setActive(q && pool.length ? 0 : -1);
-}
-function setActive(i) {
-  const { input, list } = picking;
-  list.querySelector('[aria-selected="true"]')?.setAttribute("aria-selected", "false");
-  picking.active = i;
-  const li = i >= 0 && list.querySelector("#cmp-opt-" + i);
-  if (li) { li.setAttribute("aria-selected", "true"); li.scrollIntoView({ block: "nearest" }); input.setAttribute("aria-activedescendant", li.id); }
-  else input.removeAttribute("aria-activedescendant");
+  picking.lb.set(q && pool.length ? 0 : -1);
 }
 // the panel, once drawn: its box takes the focus and the results come in
 function panelIn(el) {
   if (!el || !picking || picking.input) return;
   picking.input = el.querySelector("input");
   picking.list = el.querySelector("ul");
+  picking.lb = listbox(picking.input, picking.list, "cmp-opt-");
   drawResults();
   // (once the render is done: the panel is not in the document yet)
   queueMicrotask(() => picking?.input?.focus({ preventScroll: true }));
 }
 function pickerKeys(e) {
-  const { shown, active } = picking;
+  const { shown, lb } = picking;
   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
     e.preventDefault();
-    if (shown.length) setActive((active + (e.key === "ArrowDown" ? 1 : shown.length - 1 + (active < 0 ? 1 : 0))) % shown.length);
+    lb.step(e.key === "ArrowDown", shown.length);
   } else if (e.key === "Enter") {
     e.preventDefault();
-    const it = shown[active >= 0 ? active : 0];
+    const it = shown[Math.max(lb.active, 0)];
     if (it) go(pickHref(picking.which, it.m.slug));
   } else if (e.key === "Escape") {
     e.preventDefault();
@@ -177,21 +173,19 @@ const picker = (which) => html`<div class="search-pop cmp-pop" ${ref(panelIn)} @
     <input class="cmp-q" type="search" role="combobox" aria-label="Find model ${which}" aria-expanded="true" aria-controls="cmp-results"
       aria-autocomplete="list" placeholder="Type a model or provider…" autocomplete="off" spellcheck="false"
       @input=${drawResults} @keydown=${pickerKeys}>
-    <ul class="search-results" id="cmp-results" role="listbox" aria-label="Models"
-      @mousedown=${(e) => e.preventDefault()}
-      @mousemove=${(e) => { const a = e.target.closest("a[data-i]"); if (a && Number(a.dataset.i) !== picking.active) setActive(Number(a.dataset.i)); }}></ul>
+    <ul class="search-results" id="cmp-results" role="listbox" aria-label="Models" @mousedown=${(e) => e.preventDefault()}></ul>
     <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> pick · <kbd>Esc</kbd> close</p>
   </div>`;
 
-// one model's card: its picker (a native select laid over the card's face) and its standing; B's
-// also says how it was chosen
+// one model's card: its picker (a face that opens a box to type in) and its standing; B's also
+// says how it was chosen
 function slot(p, which) {
   const { A, B, auto, from } = p;
   const m = which === "A" ? A : B;
   const g = p.general.get(m.id);
   const sub = which === "B" && auto
-    ? `Picked for you: the frontier model ${from !== "any" && B.provider === from ? `of ${providerName(from)} ` : ""}closest to ${A.name}`
-    : `${providerName(m.provider)} · ${m.n_measured} measured · ${m.n_estimated} estimated`;
+    ? `Picked for you: the frontier model ${from !== "any" && B.provider === from ? `of ${providerLabel(from)} ` : ""}closest to ${A.name}`
+    : `${providerLabel(m.provider)} · ${m.n_measured} measured · ${m.n_estimated} estimated`;
   return html`<div class="card cmp-slot">
       <div class="cmp-slot-head"><span class="ctl-label">Model ${which}</span>${which === "B"
         ? seg("How model B is chosen", [["frontier", "Closest frontier"], ["pick", "Pick a model"]], auto ? "frontier" : "pick",
@@ -200,7 +194,7 @@ function slot(p, which) {
       <div class="cmp-picker">
         <button type="button" class="cmp-face" id="cmp-face-${which}" aria-haspopup="listbox" aria-expanded="${picking?.which === which}"
           aria-label="Model ${which}: ${m.name}. Change" @click=${() => (picking?.which === which ? closePicker(false) : openPicker(which))}>
-          <span class="dot" data-p="${m.provider}" aria-hidden="true"></span>
+          ${dot(m)}
           <span class="cmp-picked">${fresh(m.id, html`<span class="cmp-name fresh">${m.name}</span>`)}${fresh(sub, html`<span class="cmp-sub fresh">${sub}</span>`)}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         </button>
@@ -215,7 +209,7 @@ function slot(p, which) {
           <label class="ctl-label" for="cmp-from">Frontier of</label>
           <select class="select" id="cmp-from" @change=${(e) => go(cmpHref(A.slug, null, e.target.value))}>
             <option value="any" .selected=${from === "any"}>Any provider</option>
-            ${p.frontierProviders.map((pr) => html`<option value="${pr}" .selected=${from === pr}>${providerName(pr)}</option>`)}
+            ${p.frontierProviders.map((pr) => html`<option value="${pr}" .selected=${from === pr}>${providerLabel(pr)}</option>`)}
           </select>
           <span class="muted">follows the field as scores change</span>
         </div></div></div>` : nothing}
@@ -237,13 +231,15 @@ function body(p) {
     .filter(([, x, y]) => x && y && visible(x) && visible(y))
     .map((r) => [...r, kind(r[1], r[2])])
     .sort((a, b) => a[3] - b[3]);
-  const tally = { up: 0, down: 0, mUp: 0, mDown: 0, eUp: 0, eDown: 0 };
+  const tally = { mUp: 0, mDown: 0, eUp: 0, eDown: 0 };
   let dsum = 0;
   for (const [, x, y, k] of shared) {
-    const side = x.v > y.v ? "Up" : x.v < y.v ? "Down" : null;
-    if (side) { tally[side.toLowerCase()]++; tally[(k ? "e" : "m") + side]++; }
+    const l = lead(x, y);
+    if (l) tally[(k ? "e" : "m") + (l > 0 ? "Up" : "Down")]++;
     dsum += Math.abs(x.v - y.v);
   }
+  tally.up = tally.mUp + tally.eUp;
+  tally.down = tally.mDown + tally.eDown;
   const n = shared.length, nm = shared.filter((r) => !r[3]).length;
   // the leader's count first (A's on a split)
   const bLeads = tally.down > tally.up;
@@ -263,7 +259,7 @@ function body(p) {
   ].filter(Boolean).join(" · ");
 
   return html`
-    <div class="controls cmp-show">${showSeg(() => { hideTip(); draw(); })}</div>
+    <div class="controls cmp-show">${showSeg(draw)}</div>
     <section class="cmp-verdict" aria-label="Verdict">
       ${fresh(`${A.id}:${B.id}:${prefs.show}:${detail}`, html`<div class="fresh"><p class="say">${say}</p><p class="muted">${detail}</p></div>`)}
       ${n ? split(A, B, tally, n) : nothing}
@@ -280,14 +276,14 @@ function body(p) {
 // both were measured, hatched where an estimate is in it (the segments keep their elements: they slide)
 function split(A, B, t, n) {
   const even = n - t.up - t.down;
-  const seg = (cls, p, count, what) => html`<span class="${cls}" data-p="${p ?? nothing}" style="width:${(100 * count) / n}%" title="${count} ${what}"></span>`;
+  const part = (cls, p, count, what) => html`<span class="${cls}" data-p="${p ?? nothing}" style="width:${(100 * count) / n}%" title="${count} ${what}"></span>`;
   return html`<div class="cmp-split">
       <div class="cmp-split-names">
         <span>${dot(A)}<span class="nm">${A.name}</span><b class="mono">${t.up}</b></span>
         <span><b class="mono">${t.down}</b><span class="nm">${B.name}</span>${dot(B)}</span>
       </div>
       <div class="cmp-split-bar" role="img" aria-label="${`${t.up} to ${A.name}, ${t.down} to ${B.name}${even ? `, ${even} even` : ""}`}">
-        ${seg("m", A.provider, t.mUp, `won by ${A.name}, measured on both`)}${seg("e", A.provider, t.eUp, `won by ${A.name}, with an estimate`)}${seg("even", null, even, "even")}${seg("e", B.provider, t.eDown, `won by ${B.name}, with an estimate`)}${seg("m", B.provider, t.mDown, `won by ${B.name}, measured on both`)}
+        ${part("m", A.provider, t.mUp, `won by ${A.name}, measured on both`)}${part("e", A.provider, t.eUp, `won by ${A.name}, with an estimate`)}${part("even", null, even, "even")}${part("e", B.provider, t.eDown, `won by ${B.name}, with an estimate`)}${part("m", B.provider, t.mDown, `won by ${B.name}, measured on both`)}
       </div>
       ${t.eUp + t.eDown ? html`<p class="cmp-split-key"><span class="m"></span>measured on both <span class="e"></span><i>with an estimate</i>${even ? html` <span class="even"></span>even` : nothing}</p>` : nothing}
     </div>`;
@@ -295,9 +291,9 @@ function split(A, B, t, n) {
 
 // the column heads over the mirrored bars (on phones: which bar is whose)
 const flyHead = (A, B) => html`<div class="fly fly-head">
-    <span class="ha">${fresh(A.id, html`<span class="fresh">${A.name}</span>`)} <span class="dot" data-p="${A.provider}" aria-hidden="true"></span></span>
+    <span class="ha">${fresh(A.id, html`<span class="fresh">${A.name}</span>`)} ${dot(A)}</span>
     <span class="hn">benchmark · gap</span>
-    <span class="hb"><span class="dot" data-p="${B.provider}" aria-hidden="true"></span> ${fresh(B.id, html`<span class="fresh">${B.name}</span>`)}</span>
+    <span class="hb">${dot(B)} ${fresh(B.id, html`<span class="fresh">${B.name}</span>`)}</span>
     <span class="hp">Top bar: ${A.name} · bottom bar: ${B.name}</span>
   </div>`;
 
@@ -312,10 +308,10 @@ function fly(b, x, y, A, B) {
     : html`<div class="fv ${side} none">—</div>`);
   let delta;
   if (d === null) delta = html`<span class="fd est fresh">one side only</span>`;
-  else if (Math.abs(d) < 0.05) delta = html`<span class="fd fresh">even</span>`;
+  else if (!lead(x, y)) delta = html`<span class="fd fresh">even</span>`;
   else {
-    const lead = d > 0 ? A : B, num = `${est ? "≈" : ""}${Math.abs(d).toFixed(1)}`;
-    delta = html`<span class="fd fresh${est ? " est" : ""}"><span class="to-a" aria-hidden="true">${d > 0 ? "◀ " : ""}</span><span class="dot" data-p="${lead.provider}" aria-hidden="true"></span>${num}<span class="to-b" aria-hidden="true">${d < 0 ? " ▶" : ""}</span><span class="sr"> pp, ${lead.name} ahead</span></span>`;
+    const leader = d > 0 ? A : B, num = `${est ? "≈" : ""}${Math.abs(d).toFixed(1)}`;
+    delta = html`<span class="fd fresh${est ? " est" : ""}"><span class="to-a" aria-hidden="true">${d > 0 ? "◀ " : ""}</span>${dot(leader)}${num}<span class="to-b" aria-hidden="true">${d < 0 ? " ▶" : ""}</span><span class="sr"> pp, ${leader.name} ahead</span></span>`;
   }
   return html`<div class="fly">
       <div class="ftrack l" data-p="${A.provider}">${bar(x)}</div>
@@ -341,7 +337,7 @@ function capabilities(p, pair) {
   const toggle = (id) => { open.has(id) ? open.delete(id) : open.add(id); hideTip(); draw(); };
 
   return repeat(caps, ({ cap }) => cap.id, ({ cap, all, rows, both }) => {
-    const up = both.filter(([, x, y]) => x.v - y.v > 0.0005).length, down = both.filter(([, x, y]) => y.v - x.v > 0.0005).length;
+    const up = both.filter(([, x, y]) => lead(x, y) > 0).length, down = both.filter(([, x, y]) => lead(x, y) < 0).length;
     const mean = both.length ? both.reduce((t, [, x, y]) => t + (x.v - y.v) * 100, 0) / both.length : 0;
     const oneSided = rows.length - both.length;
     let summary;

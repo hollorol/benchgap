@@ -1,7 +1,6 @@
 /* The harness tax: how much the same benchmark's measured scores disagree across harnesses. */
 import { html, repeat, guard } from "../vendor/lit-html.js";
 import { $, pct, setMeta, show } from "../core.js";
-import { hideTip } from "../tip.js";
 import { pageHead, seg, swap, diagScatter } from "../ui.js";
 
 // data: the harness-tax analysis (data/harness-tax.json, benchgap harness-tax): the pairs
@@ -72,7 +71,7 @@ export function renderHarnessTax(data) {   // its lede is also in src/Pages.php
   const draw = () => show(html`<div class="page">
       ${pageHead("Harness tax", "The same benchmark, measured differently", "The same benchmark, run under different harnesses or protocols, disagrees about the same models - on the agentic benchmarks by far more than on the tool-free ones. Measured scores only: no estimate enters this page. Each point below is one model's score under the one harness against the other; the diagonal is agreement.")}
       <section class="section">
-        <div class="mv-sort"><span class="ctl-label">Tier</span>${seg("Tier", [["all", "all"], ...Object.entries(TIERS)], tier, (k) => { tier = k; hideTip(); redraw(); })}</div>
+        <div class="mv-sort"><span class="ctl-label">Tier</span>${seg("Tier", [["all", "all"], ...Object.entries(TIERS)], tier, (k) => { tier = k; redraw(); })}</div>
         <p class="muted">Pooled mean |Δ| over reportable pairs - ${tierLine || "n/a"}. Verified families only, the agentic vs tool-free ratio: <b>${ratio == null ? "n/a" : ratio.toFixed(1) + "x"}</b>.</p>
         <div class="mv-list" id="ht-list"></div>
       </section></div>`);

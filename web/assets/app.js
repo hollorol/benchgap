@@ -39,8 +39,9 @@ const calibration = lazy(() => import("./js/pages/calibration.js"));
 // the site's pages (keep in step with serve.php): path, nav item, module (code), its renderer
 // (render), the URL of the page's data (none: the page needs only site.json) and the part of it
 // drawn again in place when it is open already (busy, dimmed while the next data loads). A renderer
-// gets the data and the path's argument, sets the page's meta and returns true if it updated the
-// page in place; its data is null if the server has none for the argument (404)
+// gets the data, the path's argument and a signal aborted once another page is opened (for what it
+// loads later), sets the page's meta and returns true if it updated the page in place; its data is
+// null if the server has none for the argument (404)
 const PAGES = [
   { re: /^\/$/, nav: "board", code: board, render: "renderBoard", data: () => "/data/home.json", busy: "#board-sec" },
   { re: /^\/b\/(.+)$/, nav: "board", code: board, render: "renderBoard", data: boardUrl, busy: "#board-sec" },
@@ -64,6 +65,7 @@ const fetchPage = (page, arg) => Promise.all([
 ]);
 
 let shownPath = null;   // the path the page was last rendered (or is being loaded) for
+let opened = null;      // that navigation's AbortController: aborted when the next one starts
 const scrollToHash = () => { const el = location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1))); if (el) el.scrollIntoView(); return !!el; };
 // the links to the page being opened are current at once, not when its data is in: its nav item,
 // and the page's own links that mark one current (the leaderboard's benchmarks)
@@ -84,6 +86,8 @@ async function route() {
   const path = location.pathname;
   if (path === shownPath) return scrollToHash();   // only the #fragment changed: same page, no re-render
   shownPath = path;
+  opened?.abort();
+  const { signal } = (opened = new AbortController());
   const page = pageOf(path);
   const arg = page ? argOf(page, path) : "";
   markCurrent(page ? page.nav : "", path);
@@ -95,34 +99,28 @@ async function route() {
     try {
       [module, data] = await fetchPage(page, arg);
     } catch (err) {
-      if (shownPath !== path) return;   // another page was opened meanwhile
+      if (signal.aborted) return;   // another page was opened meanwhile
       shownPath = null;
       setBusy(null);
       // a page's code from before the site was updated is gone: load the page anew
       if (err.code && drawn) return location.reload();
       return renderError(err);
     }
-    if (shownPath !== path) return;
+    if (signal.aborted) return;
   }
   setBusy(null);
-  const inPlace = page ? module[page.render](data, arg) : renderNotFound("Page not found.");
+  const inPlace = page ? module[page.render](data, arg, signal) : renderNotFound("Page not found.");
   if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
 }
 
-// the path of an in-site link to a page of the site (one this router opens), if el is in one
-function sitePath(el) {
-  const a = el.closest && el.closest("a[href]");
-  if (!a || a.target || a.hasAttribute("download")) return null;
-  const url = new URL(a.href);
-  return url.origin === location.origin && !url.hash && pageOf(url.pathname) ? url.pathname : null;
-}
-
-// in-site links switch pages without a reload
+// in-site links to a page of the site (one this router opens) switch pages without a reload
 document.addEventListener("click", (e) => {
-  const path = sitePath(e.target);
-  if (!path || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest("a[href]");
+  if (!a || a.target || a.hasAttribute("download") || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const url = new URL(a.href);
+  if (url.origin !== location.origin || url.hash || !pageOf(url.pathname)) return;
   e.preventDefault();
-  go(path);
+  go(url.pathname);
 });
 
 // links from before pages had their own paths: #/model/x -> /model/x

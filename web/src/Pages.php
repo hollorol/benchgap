@@ -55,7 +55,7 @@ final class Pages
         $this->index = $api->index();
         $this->benchmarks = array_column($api->benchmarks()['benchmarks'], null, 'key');
         $this->listed = array_filter($this->benchmarks, fn ($b) => $b['listed']);
-        $this->home = Snapshot::home($this->benchmarks);
+        $this->home = $api->home();
         $this->models = array_column($api->models()['models'], null, 'slug');
         $this->listedModels = array_filter($this->models, fn ($m) => $m['listed']);
         $this->capabilities = array_column($this->index['capabilities'], 'label', 'id');
@@ -200,7 +200,7 @@ final class Pages
         }
         $rows = array_map(fn ($s) => [
             $this->link($this->benchmarks[$s['benchmark']]), self::pct($s['score']) . '%', self::source($s),
-        ], array_filter($this->api->model($slug)['scores'], fn ($s) => isset($this->listed[$s['benchmark']])));
+        ], $this->listedScores($slug));
         $plural = $m['n_measured'] === 1 ? '' : 's';
         return $this->result("{$m['name']} benchmark scores",
             "{$m['name']} benchmark scores: measured on {$m['n_measured']} benchmark$plural"
@@ -228,13 +228,13 @@ final class Pages
         $rank = array_flip(array_keys($general));
         $nStanding = count($general);
         $standing = fn (string $slug): string => isset($general[$slug])
-            ? number_format($general[$slug]['general'] * 100, 1) . ' on ' . $general[$slug]['n'] . ' measured (rank #'
+            ? self::pct($general[$slug]['general']) . ' on ' . $general[$slug]['n'] . ' measured (rank #'
                 . ($rank[$slug] + 1) . ' of ' . $nStanding . ')'
             : '— (no measured scores to stand on)';
         if ($a === null) {
             $rows = array_map(fn ($f) => [
                 $this->link($this->models[$f['slug']]),
-                number_format($f['general'] * 100, 1),
+                self::pct($f['general']),
                 $f['n'],
             ], $doc['frontier']);
             return $this->result('Compare two LLM models',
@@ -254,23 +254,14 @@ final class Pages
             return null;
         }
         if ($auto) {
-            // the closest frontier model of that provider (the whole frontier if the provider has none of its own)
-            $pool = $from === null ? $doc['frontier'] : array_values(array_filter($doc['frontier'], fn ($f) => $f['provider'] === $from));
-            $closest = Compare::closest($pool, $general[$a]['general'] ?? null, $a)
-                ?? Compare::closest($doc['frontier'], $general[$a]['general'] ?? null, $a)
-                ?? $doc['frontier'][0] ?? null;
-            $b = $closest['slug'] ?? null;
+            $b = Compare::closest($doc['frontier'], $general[$a]['general'] ?? null, $a, $from)['slug'] ?? null;
         }
         if ($b === null || $b === $a) {
             return null;
         }
         $mb = $this->models[$b];
-        $scoresOf = fn (string $slug): array => array_column(array_filter(
-            $this->api->model($slug)['scores'],
-            fn ($s) => isset($this->listed[$s['benchmark']])
-        ), null, 'benchmark');
-        $sa = $scoresOf($a);
-        $sb = $scoresOf($b);
+        $sa = array_column($this->listedScores($a), null, 'benchmark');
+        $sb = array_column($this->listedScores($b), null, 'benchmark');
         $shared = array_intersect_key($sa, $sb);
         $wins = [0, 0, 0];   // a ahead, b ahead, even (both measured)
         foreach ($shared as $k => $s) {
@@ -618,7 +609,7 @@ final class Pages
                 . 'it never feeds the estimates, and it is why each of them holds for its source harness\'s evaluation setup only.',
             'Estimates are predictions, not measurements, and hold for the source leaderboard\'s evaluation setup only.',
         ];
-        // the end-to-end validation (app.js validatedSection reads the same numbers)
+        // the end-to-end validation (method.js validated() reads the same numbers)
         $h = $this->index['holdout'] ?? null;
         if ($h !== null) {
             $lv = $h['by_level_mae_pp'];
@@ -679,6 +670,12 @@ final class Pages
     {
         $e = $s['estimate'];
         return $e === null ? 'measured' : 'estimated ± ' . number_format($e['error_pp'], 1) . " pp, {$e['confidence']} confidence";
+    }
+
+    /** A model's scores (API objects) on the listed benchmarks. */
+    private function listedScores(string $slug): array
+    {
+        return array_filter($this->api->model($slug)['scores'], fn ($s) => isset($this->listed[$s['benchmark']]));
     }
 
     private static function pct(float $v): string

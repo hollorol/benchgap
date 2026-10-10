@@ -292,7 +292,7 @@ final class Snapshot
         $harnesses = array_values(array_unique(array_column($benchmarks, 'harness')));
         sort($harnesses);
         $estimated = array_sum($tiers);
-        return [
+        $site = [
             'meta' => [
                 'generated_at' => self::generatedAt($db),
                 'retrieved_at' => $db->query("SELECT MAX(retrieved_at) FROM scores WHERE source = 'measured'")->fetchColumn(),
@@ -327,6 +327,9 @@ final class Snapshot
             'picker' => self::picker($benchmarks),
             'holdout' => self::holdout($db),
         ];
+        // the model-compare view's numbers depend only on the build: made once, here
+        $site['compare'] = Compare::compute($site);
+        return $site;
     }
 
     /**

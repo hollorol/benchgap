@@ -84,8 +84,14 @@ final class Api
             'confidence_levels' => $this->data['meta']['confidence_levels'],
             'quality_gate' => $this->data['meta']['quality_gate'],
             'capabilities' => $this->data['capabilities'],
-            'holdout' => $this->data['holdout']['headline'] ?? null,
+            'holdout' => $this->data['holdout']['headline'],
         ];
+    }
+
+    /** The home page's benchmark key (Snapshot::home; for the site's pages, not part of the API). */
+    public function home(): string
+    {
+        return $this->data['meta']['home'];
     }
 
     public function benchmarks(): array
@@ -142,7 +148,7 @@ final class Api
             'n_models' => $m['n'],
             'loo_rmse_pp' => self::pp($m['loo']),
             'alone_loo_rmse_pp' => self::pp($m['alone']),
-        ], $this->data['cross_multi_mappings'] ?? []);
+        ], $this->data['cross_multi_mappings']);
     }
 
     /**
@@ -152,7 +158,7 @@ final class Api
      */
     public function compare(): array
     {
-        $doc = Compare::compute($this->data);
+        $doc = $this->data['compare'];
         $shape = fn (array $rows): array => array_map(fn ($r): array => [
             'slug' => $this->model[$r[0]]['slug'],
             'name' => $this->model[$r[0]]['name'],
@@ -171,9 +177,9 @@ final class Api
     {
         return $this->about + [
             'measured_only' => true,
-            'families' => array_map($this->harnessFamilyObject(...), $this->data['harness_tax']['families'] ?? []),
-            'pairs' => array_map($this->harnessPairObject(...), $this->data['harness_tax']['pairs'] ?? []),
-            'aggregates' => $this->data['harness_tax']['aggregates'] ?? [],
+            'families' => array_map($this->harnessFamilyObject(...), $this->data['harness_tax']['families']),
+            'pairs' => array_map($this->harnessPairObject(...), $this->data['harness_tax']['pairs']),
+            'aggregates' => $this->data['harness_tax']['aggregates'],
             'audit' => ['outliers' => $this->outliers()],
             'url' => self::URL . '/harness-tax.json',
         ];
@@ -182,12 +188,12 @@ final class Api
     /** One family's pairs with every per-model delta and its provenance; null if there is none. */
     public function harnessTaxFamily(string $familyId): ?array
     {
-        $families = array_values(array_filter($this->data['harness_tax']['families'] ?? [], fn ($f) => $f['family_id'] === $familyId));
+        $families = array_values(array_filter($this->data['harness_tax']['families'], fn ($f) => $f['family_id'] === $familyId));
         if (!$families) {
             return null;
         }
-        $deltas = $this->data['harness_tax']['deltas'] ?? [];
-        $pairs = array_values(array_filter($this->data['harness_tax']['pairs'] ?? [], fn ($p) => $p['family_id'] === $familyId));
+        $deltas = $this->data['harness_tax']['deltas'];
+        $pairs = array_values(array_filter($this->data['harness_tax']['pairs'], fn ($p) => $p['family_id'] === $familyId));
         return $this->about + [
             'measured_only' => true,
             'family' => $this->harnessFamilyObject($families[0]),
@@ -203,11 +209,11 @@ final class Api
     private function outliers(): array
     {
         $byId = [];
-        foreach ($this->data['harness_tax']['pairs'] ?? [] as $p) {
+        foreach ($this->data['harness_tax']['pairs'] as $p) {
             $byId[$p['id']] = $p;
         }
         $out = [];
-        foreach ($this->data['harness_tax']['deltas'] ?? [] as $pairId => $deltas) {
+        foreach ($this->data['harness_tax']['deltas'] as $pairId => $deltas) {
             foreach ($deltas as $d) {
                 if (abs($d['delta_pp']) > self::OUTLIER_PP) {
                     $p = $byId[$pairId];

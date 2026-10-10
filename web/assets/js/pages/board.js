@@ -1,7 +1,6 @@
 /* The leaderboard: one benchmark's scores, measured and estimated, highest first. */
 import { html, nothing, repeat, guard } from "../vendor/lit-html.js";
 import { ABOUT, D, ix, prefs, $, main, pct, docs, boardUrl, remember, capLabel, visible, benchHref, modelHref, setMeta, show, go } from "../core.js";
-import { hideTip } from "../tip.js";
 import { legend, showSeg, tierFlag, track, axis, reduceMotion, ease, toggleList, flip, fresh, centerIn, renderNotFound } from "../ui.js";
 
 // a benchmark's model counts: measured, plus estimated if any
@@ -142,7 +141,7 @@ function boardBody(b, all) {
           ${b.source_url ? html` · source: <a href="${b.source_url}" rel="noopener" target="_blank">${host(b.source_url)}</a>` : nothing}</div>
       </div>
       <p class="lede board-lead fresh">${benchLead(b, all)}</p>`)}
-      <div class="controls">${showSeg(() => { hideTip(); flip($("#board-sec"), ".row", draw); })}</div>
+      <div class="controls">${showSeg(() => { flip($("#board-sec"), ".row", draw); })}</div>
       ${legend()}
       <div id="board-rows">${boardRows(b, all)}</div>
       ${nEst === 0 ? html`<p class="muted" style="margin-top:1rem">No estimates for this benchmark: no same-capability benchmark calibrates it well enough (see <a href="/calibration">Calibration</a>).</p>` : nothing}`;

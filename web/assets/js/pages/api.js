@@ -149,10 +149,9 @@ table = measured.pivot(index="model", columns="benchmark", values="score")`,
   };
 }
 
-let opened = 0;   // the API page shown last (a response arriving after it was left or reopened is dropped)
-
-// data: the "Try it" picker's calibrations and harness-tax families (data/api.json)
-export function renderApi(data) {
+// data: the "Try it" picker's calibrations and harness-tax families (data/api.json); a response
+// arriving after the page was left or reopened (signal aborted) is dropped
+export function renderApi(data, arg, signal) {
   setMeta("Public API", "Free JSON and CSV API for LLM benchmark scores, measured and estimated, with an OpenAPI 3.1 description.");
   const samples = codeSamples();
   // the "Try it" picker: an endpoint, then (for a template) which one by name, as
@@ -180,7 +179,6 @@ export function renderApi(data) {
     .map(([f, t, d]) => html`<tr><td class="mono">${f}</td><td class="mono muted">${t}</td><td>${d}</td></tr>`)}</tbody></table></div>`;
 
   const TRY_EP = "benchmarks/{name}/{version}.json";   // opened first, on the home page's benchmark
-  const page = ++opened;
   const st = { lang: "curl", ep: TRY_EP, item: firstItem(TRY_EP), status: "", out: "Press “Send request” to fetch a live response." };
   const path = () => tryPath(st.ep, st.item);
 
@@ -190,14 +188,14 @@ export function renderApi(data) {
     draw();
     const t0 = performance.now();
     try {
-      const res = await fetch(API_BASE + sent, { cache: "no-cache" });
+      const res = await fetch(API_BASE + sent, { cache: "no-cache", signal });
       const text = await res.text();
-      if (page !== opened) return;
+      if (signal.aborted) return;
       const ms = Math.round(performance.now() - t0);
       st.status = `${res.status} ${res.statusText || ""} · ${(text.length / 1024).toFixed(1)} KB · ${ms} ms`;
       st.out = res.ok && sent.endsWith(".json") ? JSON.stringify(JSON.parse(text), null, 2) : text;
     } catch (err) {
-      if (page !== opened) return;
+      if (signal.aborted) return;
       st.status = "request failed";
       st.out = String(err);
     }

@@ -1,12 +1,12 @@
 /* One model across every benchmark. */
 import { html, nothing } from "../vendor/lit-html.js";
-import { D, ix, pct, remember, methodLabel, benchHref, setMeta, show } from "../core.js";
+import { D, ix, pct, remember, methodLabel, providerLabel, benchHref, setMeta, show } from "../core.js";
 import { sourceList, fitHref } from "../tip.js";
 import { dot, confidenceFlag, legend, track, renderNotFound } from "../ui.js";
 
 // the model page's lede (Pages::modelLead)
 function modelLead(m) {
-  return `As of ${D.meta.retrieved_at}, ${m.name} (${D.meta.providers[m.provider] || m.provider}) has measured scores on ${m.n_measured} benchmark${m.n_measured === 1 ? "" : "s"}`
+  return `As of ${D.meta.retrieved_at}, ${m.name} (${providerLabel(m.provider)}) has measured scores on ${m.n_measured} benchmark${m.n_measured === 1 ? "" : "s"}`
     + (m.n_estimated ? ` and estimated scores on ${m.n_estimated} more` : "") + ".";
 }
 
@@ -44,7 +44,7 @@ export function renderModel(data, slug) {
 
   show(html`<div class="page">
       <header class="page-head reveal">
-        <div class="eyebrow">${D.meta.providers[m.provider] || m.provider} · model</div>
+        <div class="eyebrow">${providerLabel(m.provider)} · model</div>
         <div class="model-head">
           <h1 class="h2 who" data-p="${m.provider}">${dot(m)}${m.name}</h1>
           <dl class="kv">

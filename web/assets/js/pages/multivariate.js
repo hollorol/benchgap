@@ -1,7 +1,6 @@
 /* Each benchmark predicted from several others: the fits and their measured-vs-predicted plots. */
 import { html, nothing, repeat, guard } from "../vendor/lit-html.js";
 import { D, ix, $, pct, methodLabel, capLabel, capOf, benchHref, setMeta, show } from "../core.js";
-import { hideTip } from "../tip.js";
 import { pageHead, seg, swap, lossColor, capFilter, diagScatter } from "../ui.js";
 
 // data: the multivariate view's fits (data/multivariate.json, Snapshot's compact rows)
@@ -57,7 +56,7 @@ export function renderMultivariate(data) {   // its lede is also in src/Pages.ph
         Shown for analysis: the estimates come from the <a href="/calibration">calibrations</a>.`)}
       <section class="section">
         ${filter.chips(cap, (id) => { cap = id; redraw(); })}
-        <div class="mv-sort"><span class="ctl-label">Sort</span>${seg("Sort", Object.entries(SORTS).map(([k, [label]]) => [k, label]), sort, (k) => { sort = k; hideTip(); redraw(); })}</div>
+        <div class="mv-sort"><span class="ctl-label">Sort</span>${seg("Sort", Object.entries(SORTS).map(([k, [label]]) => [k, label]), sort, (k) => { sort = k; redraw(); })}</div>
         <div class="mv-list" id="mv-list"></div>
       </section></div>`);
   redraw();

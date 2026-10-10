@@ -39,8 +39,8 @@ export const legend = () => html`<div class="legend" aria-label="Legend">
       <span><span class="whisk"></span>± cross-validated error</span>
     </div>`;
 
-// segmented control with a sliding pill; options are [value, label] pairs. onPick(value) redraws
-// the page with the value current, and the pill slides to it
+// segmented control with a sliding pill; options are [value, label] pairs. A click closes the
+// tooltip and onPick(value) redraws the page with the value current; the pill slides to it
 const placed = new WeakSet();
 function placeThumb(seg) {
   const on = seg.querySelector('[aria-pressed="true"]');
@@ -59,11 +59,10 @@ function initSeg(seg) {
 }
 export const seg = (ariaLabel, options, current, onPick) =>
   html`<span class="seg instant" role="group" aria-label="${ariaLabel}" ${ref(initSeg)}><span class="seg-thumb" aria-hidden="true"></span>${options
-    .map(([k, l]) => html`<button type="button" data-seg="${k}" aria-pressed="${k === current}" @click=${(e) => {
+    .map(([k, l]) => html`<button type="button" data-seg="${k}" aria-pressed="${k === current}" @click=${() => {
       if (k === current) return;
-      const control = e.currentTarget.parentNode;
+      hideTip();
       onPick(k);
-      placeThumb(control);
     }}>${l}</button>`)}</span>`;
 // option labels: long, and short for phones
 const SHOW_OPTIONS = [["measured", "Measured only", "Measured"], ["reliable", "+ reliable estimates", "+ Reliable est."], ["all", "+ all estimates", "+ All est."]]
@@ -124,7 +123,7 @@ export function diagScatter(points, xLabel, yLabel, ariaLabel) {
 
 // --- animation --------------------------------------------------------------
 export const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
-const EASE = "cubic-bezier(.2, .7, .2, 1)";
+const EASE = "cubic-bezier(.2, .7, .2, 1)";   // as --ease (style.css)
 // animates el between keyframes, clipped (.animating) meanwhile so a changing height hides overflow
 export function ease(el, frames, ms, done) {
   el.classList.add("animating");

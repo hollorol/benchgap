@@ -44,9 +44,14 @@ function database(): PDO
 
 // The site's files kept in the temp directory, named by build(): the site data, and every page
 // and document made from it. Another copy of this site may share the directory, hence __DIR__
+function cachePrefix(): string
+{
+    return sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12) . '-';
+}
+
 function cacheFile(string $name): string
 {
-    return sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12) . '-' . build() . "-$name";
+    return cachePrefix() . build() . "-$name";
 }
 
 // the database's current build and this code's version (the files a page is made of): a cached
@@ -58,25 +63,20 @@ function build(): string
     return $build ??= sha1(implode(' ', array_map('filemtime', $code)) . ' ' . Snapshot::version(database()));
 }
 
-// writes a cached file under another name first, so a concurrent request never reads half of it;
-// the first file of a new build removes the previous builds' files. Without a writable temp
-// directory nothing is kept, and every request builds what it needs again
+// writes a cached file under another name first, so a concurrent request never reads half of it.
+// Without a writable temp directory nothing is kept, and every request builds what it needs again
 function keep(string $file, string $contents): void
 {
     $tmp = "$file." . getmypid();
-    if (@file_put_contents($tmp, $contents) === false || !@chmod($tmp, 0600) || !@rename($tmp, $file)) {
-        return;
-    }
-    foreach (glob(sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12) . '-*') ?: [] as $old) {
-        if (!str_contains($old, build())) {
-            @unlink($old);
-        }
+    if (@file_put_contents($tmp, $contents) !== false && @chmod($tmp, 0600)) {
+        @rename($tmp, $file);
     }
 }
 
 // the site data (Snapshot) of the database's current build. Building it takes seconds and even
 // reading it back about 150 ms, so it is kept in a file, and so is every response made from it
-// (cached())
+// (cached()). One request builds it while the others wait to read it; it is the first file of a
+// build, so it removes the previous builds' files
 function snapshot(): array
 {
     static $snapshot;
@@ -84,30 +84,44 @@ function snapshot(): array
         return $snapshot;
     }
     $file = cacheFile('site.ser');
-    $data = is_file($file) ? @unserialize((string) file_get_contents($file), ['allowed_classes' => false]) : false;
+    $read = fn () => is_file($file) ? @unserialize((string) file_get_contents($file), ['allowed_classes' => false]) : false;
+    $data = $read();
     if (!is_array($data)) {
-        $data = Snapshot::build(database());
-        keep($file, serialize($data));
+        $lock = @fopen(cacheFile('site.lock'), 'c');
+        if ($lock) {
+            flock($lock, LOCK_EX);
+            $data = $read();   // built by the request we waited for
+        }
+        if (!is_array($data)) {
+            $data = Snapshot::build(database());
+            keep($file, serialize($data));
+            foreach (glob(cachePrefix() . '*') ?: [] as $old) {
+                if (!str_contains($old, build())) {
+                    @unlink($old);
+                }
+            }
+        }
+        if ($lock) {
+            fclose($lock);
+        }
     }
     return $snapshot = $data;
 }
 
-// Every page and data document (data/...) depends only on the build and its path, so the first
-// request for it keeps the response, and later ones send that instead of reading the site data
-// back. Not the API (its CORS header), nor the matrix's per-score details (one per cell)
+// Every page, data document (data/...) and API document depends only on the build and its path,
+// so the first request for it keeps the response, and later ones send that instead of reading the
+// site data back. Not the matrix's per-score details (one per cell)
 function cached(Request $request, Handler $handler): Response
 {
     $path = $request->getUri()->getPath();
-    if ($request->getMethod() !== 'GET' || str_starts_with($path, '/api/') || str_starts_with($path, '/data/score/')) {
+    if ($request->getMethod() !== 'GET' || str_starts_with($path, '/data/score/')) {
         return $handler->handle($request);
     }
     $file = cacheFile(sha1($path) . '.response');
     $kept = is_file($file) ? @file_get_contents($file) : false;
     if ($kept !== false && str_contains($kept, "\n")) {
         [$type, $body] = explode("\n", $kept, 2);
-        $response = (new Slim\Psr7\Factory\ResponseFactory())->createResponse();
-        $response->getBody()->write($body);
-        return (new CacheProvider())->withEtag($response->withHeader('Content-Type', $type), sha1($body));
+        return respond((new Slim\Psr7\Factory\ResponseFactory())->createResponse(), $body, $type);
     }
     $response = $handler->handle($request);
     if ($response->getStatusCode() === 200) {
@@ -130,12 +144,25 @@ function site(): Site
     return $site ??= new Site(snapshot());
 }
 
-// a document with an ETag; the Cache middleware answers a matching If-None-Match with 304
+// the site's pages over the API, built once per request
+function pages(): Pages
+{
+    static $pages;
+    return $pages ??= new Pages(api());
+}
+
+// a body with its Content-Type and an ETag; the Cache middleware answers a matching If-None-Match with 304
+function respond(Response $response, string $body, string $type): Response
+{
+    $response->getBody()->write($body);
+    return (new CacheProvider())->withEtag($response->withHeader('Content-Type', $type), sha1($body));
+}
+
+// a document (JSON unless a string of $type)
 function send(Response $response, array|string $document, string $type = 'application/json'): Response
 {
     $body = is_string($document) ? $document : json_encode($document, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-    $response->getBody()->write($body);
-    return (new CacheProvider())->withEtag($response->withHeader('Content-Type', "$type; charset=utf-8"), sha1($body));
+    return respond($response, $body, "$type; charset=utf-8");
 }
 
 // throws a 404 for unknown benchmarks, models and mappings
@@ -175,8 +202,7 @@ function html(Pages $pages, array $page, Request $request, ?string $code = null,
 // data document it renders it from (as app.js PAGES)
 function page(Request $request, Response $response, Closure $build, string $code, ?string $data = null): Response
 {
-    $pages = new Pages(api());
-    return send($response, html($pages, found($build($pages), $request), $request, $code, $data), 'text/html');
+    return send($response, html(pages(), found($build(pages()), $request), $request, $code, $data), 'text/html');
 }
 
 // a data/ path, its parts URL-encoded (as boardUrl and modelUrl, assets/js/core.js)
@@ -187,6 +213,11 @@ function data(string ...$parts): string
 
 $app = AppFactory::create();
 $app->add(cached(...));
+// the API is readable from any origin (a kept response too)
+$app->add(function (Request $request, Handler $handler): Response {
+    $response = $handler->handle($request);
+    return str_starts_with($request->getUri()->getPath(), '/api/') ? $response->withHeader('Access-Control-Allow-Origin', '*') : $response;
+});
 $app->add(new Cache('public', 0));  // Cache-Control: public, no-cache (always revalidate)
 $errors = $app->addErrorMiddleware(false, true, true);
 $errors->getDefaultErrorHandler()->forceContentType('application/json');
@@ -195,9 +226,8 @@ $errors->setErrorHandler(HttpNotFoundException::class, function (Request $reques
     if (preg_match('#^/(api/v1|data)(/|$)#', $request->getUri()->getPath())) {
         return $errors->getDefaultErrorHandler()($request, $error, false, false, false);
     }
-    $pages = new Pages(api());
     $response = $app->getResponseFactory()->createResponse(404);
-    $response->getBody()->write(html($pages, $pages->notFound(), $request));
+    $response->getBody()->write(html(pages(), pages()->notFound(), $request));
     return $response->withHeader('Content-Type', 'text/html; charset=utf-8');
 });
 
@@ -221,9 +251,9 @@ $app->group('/data', function (RouteCollectorProxy $data) {
     $data->get('/calibration/{id:[0-9]+}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(site()->mapping((int) $a['id']), $rq)));
 });
-$app->get('/sitemap.xml', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->sitemap(), 'application/xml'));
-$app->get('/llms.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llms(), 'text/markdown'));
-$app->get('/llms-full.txt', fn (Request $rq, Response $rs) => send($rs, (new Pages(api()))->llmsFull(), 'text/markdown'));
+$app->get('/sitemap.xml', fn (Request $rq, Response $rs) => send($rs, pages()->sitemap(), 'application/xml'));
+$app->get('/llms.txt', fn (Request $rq, Response $rs) => send($rs, pages()->llms(), 'text/markdown'));
+$app->get('/llms-full.txt', fn (Request $rq, Response $rs) => send($rs, pages()->llmsFull(), 'text/markdown'));
 
 // the site's pages (keep in step with app.js PAGES)
 $app->get('/', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->board($p->home()), 'board', data('home')));
@@ -265,6 +295,6 @@ $app->group('/api/v1', function (RouteCollectorProxy $v1) {
     $v1->get('/harness-tax.json', fn (Request $rq, Response $rs) => send($rs, api()->harnessTax()));
     $v1->get('/harness-tax/{family_id:[a-z0-9][a-z0-9._-]*}.json', fn (Request $rq, Response $rs, array $a) =>
         send($rs, found(api()->harnessTaxFamily(rawurldecode($a['family_id'])), $rq)));
-})->add(fn (Request $request, Handler $handler) => $handler->handle($request)->withHeader('Access-Control-Allow-Origin', '*'));
+});
 
 $app->run();

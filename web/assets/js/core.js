@@ -17,7 +17,6 @@ export const store = {
 export const prefs = {
   show: store.get("show", "all"),         // "measured" | "reliable" | "all"
   dense: store.get("dense", true),
-  sortCol: null,
 };
 
 export let D = null;    // what every page uses (data/site.json): metadata, capabilities, benchmarks, models
@@ -92,6 +91,7 @@ export function remember(scores) {
 
 export const methodLabel = (k) => D.meta.methods[k] || k;
 export const capLabel = (id) => (ix.cap.get(id) || {}).label || id;
+export const providerLabel = (p) => D.meta.providers[p] || p;
 export const capOf = (id) => ix.bench.get(id).capability;   // a benchmark's capability
 export const benchLabel = (id) => (ix.bench.get(id) || {}).label || "?";
 

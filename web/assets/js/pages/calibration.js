@@ -3,8 +3,9 @@ import { html, svg, render, nothing } from "../vendor/lit-html.js";
 import { D, ix, $, pct, load, remember, methodLabel, capLabel, capOf, mappingHref, setMeta, show } from "../core.js";
 import { dot, modelLink, confidenceFlag, pageHead, axis, swap, lossColor, LOSS_RAMP, capFilter, renderNotFound } from "../ui.js";
 
-// data: the calibrations between listed benchmarks (data/calibration.json)
-export function renderCalibration(data) {
+// data: the calibrations between listed benchmarks (data/calibration.json); the cross-domain fits load
+// after the page, dropped if it was left meanwhile (signal)
+export function renderCalibration(data, arg, signal) {
   setMeta("LLM benchmark calibrations", "Which LLM benchmarks predict which: the fitted cross-benchmark calibrations behind every estimate, with their errors.");
   const gate = D.meta.quality_gate.max_loo_pp;
   // one capability at a time (the one with the most mappings first)
@@ -108,13 +109,13 @@ export function renderCalibration(data) {
   const sum = $("#cross-sum");
   render(html`<p class="muted">Loading the cross-domain fits…</p>`, sum);
   load("/data/cross.json").then((d) => {
-    if (!sum.isConnected) return;   // another page was opened meanwhile
+    if (signal.aborted) return;   // another page was opened meanwhile
     cross = new Map(d.cross.map(([from, to, method, n, r2, loo, passes]) => [from + ":" + to, { from, to, method, n, r2, loo, passes }]));
     if (!d.cross.length) { render(html`<p class="muted">No cross-domain fits in this build yet.</p>`, sum); return; }
     swap(sum, crossTable(d.summary));
     pairMaps.delete("all");
     if (cap === "all") swap($("#pm-wrap"), pairMapOf(cap));
-  }).catch(() => { if (sum.isConnected) render(html`<p class="muted">The cross-domain fits could not be loaded.</p>`, sum); });
+  }).catch(() => { if (!signal.aborted) render(html`<p class="muted">The cross-domain fits could not be loaded.</p>`, sum); });
 }
 
 // data: the calibration with its points and curve, the estimates it made and its reverse (data/calibration/{id}.json)
