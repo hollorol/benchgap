@@ -179,7 +179,9 @@ model, the calibration (predictability) matrix with a scatter + fitted
 curve per mapping and the cross-domain predictability between capabilities,
 the multivariate view (`/multivariate`: each benchmark from the others its
 elastic net keeps, with its error, the error of the best of them alone, and
-a measured vs. leave-one-out predicted scatter), the harness-tax page
+a measured vs. leave-one-out predicted scatter), the compare page
+(`/compare`: two models side by side on every benchmark, or one and the
+frontier model closest to it in general performance), the harness-tax page
 (`/harness-tax`: how much harnesses disagree about the same models, measured
 scores only), the methodology, and the
 publications page (`/publications`: the papers on predicting benchmark

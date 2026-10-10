@@ -5,7 +5,9 @@ without them they are skipped.
 """
 from __future__ import annotations
 
+import bisect
 import json
+import math
 import re
 import shutil
 import socket
@@ -267,6 +269,28 @@ def test_page_data_slices_the_site_data(server):
     means = [-1.0 if p["mean_abs_pp"] is None else p["mean_abs_pp"] for p in whole["harness_tax"]["pairs"]]
     assert means == sorted(means, reverse=True)
 
+    # the compare view: every model's general performance - the mean percentile of its measured
+    # scores across the listed benchmarks - and the frontier, the strongest tenth of dense models
+    per_bench = {}
+    for s in scores:
+        if s["s"] == "m" and s["b"] in listed:
+            per_bench.setdefault(s["b"], []).append(s["v"])
+    for vs in per_bench.values():
+        vs.sort()
+    sums, ns = {}, {}
+    for s in scores:
+        if s["s"] != "m" or s["b"] not in listed or len(per_bench[s["b"]]) < 2:
+            continue
+        p = bisect.bisect_left(per_bench[s["b"]], s["v"]) / (len(per_bench[s["b"]]) - 1)
+        sums[s["m"]] = sums.get(s["m"], 0.0) + p
+        ns[s["m"]] = ns.get(s["m"], 0) + 1
+    general = sorted(
+        ([m, round(sums[m] / ns[m], 4), ns[m]] for m in ns), key=lambda r: (-r[1], -r[2], r[0])
+    )
+    dense = {m["id"] for m in whole["models"] if m["dense"]}
+    frontier = [g for g in general if g[0] in dense][: max(1, math.ceil(len([g for g in general if g[0] in dense]) / 10))]
+    assert get_json(server, "/data/compare.json") == {"compare": {"general": general, "frontier": frontier}}
+
     for path in ["/data/b/no-such/bench.json", "/data/model/no-such-model.json", "/data/calibration/999999.json", "/data/score/0/0.json"]:
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)
@@ -341,6 +365,7 @@ def test_pages_and_sitemap(server):
     pages = {
         "/": "LLM Benchmark Leaderboard with Estimated Scores",
         "/matrix": "LLM benchmark score matrix",
+        "/compare": "Compare two LLM models",
         "/method": "How missing benchmark scores are estimated",
         "/api": "Public API",
         "/calibration": "LLM benchmark calibrations",
@@ -369,7 +394,25 @@ def test_pages_and_sitemap(server):
     _, board = get(server, "/b/aa-terminal-bench21/current")
     assert "the highest measured score on AA Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]
     assert model["page"] == f"https://benchgap.net/model/{model['slug']}"
-    for path in ["/b/no-such/benchmark", "/model/no-such-model", "/calibration/999999", "/no-such-page"]:
+    # the compare pages: a pair, and one model with its closest frontier model picked for it
+    pair_model = get_json(server, "/api/v1/models.json")["models"][1]
+    _, pair = get(server, f"/compare/{model['slug']}/{pair_model['slug']}")
+    assert f"<title>{model['name']} vs {pair_model['name']} benchmark scores · benchgap</title>" in pair
+    assert '<meta name="robots" content="noindex">' in pair and "mean percentile of a model" in pair
+    _, auto = get(server, f"/compare/{model['slug']}")
+    assert "is the frontier model closest to" in auto
+    assert '<link rel="canonical" href="https://benchgap.net/compare">' in get(server, "/compare")[1]
+    # the closest frontier model of one provider (a provider that has one)
+    compare = get_json(server, "/data/compare.json")["compare"]
+    site = get_json(server, "/data/site.json")
+    by_id = {m["id"]: m for m in site["models"]}
+    assert compare["frontier"]
+    provider = by_id[compare["frontier"][0][0]]["provider"]
+    _, scoped = get(server, f"/compare/{model['slug']}/from/{provider}")
+    assert "rank #" in scoped and ("is the frontier model of" in scoped or "is the frontier model closest to" in scoped)
+    for path in ["/b/no-such/benchmark", "/model/no-such-model", "/calibration/999999", "/no-such-page",
+                 "/compare/no-such-model", f"/compare/{model['slug']}/{model['slug']}",
+                 f"/compare/{model['slug']}/from/no-such-provider"]:
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)
         assert err.value.code == 404 and '<meta name="robots" content="noindex">' in err.value.read().decode()
@@ -378,7 +421,7 @@ def test_pages_and_sitemap(server):
     assert headers["Content-Type"].startswith("application/xml")
     index = get_json(server, "/api/v1/")
     n = index["counts"]
-    assert sitemap.count("<loc>") == 8 + n["benchmarks"] + n["models"] + n["mappings"]
+    assert sitemap.count("<loc>") == 9 + n["benchmarks"] + n["models"] + n["mappings"]
     assert f"<loc>{model['page']}</loc>" in sitemap and "<lastmod>" in sitemap
 
 

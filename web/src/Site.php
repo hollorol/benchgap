@@ -24,6 +24,8 @@ namespace Benchgap;
  * - multivariate.json: the multivariate view's fits of listed benchmarks from listed ones;
  *   never used for estimates
  * - api.json: the API page's "Try it" lists (the calibrations, the harness-tax families)
+ * - compare.json: the model-compare view's numbers: every model's general performance
+ *   (mean percentile of its measured scores) and the frontier; never used for estimates
  *
  * Scores, benchmarks, models and mappings keep the Snapshot's shapes, ids and orders: the
  * orders and summaries that do not depend on the visitor are made there, once per build.
@@ -68,6 +70,7 @@ final class Site
             'benchmarks' => $this->data['benchmarks'],
             'models' => $this->data['models'],
             'picker' => $this->data['picker'] ?? [],
+            'holdout' => $this->data['holdout'],
         ];
     }
 
@@ -154,6 +157,17 @@ final class Site
             $this->data['cross_multi_mappings'] ?? [],
             fn ($m) => isset($this->listed[$m['to']]) && !array_diff_key(array_flip($m['from']), $this->listed)
         ))];
+    }
+
+    /**
+     * The model-compare view's numbers: every model's general performance (the mean
+     * percentile of its measured scores across the listed benchmarks) as [model, general,
+     * n], strongest first, and the frontier (its top tenth among dense models). Measured
+     * scores only; never used for estimates.
+     */
+    public function compare(): array
+    {
+        return ['compare' => Compare::compute($this->data)];
     }
 
     /** The harness-tax analysis (families, pairs, per-model deltas, aggregates), without slice filtering:

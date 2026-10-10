@@ -11,6 +11,7 @@
  *   /                       leaderboard (default benchmark)
  *   /b/<benchmark/version>  leaderboard for one benchmark
  *   /matrix                 models x benchmarks score matrix
+ *   /compare                two models side by side, or one and the frontier model closest to it
  *   /model/<slug>           one model across all benchmarks
  *   /calibration            predictability matrix + list of mappings
  *   /calibration/<id>       one fitted mapping (scatter + curve)
@@ -44,6 +45,7 @@ const PAGES = [
   { re: /^\/b\/(.+)$/, nav: "board", code: board, render: "renderBoard", data: boardUrl },
   { re: /^\/model\/(.+)$/, nav: "", code: lazy(() => import("./js/pages/model.js")), render: "renderModel", data: modelUrl },
   { re: /^\/matrix$/, nav: "matrix", code: lazy(() => import("./js/pages/matrix.js")), render: "renderMatrix", data: () => "/data/matrix.json" },
+  { re: /^\/compare(?:\/.*)?$/, nav: "compare", code: lazy(() => import("./js/pages/compare.js")), render: "renderCompare", data: () => "/data/compare.json" },
   { re: /^\/calibration$/, nav: "calibration", code: calibration, render: "renderCalibration", data: () => "/data/calibration.json" },
   { re: /^\/calibration\/(\d+)$/, nav: "calibration", code: calibration, render: "renderMapping", data: (id) => `/data/calibration/${id}.json` },
   { re: /^\/multivariate$/, nav: "multivariate", code: lazy(() => import("./js/pages/multivariate.js")), render: "renderMultivariate", data: () => "/data/multivariate.json" },

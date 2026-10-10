@@ -84,6 +84,7 @@ final class Api
             'confidence_levels' => $this->data['meta']['confidence_levels'],
             'quality_gate' => $this->data['meta']['quality_gate'],
             'capabilities' => $this->data['capabilities'],
+            'holdout' => $this->data['holdout']['headline'] ?? null,
         ];
     }
 
@@ -142,6 +143,24 @@ final class Api
             'loo_rmse_pp' => self::pp($m['loo']),
             'alone_loo_rmse_pp' => self::pp($m['alone']),
         ], $this->data['cross_multi_mappings'] ?? []);
+    }
+
+    /**
+     * The model-compare view's numbers (for its page; not part of the API): every model's
+     * general performance (the mean percentile of its measured scores across the listed
+     * benchmarks) and the frontier, its top tenth among dense models, strongest first.
+     */
+    public function compare(): array
+    {
+        $doc = Compare::compute($this->data);
+        $shape = fn (array $rows): array => array_map(fn ($r): array => [
+            'slug' => $this->model[$r[0]]['slug'],
+            'name' => $this->model[$r[0]]['name'],
+            'provider' => $this->model[$r[0]]['provider'],
+            'general' => $r[1],
+            'n' => $r[2],
+        ], $rows);
+        return ['general' => $shape($doc['general']), 'frontier' => $shape($doc['frontier'])];
     }
 
     /**

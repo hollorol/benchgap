@@ -1353,6 +1353,120 @@
               }
             }
           },
+          "holdout": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "The end-to-end validation of the whole pipeline (masked holdout: measured scores masked, everything refitted, the masked cells scored against their truth), measured on one data snapshot; null until stored. Errors in percentage points.",
+            "properties": {
+              "n_runs": {
+                "type": "integer",
+                "description": "Holdout runs (random masks and sparse models)."
+              },
+              "random_mae_pp": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "Random-mask runs: mean and standard deviation of the MAE."
+              },
+              "random_coverage": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "Random-mask runs: lowest and highest share of masked cells filled."
+              },
+              "paired_diff_pp": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "Mean and standard deviation of the paired MAE difference, pipeline minus a rank-2 matrix completion."
+              },
+              "by_level_mae_pp": {
+                "type": "object",
+                "description": "Realized MAE by confidence level.",
+                "properties": {
+                  "high": {
+                    "type": "number"
+                  },
+                  "medium": {
+                    "type": "number"
+                  },
+                  "low": {
+                    "type": "number"
+                  }
+                }
+              },
+              "label_inflation_rmse": {
+                "type": "object",
+                "description": "Realized RMSE over the ± labels, by confidence level.",
+                "properties": {
+                  "high": {
+                    "type": "number"
+                  },
+                  "medium": {
+                    "type": "number"
+                  },
+                  "low": {
+                    "type": "number"
+                  }
+                }
+              },
+              "reweighted": {
+                "type": "object",
+                "description": "Errors reweighted to the published matrix's confidence mix.",
+                "properties": {
+                  "mae_pp": {
+                    "type": "number"
+                  },
+                  "rmse_pp": {
+                    "type": "number"
+                  }
+                }
+              },
+              "pipeline_vs_svd2_pct": {
+                "type": "number",
+                "description": "How much lower the pipeline's MAE is than a rank-2 matrix completion's on the same cells, percent."
+              },
+              "svd2_on_refused_mae_pp": {
+                "type": "number",
+                "description": "The rank-2 completion's MAE on the cells the pipeline leaves empty."
+              },
+              "sparse_coverage": {
+                "type": "object",
+                "description": "Sparse runs: share of a model's other benchmarks filled when it has k measured scores.",
+                "properties": {
+                  "k1": {
+                    "type": "number"
+                  },
+                  "k2": {
+                    "type": "number"
+                  }
+                }
+              },
+              "sparse_mae_pp": {
+                "type": "object",
+                "description": "Sparse runs: MAE when the model has k measured scores.",
+                "properties": {
+                  "k1": {
+                    "type": "number"
+                  },
+                  "k2": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
           "capabilities": {
             "type": "array",
             "items": {
