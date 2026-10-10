@@ -48,11 +48,13 @@ function placeThumb(seg) {
   seg.style.setProperty("--x", on.offsetLeft + "px");
   seg.style.setProperty("--w", on.offsetWidth + "px");
 }
-// a new control: placed as soon as it has a size (and again when webfonts load), sliding from then on
+// a new control: placed as soon as it has a size (and again when webfonts load), sliding from then on;
+// placed again whenever its option changes, so a page drawn after its route loads moves it too
 function initSeg(seg) {
   if (!seg || placed.has(seg)) return;
   placed.add(seg);
   new ResizeObserver(() => placeThumb(seg)).observe(seg);
+  new MutationObserver(() => placeThumb(seg)).observe(seg, { subtree: true, attributeFilter: ["aria-pressed"] });
   requestAnimationFrame(() => requestAnimationFrame(() => seg.classList.remove("instant")));
 }
 export const seg = (ariaLabel, options, current, onPick) =>

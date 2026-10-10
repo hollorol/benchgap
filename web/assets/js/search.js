@@ -3,7 +3,37 @@ import { html, render } from "./vendor/lit-html.js";
 import { D, ix, $, store, capLabel, benchHref, modelHref, go } from "./core.js";
 import { dot } from "./ui.js";
 
-const fold = (t) => t.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+export const fold = (t) => t.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+const words = (q) => fold(q).split(/\s+/).filter(Boolean);
+
+// the items (each with its folded .text, .weight and .label) with every word of the query in them;
+// one starting with the whole query ranks first, then a match at the start of a word above one
+// inside a word, then the heavier, then by name
+export function ranked(items, q) {
+  const ws = words(q), whole = ws.join(" ");
+  const where = (it, word) => {
+    if (it.text.startsWith(whole)) return -1;
+    const i = it.text.indexOf(word);
+    return i === 0 || /[^a-z0-9]/.test(it.text[i - 1]) ? 0 : 1;
+  };
+  return items
+    .filter((it) => ws.every((w) => it.text.includes(w)))
+    .map((it) => [it, where(it, ws[0])])
+    .sort((a, b) => a[1] - b[1] || b[0].weight - a[0].weight || a[0].label.localeCompare(b[0].label))
+    .map(([it]) => it);
+}
+// the query's words marked in a result's name
+export function mark(label, q) {
+  const low = fold(label), on = new Array(label.length).fill(false);
+  words(q).forEach((w) => { for (let i = low.indexOf(w); i >= 0; i = low.indexOf(w, i + 1)) on.fill(true, i, i + w.length); });
+  const out = [];
+  for (let i = 0; i < label.length; ) {
+    let j = i; while (j < label.length && on[j] === on[i]) j++;
+    out.push(on[i] ? html`<mark>${label.slice(i, j)}</mark>` : label.slice(i, j));
+    i = j;
+  }
+  return out;
+}
 const SEARCH_TYPES = [["all", "All"], ["model", "Models"], ["bench", "Benchmarks"]];
 const SEARCH_GROUPS = Object.fromEntries(SEARCH_TYPES.slice(1));
 const BENCH_ICON = html`<svg class="srch-ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="7" width="3" height="7" rx=".6"/><rect x="6.5" y="3" width="3" height="11" rx=".6"/><rect x="11" y="9" width="3" height="5" rx=".6"/></svg>`;
@@ -21,33 +51,10 @@ function initSearch(openSearch) {
   if (!SEARCH_TYPES.some(([t]) => t === type)) type = "all";
   let shown = [], active = -1;
 
-  // every word of the query must appear; a match at the start of a word ranks above one inside a word
-  const where = (it, word) => { const i = it.text.indexOf(word); return i === 0 || /[^a-z0-9]/.test(it.text[i - 1]) ? 0 : 1; };
-  function matches(q) {
-    const words = fold(q).split(/\s+/).filter(Boolean);
-    return items
-      .filter((it) => words.every((w) => it.text.includes(w)))
-      .map((it) => [it, where(it, words[0])])
-      .sort((a, b) => a[1] - b[1] || b[0].weight - a[0].weight || a[0].label.localeCompare(b[0].label))
-      .map(([it]) => it);
-  }
-  // the query's words marked in a result's name
-  function mark(label, q) {
-    const words = fold(q).split(/\s+/).filter(Boolean), low = fold(label), on = new Array(label.length).fill(false);
-    words.forEach((w) => { for (let i = low.indexOf(w); i >= 0; i = low.indexOf(w, i + 1)) on.fill(true, i, i + w.length); });
-    const out = [];
-    for (let i = 0; i < label.length; ) {
-      let j = i; while (j < label.length && on[j] === on[i]) j++;
-      out.push(on[i] ? html`<mark>${label.slice(i, j)}</mark>` : label.slice(i, j));
-      i = j;
-    }
-    return out;
-  }
-
   function draw() {
     const q = input.value.trim();
     // nothing typed: the most measured models and the original benchmarks
-    const pool = q ? matches(q) : items.slice().sort((a, b) => b.weight - a.weight);
+    const pool = q ? ranked(items, q) : items.slice().sort((a, b) => b.weight - a.weight);
     const n = { all: pool.length, model: 0, bench: 0 };
     pool.forEach((it) => n[it.type]++);
     // the type buttons keep their elements: replacing them under a click would make it look like a click outside

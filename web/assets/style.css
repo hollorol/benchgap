@@ -543,33 +543,139 @@ table.mx { width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 }
 
 /* --- compare page ----------------------------------------------------------- */
-.cmp-pick { display: flex; align-items: center; gap: .6rem; }
-.cmp-pick .select { min-width: 220px; max-width: min(360px, 60vw); }
-.cmp-note { margin: -.4rem 0 .8rem; }
-.cmp-sum { display: grid; grid-template-columns: 1fr minmax(0, 34ch) 1fr; gap: .4rem 1.6rem; align-items: center; padding: .6rem 0 1rem; border-bottom: 1px solid var(--rule); }
-.cmp-side .who { display: flex; align-items: center; gap: .7rem; font: 400 1.35rem/1.1 var(--serif); margin: 0; }
-.cmp-side .who .dot { width: 12px; height: 12px; }
-.cmp-side .who .flag { font-size: .64rem; }
-.cmp-side:last-child { text-align: right; }
-.cmp-side:last-child .who { justify-content: flex-end; }
-.cmp-mid { font-size: .84rem; color: var(--muted); text-align: center; margin: 0; }
-.crow { display: grid; grid-template-columns: minmax(140px, 230px) minmax(0, 1fr) 5.6rem 5.6rem 4.2rem; gap: .3rem 1rem; align-items: center; padding: .45rem 0; }
-.crow .bn a { text-decoration: none; font-size: .9rem; }
-.crow .bn a:hover { text-decoration: underline; }
-.ctrack { position: relative; height: 18px; }
-.ctrack .bar { left: 0; border-radius: 0 3px 3px 0; }
-.ctrack .bar.a { top: 1px; bottom: auto; height: 7px; }
-.ctrack .bar.b { top: auto; bottom: 1px; height: 7px; }
-.crow .cva, .crow .cvb, .crow .dlt { text-align: right; font: 500 .9rem var(--mono); font-feature-settings: "tnum"; white-space: nowrap; }
-.crow .est { font-style: italic; color: var(--ink-2); }
-.crow .dlt.up { color: var(--conf-high); }
-.crow .dlt.down { color: var(--conf-low); }
-@media (max-width: 640px) {
-  .crow { grid-template-columns: minmax(0, 1fr) 4.6rem 4.6rem 3.4rem; }
-  .crow .ctrack { grid-column: 1 / -1; grid-row: 2; }
-  .cmp-sum { grid-template-columns: 1fr; }
-  .cmp-side:last-child { text-align: left; }
-  .cmp-side:last-child .who { justify-content: flex-start; }
+/* the two models' cards, the swap button between them */
+.cmp-pair { display: grid; grid-template-columns: minmax(0, 1fr) 5.5rem minmax(0, 1fr); gap: 1rem; margin-top: 1.4rem; }
+.cmp-slot { display: flex; flex-direction: column; gap: .85rem; }
+.cmp-slot .kv { margin: 0; }
+.cmp-slot .kv dt span { cursor: help; }
+.cmp-slot-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; min-height: 32px; }
+.cmp-slot-head .ctl-label { margin: 0; }
+/* a model picker: the card's face (the model's name and numbers) opens a box to type in over the
+   models, filtered as you type (the top bar's search panel, under the face) */
+.cmp-picker { position: relative; }
+.cmp-face { width: 100%; display: flex; align-items: center; gap: .75rem; min-height: 58px; padding: .4rem .9rem; border: 1px solid var(--rule-strong); border-radius: 8px; background: var(--card); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cmp-face:hover, .cmp-face[aria-expanded="true"] { border-color: var(--ink); }
+.cmp-face .dot { width: 12px; height: 12px; flex: none; }
+.cmp-pop { left: 0; right: 0; top: calc(100% + 6px); width: auto; max-width: none; }
+.cmp-q { display: block; width: 100%; height: 46px; padding: 0 .9rem; border: 0; border-bottom: 1px solid var(--rule); background: transparent; font-size: 1rem; outline: none; }
+.cmp-q::placeholder { color: var(--faint); }
+.cmp-pop .search-results { max-height: min(360px, 50vh); }
+.cmp-picked { flex: 1; min-width: 0; }
+.cmp-name { display: block; font: 400 1.5rem/1.1 var(--serif); overflow-wrap: anywhere; }
+.cmp-sub { display: block; font-size: .8rem; color: var(--muted); margin-top: .15rem; }
+.cmp-face svg, .cmp-cap svg { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cmp-from { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .85rem; border-top: 1px solid var(--rule); padding-top: .8rem; }
+/* B's "Frontier of" row folds away (height and fade) while B is a pick */
+.cmp-from-fold { display: grid; grid-template-rows: 1fr; margin-top: -.85rem; transition: grid-template-rows .32s cubic-bezier(.3, .7, .2, 1), opacity .25s; }
+.cmp-from-fold > div { min-height: 0; overflow: hidden; }
+.cmp-from-fold .cmp-from { margin-top: .85rem; }
+.cmp-from-fold.closed { grid-template-rows: 0fr; opacity: 0; }
+.cmp-from .ctl-label { margin: 0; }
+.cmp-vs { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; font: italic 400 1.9rem var(--serif); color: var(--faint); }
+.cmp-swap { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--card); display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
+.cmp-swap:hover { border-color: var(--ink); color: var(--ink); }
+.cmp-swap svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* while the next pair's scores load, the last pair stays, dimmed (the first one: room for it) */
+.cmp-body { transition: opacity .2s; }
+.cmp-body[aria-busy="true"] { opacity: .45; transition-delay: .1s; }
+.cmp-body:empty { min-height: 40vh; }
+/* what changes with the pair plays an entrance: new text fades up, bars slide to their new length */
+.cmp-fresh { display: inline-block; animation: cmp-in .38s cubic-bezier(.2, .7, .2, 1) both; }
+div.cmp-fresh, .cmp-name.cmp-fresh, .cmp-sub.cmp-fresh, .fd.cmp-fresh { display: block; }
+@keyframes cmp-in { from { opacity: 0; transform: translateY(5px); } }
+.fly:not(.fly-head) { animation: cmp-in .38s cubic-bezier(.2, .7, .2, 1) both; }
+.ftrack .bar, .cmp-lean span { transition: width .55s cubic-bezier(.2, .7, .2, 1), background-color .35s; }
+@media (prefers-reduced-motion: reduce) {
+  .cmp-fresh, .fly { animation: none; }
+  .cmp-from-fold, .ftrack .bar, .cmp-lean span, .cmp-split-bar span, .cmp-body { transition: none; }
+}
+/* the verdict: who leads where both were measured, one square per benchmark in its leader's colour */
+.cmp-verdict { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 2.5rem; margin-top: 1.1rem; padding: 1.4rem 0; border-block: 1px solid var(--rule); }
+.cmp-verdict > div { flex: 1 1 30rem; min-width: 0; }
+.cmp-verdict p { margin: 0; }
+.cmp-verdict .say { font: 400 1.75rem/1.15 var(--serif); }
+.cmp-verdict .say .mono { font-size: .82em; }
+.cmp-verdict .muted { font-size: .875rem; margin-top: .4rem; }
+.cmp-show { padding: 1.4rem 0 0; }
+.cmp-show + .cmp-verdict { margin-top: .9rem; }
+/* the verdict's bar: A's wins grow from the left, B's from the right, the even ones between them */
+.cmp-split { flex: 1 1 22rem; min-width: 0; }
+.cmp-split-names { display: flex; justify-content: space-between; gap: 1rem; font-size: .85rem; margin-bottom: .45rem; }
+.cmp-split-names > span { display: inline-flex; align-items: baseline; gap: .45rem; min-width: 0; }
+.cmp-split-names .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+.cmp-split-names b { font-size: 1.15rem; font-weight: 600; }
+.cmp-split-names .dot { align-self: center; }
+.cmp-split-bar { display: flex; height: 16px; border-radius: 4px; overflow: hidden; background: var(--paper-2); }
+.cmp-split-bar span { --c: var(--pc, var(--rule-strong)); flex: none; background: var(--c); box-shadow: inset -2px 0 0 var(--paper); transition: width .55s cubic-bezier(.2, .7, .2, 1); }
+.cmp-split-bar span:last-child { box-shadow: none; }
+.cmp-split-bar .e, .cmp-split-key .e { background: repeating-linear-gradient(-45deg, var(--c) 0 2px, transparent 2px 4.5px); }
+.cmp-split-bar .even, .cmp-split-key .even { background: var(--rule); }
+.cmp-split-key { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin: .5rem 0 0; font-size: .75rem; color: var(--muted); }
+.cmp-split-key span { --c: var(--ink-2); width: 12px; height: 12px; border-radius: 3px; background: var(--c); }
+.cmp-split-key .e, .cmp-split-key .even { margin-left: .6rem; box-shadow: inset 0 0 0 1px var(--c); }
+.cmp-split-key .even { box-shadow: none; }
+.cmp-sec { margin-top: 2.6rem; }
+.cmp-sec > .muted { margin: .4rem 0 .6rem; font-size: .875rem; }
+/* a benchmark's two scores as mirrored bars: A's grows to the left, B's to the right */
+.fly { display: grid; grid-template-columns: minmax(0, 1fr) 4.8rem minmax(10rem, 15rem) 4.8rem minmax(0, 1fr); grid-template-areas: "ta va n vb tb"; gap: 0 .75rem; align-items: center; padding: .6rem 0; border-top: 1px solid var(--rule); }
+.fly-head { font-size: .8rem; font-weight: 600; border-top: 0; padding: .6rem 0 .5rem; }
+.fly-head .ha { grid-column: 1 / 3; justify-self: end; }
+.fly-head .hn { grid-area: n; text-align: center; color: var(--muted); font-weight: 500; }
+.fly-head .hb { grid-column: 4 / 6; }
+.fly-head .dot { width: 10px; height: 10px; }
+.fly-head .hp { display: none; }
+.ftrack { position: relative; height: 14px; }
+.ftrack.l { grid-area: ta; }
+.ftrack.r { grid-area: tb; }
+.ftrack .bar { top: 0; bottom: 0; }
+.ftrack.l .bar { left: auto; right: 0; border-radius: 3px 0 0 3px; }
+.fv { font: 500 .9rem var(--mono); font-feature-settings: "tnum"; white-space: nowrap; }
+.fv.a { grid-area: va; text-align: right; }
+.fv.b { grid-area: vb; }
+.fv.est, .fd.est { font-style: italic; color: var(--ink-2); }
+.fv.none { color: var(--faint); }
+.fname { grid-area: n; text-align: center; line-height: 1.25; min-width: 0; }
+.fname a { font-size: .9rem; }
+.fd { display: block; font: 500 .78rem var(--mono); color: var(--muted); margin-top: .1rem; white-space: nowrap; }
+.fd .dot { display: none; width: 8px; height: 8px; margin-right: .3rem; vertical-align: 0; }
+/* a capability: one line saying who leads it, opening to its benchmarks */
+.cmp-cap { border-bottom: 1px solid var(--rule); }
+.cmp-cap > button { width: 100%; display: grid; grid-template-columns: minmax(11rem, 16rem) minmax(0, 1fr) 8.75rem 16px; align-items: center; gap: 1rem; padding: .95rem .1rem; border: 0; background: none; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+.cmp-cap .cap-name { font-weight: 600; }
+.cmp-cap .cap-name .mono { font-weight: 400; font-size: .78rem; color: var(--muted); margin-left: .45rem; }
+.cmp-cap .cap-sum { font-size: .875rem; color: var(--ink-2); }
+.cmp-cap svg { stroke: var(--ink-2); transition: transform .15s; }
+.cmp-cap [aria-expanded="true"] svg { transform: rotate(180deg); }
+.cmp-lean { position: relative; height: 10px; }
+.cmp-lean::before { content: ""; position: absolute; left: 50%; top: -4px; bottom: -4px; width: 1px; background: var(--rule-strong); }
+.cmp-lean span { position: absolute; top: 0; height: 10px; background: var(--pc); }
+.cmp-lean .a { right: 50%; border-radius: 2px 0 0 2px; }
+.cmp-lean .b { left: 50%; border-radius: 0 2px 2px 0; }
+.cmp-rows { padding-bottom: .9rem; }
+.cmp-rows .fly { border-top-color: var(--paper-2); padding: .45rem 0; }
+.cmp-hidden { text-align: center; font-size: .82rem; color: var(--muted); margin: .6rem 0 0; }
+@media (max-width: 760px) {
+  .cmp-pair { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+  .cmp-vs { flex-direction: row; font-size: 1.4rem; }
+  .cmp-vs::before, .cmp-vs::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .cmp-name { font-size: 1.3rem; }
+  .cmp-verdict .say { font-size: 1.45rem; }
+  /* a benchmark: its name and gap, then A's bar over B's */
+  .fly { grid-template-columns: minmax(0, 1fr) 4.4rem; grid-template-areas: "n n" "ta va" "tb vb"; gap: .3rem .6rem; }
+  .fname { text-align: left; display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+  .fd { margin: 0; }
+  .fd .dot { display: inline-block; }
+  .fd .to-a, .fd .to-b { display: none; }
+  .ftrack { height: 8px; }
+  .ftrack.l .bar { left: 0; right: auto; border-radius: 0 3px 3px 0; }
+  .fv.a, .fv.b { text-align: right; font-size: .82rem; }
+  .fly-head { display: block; font-weight: 500; color: var(--muted); }
+  .fly-head > span { display: none; }
+  .fly-head .hp { display: inline; }
+  .cmp-cap > button { grid-template-columns: minmax(0, 1fr) 16px; gap: .3rem .8rem; }
+  .cmp-cap .cap-sum { grid-column: 1; grid-row: 2; }
+  .cmp-cap svg { grid-column: 2; grid-row: 1 / 3; }
+  .cmp-lean { display: none; }
 }
 
 /* --- calibration --------------------------------------------------------- */

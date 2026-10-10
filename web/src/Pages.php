@@ -25,11 +25,9 @@ final class Pages
     // what general performance means (the compare page; the same definition as Compare.php)
     private const COMPARE_LEDE = 'General performance is the mean percentile of a model\'s measured scores across the '
         . 'listed benchmarks; the frontier is its strongest tenth. Measured scores only - never estimates.';
-    // the compare page's lede (app.js compareLede); the definition above rides along on the pair pages
-    private const COMPARE_INTRO = 'Two models on every benchmark, measured scores and estimates alike, with how far apart '
-        . 'they sit. Or pick one model and a checkbox fills the other with the frontier model closest to it in general '
-        . 'performance - the mean percentile of its measured scores; the frontier is its strongest tenth, of one provider '
-        . 'or of any. Measured scores only decide the standings.';
+    // the compare page's lede (js/pages/compare.js LEDE); the definition above rides along on the pair pages
+    private const COMPARE_INTRO = 'Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. '
+        . 'Pick two models, or one and the frontier model closest to it in general performance.';
     // the pages besides those of each benchmark, model and calibration: title and summary for llms.txt
     private const PAGES = [
         '/' => ['Leaderboard', 'one benchmark at a time, measured and estimated scores ranked together'],
@@ -242,7 +240,7 @@ final class Pages
             return $this->result('Compare two LLM models',
                 'Compare two LLM models benchmark by benchmark: measured scores and estimates side by side, or one against the closest frontier model.',
                 '/compare',
-                $this->header('Model compare', 'Two models, benchmark by benchmark', '<p class="lede">' . self::esc(self::COMPARE_INTRO) . '</p>')
+                $this->header('Model compare', 'Two models, head to head', '<p class="lede">' . self::esc(self::COMPARE_INTRO) . '</p>')
                 . $this->table(['Frontier model', 'General performance', 'Measured on'], $rows)
                 . '<p class="muted">Pick two models on the <a href="/compare">interactive page</a>, or one and '
                     . 'the closest frontier model is chosen for it - of one provider, or of any.</p>');
