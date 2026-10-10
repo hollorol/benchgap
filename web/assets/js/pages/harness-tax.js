@@ -12,15 +12,15 @@ export function renderHarnessTax(data) {   // its lede is also in src/Pages.php
     "How much the same benchmark's measured scores disagree across harnesses and run protocols. Measured scores only, never estimates.");
   const ht = data.harness_tax;
   const TIERS = { agentic: "agentic", knowledge_tool_free: "tool-free", protocol_layer: "protocol layer" };
-  const pairs = ht.pairs;   // the biggest disagreement first (Snapshot)
   const deltasOf = (p) => ht.deltas[p.id] || [];
+  // the biggest disagreement first (Snapshot); a pair no model was measured on both of has nothing to show
+  const pairs = ht.pairs.filter((p) => deltasOf(p).length);
   const shortKey = (k) => (k || "").endsWith("/current") ? k.slice(0, -"/current".length) : k || "?";
   let tier = "all";
 
   // one pair's measured scores against each other
   function htScatter(p) {
     const ds = deltasOf(p);
-    if (!ds.length) return html`<p class="muted">No model was measured on both.</p>`;
     const a = shortKey(p.a.key), b = shortKey(p.b.key);
     return diagScatter(ds.map((d) => [d.score_a, d.score_b,
       `${d.name}: ${pct(d.score_a)}% on ${a}, ${pct(d.score_b)}% on ${b} (Δ ${d.delta_pp >= 0 ? "+" : "−"}${Math.abs(d.delta_pp).toFixed(1)} pp)`]),

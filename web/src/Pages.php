@@ -411,7 +411,7 @@ final class Pages
             ($p['n_models'] === 0 || ($p['n_positive'] + $p['n_negative']) === 0)
                 ? '—'
                 : "{$p['n_positive']} up / {$p['n_negative']} down",
-        ], $doc['pairs']);   // the biggest disagreement first (Snapshot)
+        ], array_filter($doc['pairs'], fn ($p) => $p['n_models'] > 0));   // the biggest disagreement first (Snapshot); as app.js, none with no model on both
         $outliers = count($doc['audit']['outliers']);
         return $this->result('The harness tax: how much harnesses disagree',
             'How much the same benchmark\'s measured scores disagree across harnesses and run protocols, benchmark family by family. Measured scores only.',
