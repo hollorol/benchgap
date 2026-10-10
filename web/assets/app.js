@@ -95,15 +95,35 @@ async function route() {
   if (!inPlace && !scrollToHash()) window.scrollTo(0, 0);
 }
 
+// the path of an in-site link to a page of the site (one this router opens), if el is in one
+function sitePath(el) {
+  const a = el.closest && el.closest("a[href]");
+  if (!a || a.target || a.hasAttribute("download")) return null;
+  const url = new URL(a.href);
+  return url.origin === location.origin && !url.hash && pageOf(url.pathname) ? url.pathname : null;
+}
+
 // in-site links switch pages without a reload
 document.addEventListener("click", (e) => {
-  const a = e.target.closest("a[href]");
-  if (!a || a.target || a.hasAttribute("download") || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-  const url = new URL(a.href);
-  if (url.origin !== location.origin || url.hash || !pageOf(url.pathname)) return;
+  const path = sitePath(e.target);
+  if (!path || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
-  go(url.pathname);
+  go(path);
 });
+
+// a link's page starts loading when the pointer rests on it (or a finger touches it), so most
+// of the wait is over by the click
+let hovered = null;
+function prefetch(path) {
+  const page = path && pageOf(path);
+  if (page) fetchPage(page, argOf(page, path)).catch(() => {});
+}
+document.addEventListener("pointerover", (e) => {
+  clearTimeout(hovered);
+  const path = sitePath(e.target);
+  if (path && path !== location.pathname) hovered = setTimeout(prefetch, 50, path);
+}, { passive: true });
+document.addEventListener("touchstart", (e) => prefetch(sitePath(e.target)), { passive: true });
 
 // links from before pages had their own paths: #/model/x -> /model/x
 if (location.hash.startsWith("#/")) history.replaceState(null, "", "/" + location.hash.slice(2));

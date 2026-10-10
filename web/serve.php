@@ -30,42 +30,90 @@ require __DIR__ . '/vendor/autoload.php';
 
 function database(): PDO
 {
+    static $db;
+    if ($db !== null) {
+        return $db;
+    }
     // BENCHGAP_DSN: the local dev stack's database (compose.yaml); config.php otherwise
     $config = getenv('BENCHGAP_DSN') ? ['dsn' => getenv('BENCHGAP_DSN')] : require __DIR__ . '/config.php';
-    return new PDO($config['dsn'], $config['username'] ?? null, $config['password'] ?? null, [
+    return $db = new PDO($config['dsn'], $config['username'] ?? null, $config['password'] ?? null, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
 }
 
-// the site data (Snapshot) of the database's current build. Building it takes about half a
-// second, so it is kept in a file (in the temp directory) until the data or this code changes;
-// without a writable temp directory every request builds it again
+// The site's files kept in the temp directory, named by build(): the site data, and every page
+// and document made from it. Another copy of this site may share the directory, hence __DIR__
+function cacheFile(string $name): string
+{
+    return sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12) . '-' . build() . "-$name";
+}
+
+// the database's current build and this code's version (the files a page is made of): a cached
+// file is good while both stay the same
+function build(): string
+{
+    static $build;
+    $code = [...glob(__DIR__ . '/src/*.php'), __FILE__, __DIR__ . '/index.html', __DIR__ . '/assets/app.js', __DIR__ . '/assets/style.css'];
+    return $build ??= sha1(implode(' ', array_map('filemtime', $code)) . ' ' . Snapshot::version(database()));
+}
+
+// writes a cached file under another name first, so a concurrent request never reads half of it;
+// the first file of a new build removes the previous builds' files. Without a writable temp
+// directory nothing is kept, and every request builds what it needs again
+function keep(string $file, string $contents): void
+{
+    $tmp = "$file." . getmypid();
+    if (@file_put_contents($tmp, $contents) === false || !@chmod($tmp, 0600) || !@rename($tmp, $file)) {
+        return;
+    }
+    foreach (glob(sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12) . '-*') ?: [] as $old) {
+        if (!str_contains($old, build())) {
+            @unlink($old);
+        }
+    }
+}
+
+// the site data (Snapshot) of the database's current build. Building it takes seconds and even
+// reading it back about 150 ms, so it is kept in a file, and so is every response made from it
+// (cached())
 function snapshot(): array
 {
     static $snapshot;
     if ($snapshot !== null) {
         return $snapshot;
     }
-    $db = database();
-    $code = implode(' ', array_map('filemtime', glob(__DIR__ . '/src/*.php')));
-    // this site's files (another copy of it may share the temp directory), one per build and code version
-    $prefix = sys_get_temp_dir() . '/benchgap-' . substr(sha1(__DIR__), 0, 12);
-    $file = "$prefix-" . sha1($code . ' ' . Snapshot::version($db)) . '.ser';
+    $file = cacheFile('site.ser');
     $data = is_file($file) ? @unserialize((string) file_get_contents($file), ['allowed_classes' => false]) : false;
     if (!is_array($data)) {
-        $data = Snapshot::build($db);
-        // written under another name first, so a concurrent request never reads half a file
-        $tmp = "$file." . getmypid();
-        if (@file_put_contents($tmp, serialize($data)) !== false && @chmod($tmp, 0600) && @rename($tmp, $file)) {
-            foreach (glob("$prefix-*.ser") ?: [] as $old) {
-                if ($old !== $file) {
-                    @unlink($old);
-                }
-            }
-        }
+        $data = Snapshot::build(database());
+        keep($file, serialize($data));
     }
     return $snapshot = $data;
+}
+
+// Every page and data document (data/...) depends only on the build and its path, so the first
+// request for it keeps the response, and later ones send that instead of reading the site data
+// back. Not the API (its CORS header), nor the matrix's per-score details (one per cell)
+function cached(Request $request, Handler $handler): Response
+{
+    $path = $request->getUri()->getPath();
+    if ($request->getMethod() !== 'GET' || str_starts_with($path, '/api/') || str_starts_with($path, '/data/score/')) {
+        return $handler->handle($request);
+    }
+    $file = cacheFile(sha1($path) . '.response');
+    $kept = is_file($file) ? @file_get_contents($file) : false;
+    if ($kept !== false && str_contains($kept, "\n")) {
+        [$type, $body] = explode("\n", $kept, 2);
+        $response = (new Slim\Psr7\Factory\ResponseFactory())->createResponse();
+        $response->getBody()->write($body);
+        return (new CacheProvider())->withEtag($response->withHeader('Content-Type', $type), sha1($body));
+    }
+    $response = $handler->handle($request);
+    if ($response->getStatusCode() === 200) {
+        keep($file, $response->getHeaderLine('Content-Type') . "\n" . $response->getBody());
+    }
+    return $response;
 }
 
 // the API over the site data, built once per request
@@ -138,6 +186,7 @@ function data(string ...$parts): string
 }
 
 $app = AppFactory::create();
+$app->add(cached(...));
 $app->add(new Cache('public', 0));  // Cache-Control: public, no-cache (always revalidate)
 $errors = $app->addErrorMiddleware(false, true, true);
 $errors->getDefaultErrorHandler()->forceContentType('application/json');
