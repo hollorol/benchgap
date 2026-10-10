@@ -535,8 +535,10 @@ final class Pages
         return $this->result('Public API',
             'Free JSON and CSV API for LLM benchmark scores, measured and estimated, with an OpenAPI 3.1 description.', '/api',
             $this->header('API · v1', 'Public API',
-                '<p class="lede">Everything on this site is available as plain JSON (and CSV): every benchmark, model, score and calibration, and the harness-tax analysis, '
-                . "with each estimate's confidence level and error. Free, no key, readable from any origin.</p><p>Base URL: <code>$base</code></p>")
+                '<p class="lede">Every benchmark, model, score and calibration, and the harness-tax analysis, as plain JSON (and CSV), '
+                . "with each estimate's confidence level and error. Free, no key, readable from any origin. The site's views made from "
+                . 'these scores (model compare, the multivariate and cross-domain fits) are not part of v1.</p>'
+                . "<p>Base URL: <code>$base</code></p>")
             . '<ul>' . implode('', $endpoints) . '</ul>');
     }
 

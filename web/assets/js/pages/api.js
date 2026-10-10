@@ -206,8 +206,9 @@ export function renderApi(data, arg, signal) {
   // the page; only the Try-it panel and the code sample change, the rest is drawn once (guard)
   function draw() {
     show(html`<div class="page">
-      ${guard([], () => html`${pageHead("API · v1", "Public API", `Everything on this site is available as plain JSON (and CSV): every benchmark, model,
-        score and calibration, and the harness-tax analysis, with each estimate's confidence level and error. Free, no key, readable from any origin.`)}
+      ${guard([], () => html`${pageHead("API · v1", "Public API", `Every benchmark, model, score and calibration, and the harness-tax analysis, as plain
+        JSON (and CSV), with each estimate's confidence level and error. Free, no key, readable from any origin. The site's views made from
+        these scores (model compare, the multivariate and cross-domain fits) are not part of v1.`)}
 
       <div class="api-base-bar">
         <span class="verb">GET</span>
