@@ -12,8 +12,8 @@ const SHARED_FLOOR = 2 / 3;
 const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. "
   + "Pick two models, or one and the frontier model to hold it against: its closest rival in general performance, "
   + "or for a model below the frontier the closest of the frontier models it shares the most benchmarks with.";
-const GENERAL_TIP = "General performance: the mean percentile of a model's measured scores across the listed benchmarks. "
-  + "The frontier is its strongest tenth. Measured scores only.";
+const GENERAL_TIP = "General performance: the mean percentile of a model's scores, measured and estimated, across the listed benchmarks, "
+  + "not only those it happened to be run on. The frontier is its strongest tenth.";
 const cmpHref = (a, b, from) =>
   `/compare/${encodeURIComponent(a)}${b ? "/" + encodeURIComponent(b) : (from && from !== "any" ? "/from/" + encodeURIComponent(from) : "")}`;
 
@@ -25,14 +25,14 @@ let page = null;   // the open pair: its models, how B was chosen, the standings
 let open = null;   // the capabilities opened (ids); null: the one with the most benchmarks in common
 
 // data: every model's general performance and the frontier (data/compare.json, Compare.php):
-// general is the mean percentile of a model's measured scores across the listed benchmarks (and
-// the benchmarks it stands on), the frontier is its strongest tenth. Two models (/compare/<a>/<b>),
+// general is the mean percentile of a model's scores, measured and estimated, across the listed
+// benchmarks (and the benchmarks it stands on measured), the frontier is its strongest tenth. Two models (/compare/<a>/<b>),
 // or one model (/compare/<a>) and the frontier model to hold it against - of one provider
 // (/compare/<a>/from/<p>), or of any - a pick that follows the field. Returns true when the page was already open (only the pair changed).
 // The models' scores load after; the signal drops them if another page or pair was opened meanwhile.
 export function renderCompare(data, arg, signal) {
   const parts = location.pathname.split("/").slice(2).filter(Boolean).map(decodeURIComponent);
-  const general = new Map(data.compare.general.map(([id, g, n, on]) => [id, { g, n, on }]));   // by model id
+  const general = new Map(data.compare.general.map(([id, g, n, measured]) => [id, { g, n, measured }]));   // by model id
   const rankOf = new Map(data.compare.general.map(([id], i) => [id, i + 1]));          // strongest first
   const frontier = data.compare.frontier.filter(([id]) => ix.model.has(id));          // strongest first
   const isFrontier = new Set(frontier.map(([id]) => id));
@@ -48,7 +48,7 @@ export function renderCompare(data, arg, signal) {
     const t = general.get(m.id);
     if (!pool.length || !t) return pool.length ? ix.model.get(pool[0][0]) : null;
     if (!isFrontier.has(m.id)) {
-      const mine = new Set(t.on), shared = pool.map(([, , , on]) => on.filter((b) => mine.has(b)).length);
+      const mine = new Set(t.measured), shared = pool.map(([, , , measured]) => measured.filter((b) => mine.has(b)).length);
       const floor = SHARED_FLOOR * Math.max(...shared);
       pool = pool.filter((f, i) => shared[i] >= floor);
     }
@@ -193,9 +193,9 @@ const picker = (which) => html`<div class="search-pop cmp-pop" ${ref(panelIn)} @
 function pickReason({ A, B, from, general, isFrontier }) {
   const of = from !== "any" && B.provider === from ? `of ${providerLabel(from)} ` : "";
   const gA = general.get(A.id);
-  if (!gA) return `the strongest frontier model ${of}(${A.name} has no measured standing)`;
+  if (!gA) return `the strongest frontier model ${of}(${A.name} has no standing)`;
   if (isFrontier.has(A.id)) return `the frontier model ${of}closest to ${A.name}`;
-  const mine = new Set(gA.on), n = general.get(B.id).on.filter((b) => mine.has(b)).length;
+  const mine = new Set(gA.measured), n = general.get(B.id).measured.filter((b) => mine.has(b)).length;
   return n ? `the frontier model ${of}closest to ${A.name} of those measured on the most benchmarks with it (${n} shared)`
     : `the frontier model ${of}closest to ${A.name}; none shares a measured benchmark with it`;
 }
@@ -225,7 +225,7 @@ function slot(p, which) {
       <dl class="kv">
         <dt><span data-tiptext="${GENERAL_TIP}" tabindex="0">general ⓘ</span></dt>
         <dd>${fresh(m.id, html`<span class="fresh">${g ? pct(g.g) : "—"}${p.isFrontier.has(m.id) ? html` <span class="flag high">frontier</span>` : nothing}</span>`)}</dd>
-        <dt>rank</dt><dd>${fresh(m.id, html`<span class="fresh">${g ? `#${p.rankOf.get(m.id)} of ${p.nStanding}` : "no measured standing"}</span>`)}</dd>
+        <dt>rank</dt><dd>${fresh(m.id, html`<span class="fresh">${g ? `#${p.rankOf.get(m.id)} of ${p.nStanding}` : "no standing"}</span>`)}</dd>
       </dl>
       ${which === "B" ? html`<div class="cmp-from-fold${auto ? "" : " closed"}" ?inert=${!auto}><div><div class="cmp-from">
           <label class="ctl-label" for="cmp-from">Frontier of</label>

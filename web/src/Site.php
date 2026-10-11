@@ -25,7 +25,7 @@ namespace Benchgap;
  *   never used for estimates
  * - api.json: the API page's "Try it" lists (the calibrations, the harness-tax families)
  * - compare.json: the model-compare view's numbers: every model's general performance
- *   (mean percentile of its measured scores) and the frontier; never used for estimates
+ *   (mean percentile of its measured and estimated scores) and the frontier; never used for estimates
  *
  * Scores, benchmarks, models and mappings keep the Snapshot's shapes, ids and orders: the
  * orders and summaries that do not depend on the visitor are made there, once per build.
@@ -161,10 +161,9 @@ final class Site
 
     /**
      * The model-compare view's numbers: every model's general performance (the mean
-     * percentile of its measured scores across the listed benchmarks) as [model, general,
-     * n, the benchmarks it stands on], strongest first, and the frontier (its top tenth among
-     * dense models). Measured
-     * scores only; never used for estimates.
+     * percentile of its measured and estimated scores across the listed benchmarks) as
+     * [model, general, n, the benchmarks it stands on measured], strongest first, and the
+     * frontier (its top tenth among dense models). Never used for estimates.
      */
     public function compare(): array
     {

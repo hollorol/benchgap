@@ -153,8 +153,9 @@ final class Api
 
     /**
      * The model-compare view's numbers (for its page; not part of the API): every model's
-     * general performance (the mean percentile of its measured scores across the listed
-     * benchmarks) and the frontier, its top tenth among dense models, strongest first.
+     * general performance (the mean percentile of its measured and estimated scores across
+     * the listed benchmarks) and the frontier, its top tenth among dense models, strongest
+     * first.
      */
     public function compare(): array
     {
@@ -165,7 +166,7 @@ final class Api
             'provider' => $this->model[$r[0]]['provider'],
             'general' => $r[1],
             'n' => $r[2],
-            'benchmarks' => $r[3],
+            'measured' => $r[3],
         ], $rows);
         return ['general' => $shape($doc['general']), 'frontier' => $shape($doc['frontier'])];
     }

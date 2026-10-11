@@ -23,8 +23,8 @@ final class Pages
     private const HOME_TITLE = 'LLM Benchmark Leaderboard with Estimated Scores';
     private const HOME_DESCRIPTION = "LLM benchmark scores: measured where available, estimated where missing, with every estimate's error and confidence.";
     // what general performance means (the compare page; the same definition as Compare.php)
-    private const COMPARE_LEDE = 'General performance is the mean percentile of a model\'s measured scores across the '
-        . 'listed benchmarks; the frontier is its strongest tenth. Measured scores only - never estimates.';
+    private const COMPARE_LEDE = 'General performance is the mean percentile of a model\'s scores, measured and estimated, '
+        . 'across the listed benchmarks, not only those it happened to be run on; the frontier is its strongest tenth.';
     // the compare page's lede (js/pages/compare.js LEDE); the definition above rides along on the pair pages
     private const COMPARE_INTRO = 'Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. '
         . 'Pick two models, or one and the frontier model to hold it against: its closest rival in general performance, '
@@ -229,9 +229,9 @@ final class Pages
         $rank = array_flip(array_keys($general));
         $nStanding = count($general);
         $standing = fn (string $slug): string => isset($general[$slug])
-            ? self::pct($general[$slug]['general']) . ' on ' . $general[$slug]['n'] . ' measured (rank #'
-                . ($rank[$slug] + 1) . ' of ' . $nStanding . ')'
-            : '— (no measured scores to stand on)';
+            ? self::pct($general[$slug]['general']) . ' on ' . $general[$slug]['n'] . ' benchmarks, '
+                . $this->models[$slug]['n_measured'] . ' measured (rank #' . ($rank[$slug] + 1) . ' of ' . $nStanding . ')'
+            : '— (no standing)';
         if ($a === null) {
             $rows = array_map(fn ($f) => [
                 $this->link($this->models[$f['slug']]),
@@ -242,7 +242,7 @@ final class Pages
                 'Compare two LLM models benchmark by benchmark: measured scores and estimates side by side, or one against a frontier model picked for it.',
                 '/compare',
                 $this->header('Model compare', 'Two models, head to head', '<p class="lede">' . self::esc(self::COMPARE_INTRO) . '</p>')
-                . $this->table(['Frontier model', 'General performance', 'Measured on'], $rows)
+                . $this->table(['Frontier model', 'General performance', 'Benchmarks'], $rows)
                 . '<p class="muted">Pick two models on the <a href="/compare">interactive page</a>, or one and '
                     . 'a frontier model is picked for it - of one provider, or of any.</p>');
         }
@@ -288,9 +288,9 @@ final class Pages
         if ($auto) {
             $of = $from !== null && $mb['provider'] === $from ? 'of ' . self::esc($mb['provider_name']) . ' ' : '';
             $nameA = '<b>' . self::esc($ma['name']) . '</b>';
-            $shared = isset($general[$a]) ? count(array_intersect($general[$a]['benchmarks'], $general[$b]['benchmarks'])) : 0;
+            $shared = isset($general[$a]) ? count(array_intersect($general[$a]['measured'], $general[$b]['measured'])) : 0;
             $pick = ' <b>' . self::esc($mb['name']) . '</b> is ' . match (true) {
-                !isset($general[$a]) => "the strongest frontier model $of($nameA has no measured standing)",
+                !isset($general[$a]) => "the strongest frontier model $of($nameA has no standing)",
                 isset($frontier[$a]) => "the frontier model {$of}closest to $nameA in general performance",
                 $shared > 0 => "the frontier model {$of}closest to $nameA in general performance of those measured on the most benchmarks with it ($shared shared)",
                 default => "the frontier model {$of}closest to $nameA in general performance",
