@@ -74,6 +74,7 @@
 [data-p="xiaomi"]    { --pc: #db2777; }
 [data-p="stepfun"]   { --pc: #8d857a; }
 [data-p="other"]     { --pc: #a39e94; }
+[data-p="alt"]       { --pc: var(--ink-2); }   /* model B beside a model A of its own provider (compare.js hue) */
 
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--topbar-h) + 20px); }
@@ -585,6 +586,12 @@ table.mx { width: 100%; border-collapse: separate; border-spacing: 0; font-size:
 .cmp-from-fold .cmp-from { margin-top: .85rem; }
 .cmp-from-fold.closed { grid-template-rows: 0fr; opacity: 0; }
 .cmp-from .ctl-label { margin: 0; }
+/* a card's stepper: its provider's next stronger and next weaker model */
+.cmp-step { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .85rem; }
+.cmp-step .ctl-label { margin: 0; }
+.cmp-step-btns { min-width: 0; }
+.cmp-step .chip { align-items: center; max-width: 100%; overflow-wrap: anywhere; }
+.cmp-step .chip:disabled { opacity: .4; cursor: default; border-color: var(--rule-strong); color: var(--ink-2); }
 .cmp-vs { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; font: italic 400 1.9rem var(--serif); color: var(--faint); }
 .cmp-swap { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--rule-strong); background: var(--card); display: grid; place-items: center; cursor: pointer; color: var(--ink-2); }
 .cmp-swap:hover { border-color: var(--ink); color: var(--ink); }

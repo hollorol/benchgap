@@ -429,6 +429,24 @@ def test_pages_and_sitemap(server):
     assert f"<title>{model['name']} vs {pair_model['name']} benchmark scores · benchgap</title>" in pair
     assert '<meta name="robots" content="noindex">' in pair and "mean percentile of a model" in pair
     assert '<link rel="canonical" href="https://benchgap.net/compare">' in get(server, "/compare")[1]
+    # or the model just below it (Compare::below): of the dense models with a standing, the first
+    # ranked below it; none below, the closest above; with no standing, the strongest
+    rank = {r[0]: i for i, r in enumerate(compare["general"])}
+
+    def just_below(slug, provider=None):
+        a = by_slug[slug]["id"]
+        others = [r for r in compare["general"] if by_id[r[0]]["dense"] and r[0] != a]
+        pool = [r for r in others if by_id[r[0]]["provider"] == provider] or others
+        if a not in rank:
+            return by_id[pool[0][0]]
+        return by_id[next((r for r in pool if rank[r[0]] > rank[a]), pool[-1])[0]]
+
+    top = by_id[compare["general"][0][0]]["slug"]
+    for slug, provider in ((model["slug"], None), (by_id[below[0]]["slug"], None),
+                           (top, by_id[compare["frontier"][0][0]]["provider"])):
+        _, page = get(server, f"/compare/{slug}/below" + (f"/{provider}" if provider else ""))
+        assert f"<title>{by_slug[slug]['name']} vs {just_below(slug, provider)['name']} benchmark scores · benchgap</title>" in page
+        assert "is the model" in page or "is the strongest model" in page
     # the frontier model of one provider (a provider that has one)
     provider = by_id[compare["frontier"][0][0]]["provider"]
     _, scoped = get(server, f"/compare/{model['slug']}/from/{provider}")

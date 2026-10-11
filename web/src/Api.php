@@ -164,6 +164,7 @@ final class Api
             'slug' => $this->model[$r[0]]['slug'],
             'name' => $this->model[$r[0]]['name'],
             'provider' => $this->model[$r[0]]['provider'],
+            'dense' => $this->model[$r[0]]['dense'],
             'general' => $r[1],
             'n' => $r[2],
             'measured' => $r[3],

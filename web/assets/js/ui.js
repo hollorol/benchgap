@@ -4,7 +4,8 @@ import { store, prefs, byCapability, capLabel, modelHref, setMeta, show } from "
 import { hideTip } from "./tip.js";
 
 // --- shared fragments -------------------------------------------------------
-export const dot = (m) => html`<span class="dot" data-p="${m.provider}" aria-hidden="true"></span>`;
+// a model's dot, in its provider's colour (or the colour key p: see .dot and the palette in style.css)
+export const dot = (m, p = m.provider) => html`<span class="dot" data-p="${p}" aria-hidden="true"></span>`;
 export const modelLink = (m) => html`<a href="${modelHref(m)}">${m.name}</a>`;
 export const confidenceFlag = (tier) => html`<span class="flag ${tier}">${tier} confidence</span>`;
 const COPY_ICON = html`<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5v-.5A1.5 1.5 0 0 0 9 1.5H3A1.5 1.5 0 0 0 1.5 3v6A1.5 1.5 0 0 0 3 10.5h.5"/></svg><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>`;

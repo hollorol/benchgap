@@ -10,15 +10,28 @@ import { dot, pageHead, legend, seg, showSeg, fresh, renderNotFound } from "../u
 const SHARED_FLOOR = 2 / 3;
 // the page's lede (Pages::COMPARE_INTRO)
 const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. "
-  + "Pick two models, or one and the frontier model to hold it against: its closest rival in general performance, "
-  + "or for a model below the frontier the closest of the frontier models it shares the most benchmarks with.";
+  + "Pick two models, or one and a model to hold it against: the frontier model closest to it (for a model below the frontier, "
+  + "of those it shares the most benchmarks with), or the model just below it - of one provider, or of any. "
+  + "Step either model up or down through its provider's models.";
 const GENERAL_TIP = "General performance: the mean percentile of a model's scores, measured and estimated, across the listed benchmarks, "
   + "not only those it happened to be run on. The frontier is its strongest tenth.";
-const cmpHref = (a, b, from) =>
-  `/compare/${encodeURIComponent(a)}${b ? "/" + encodeURIComponent(b) : (from && from !== "any" ? "/from/" + encodeURIComponent(from) : "")}`;
+// a pair (/compare/<a>/<b>), or A and a B picked for it ("how"): the closest frontier model
+// (/compare/<a>[/from/<p>]) or the model just below A (/compare/<a>/below[/<p>]), of one provider or of any
+const cmpHref = (a, b, from, how = "frontier") => {   // (b given: a pair, whatever how is)
+  const p = from && from !== "any" ? "/" + encodeURIComponent(from) : "";
+  return `/compare/${encodeURIComponent(a)}${b ? "/" + encodeURIComponent(b) : how === "below" ? "/below" + p : p && "/from" + p}`;
+};
 
 // who leads on a benchmark: 1 for A, -1 for B, 0 for even (less than 0.05 pp apart, as the rows show it)
 const lead = (x, y) => (Math.abs(x.v - y.v) < 0.0005 ? 0 : Math.sign(x.v - y.v));
+
+// rows (as compare.json's, strongest first) m can be held against: those of the provider, or all
+// when it has none; never m itself (as Compare::pool)
+const poolOf = (rows, m, provider) => {
+  const others = rows.filter(([id]) => id !== m.id);
+  const own = others.filter(([id]) => ix.model.get(id).provider === provider);
+  return own.length ? own : others;
+};
 
 let page = null;   // the open pair: its models, how B was chosen, the standings and both models' scores
                   // (and .prev, the pair shown, dimmed, until they are in)
@@ -27,8 +40,9 @@ let open = null;   // the capabilities opened (ids); null: the one with the most
 // data: every model's general performance and the frontier (data/compare.json, Compare.php):
 // general is the mean percentile of a model's scores, measured and estimated, across the listed
 // benchmarks (and the benchmarks it stands on measured), the frontier is its strongest tenth. Two models (/compare/<a>/<b>),
-// or one model (/compare/<a>) and the frontier model to hold it against - of one provider
-// (/compare/<a>/from/<p>), or of any - a pick that follows the field. Returns true when the page was already open (only the pair changed).
+// or one model and a model to hold it against: the closest frontier model (/compare/<a>[/from/<p>]) or the
+// model just below it (/compare/<a>/below[/<p>]) - of one provider, or of any - a pick that follows the field.
+// Returns true when the page was already open (only the pair changed).
 // The models' scores load after; the signal drops them if another page or pair was opened meanwhile.
 export function renderCompare(data, arg, signal) {
   const parts = location.pathname.split("/").slice(2).filter(Boolean).map(decodeURIComponent);
@@ -42,9 +56,7 @@ export function renderCompare(data, arg, signal) {
   // SHARED_FLOOR of the most measured benchmarks with (none shared: the closest of all); for a
   // model with no standing, the strongest (as Compare::pick)
   const frontierPick = (m, provider) => {
-    const others = frontier.filter(([id]) => id !== m.id);
-    const own = others.filter(([id]) => ix.model.get(id).provider === provider);
-    let pool = own.length ? own : others;
+    let pool = poolOf(frontier, m, provider);
     const t = general.get(m.id);
     if (!pool.length || !t) return pool.length ? ix.model.get(pool[0][0]) : null;
     if (!isFrontier.has(m.id)) {
@@ -56,17 +68,30 @@ export function renderCompare(data, arg, signal) {
     for (const f of pool) if (Math.abs(f[1] - t.g) < Math.abs(best[1] - t.g)) best = f;
     return ix.model.get(best[0]);
   };
-  const fromParts = parts[1] === "from" ? (parts[2] || "any") : null;
-  const auto = parts.length < 2 || fromParts !== null;   // /compare, /compare/<a> and /compare/<a>/from/<p>
-  const from = auto ? (fromParts || "any") : null;
+  // the dense models with a standing, strongest first: what "just below" and the steppers go through
+  const dense = data.compare.general.filter(([id]) => ix.model.get(id)?.dense);
+  // the model just below m in general performance (never m itself), of one provider or of any (a
+  // provider with none of its own: any); none below: the closest above; for a model with no
+  // standing, the strongest (as Compare::below)
+  const belowPick = (m, provider) => {
+    const pool = poolOf(dense, m, provider);
+    if (!pool.length) return null;
+    const at = rankOf.get(m.id);
+    if (!at) return ix.model.get(pool[0][0]);
+    return ix.model.get((pool.find(([id]) => rankOf.get(id) > at) ?? pool[pool.length - 1])[0]);
+  };
+  // how B is chosen: /compare, /compare/<a> and /compare/<a>/from/<p> the frontier match,
+  // /compare/<a>/below[/<p>] just below A, /compare/<a>/<b> picked
+  const how = parts.length < 2 || parts[1] === "from" ? "frontier" : parts[1] === "below" ? "below" : "pick";
+  const from = how === "pick" ? null : parts[2] || "any";
   if (from && from !== "any" && !D.meta.providers[from]) return renderNotFound(`No provider “${from}”.`);
   let A = parts[0] ? ix.modelBySlug.get(parts[0]) : ix.model.get(frontier[0]?.[0] ?? -1);
   if (parts[0] && !A) return renderNotFound(`No model “${parts[0]}”.`);
-  let B = !auto && parts[1] ? ix.modelBySlug.get(parts[1]) : null;
-  if (!auto && parts[1] && !B) return renderNotFound(`No model “${parts[1]}”.`);
+  let B = how === "pick" ? ix.modelBySlug.get(parts[1]) : null;
+  if (how === "pick" && !B) return renderNotFound(`No model “${parts[1]}”.`);
   if (A && B && A.id === B.id) return renderNotFound("Pick two different models to compare.");
   if (!A) A = ix.listedModels[0] || null;
-  if (!B && auto) B = A && frontierPick(A, from);
+  if (!B && how !== "pick") B = A && (how === "below" ? belowPick(A, from) : frontierPick(A, from));
   if (!A || !B) return renderNotFound("Nothing to compare: no models with scores.");
   setMeta(parts.length ? `${A.name} vs ${B.name} benchmark scores` : "Compare two LLM models",
     `Compare two LLM models benchmark by benchmark: ${A.name} vs ${B.name}, measured scores and estimates side by side.`,
@@ -74,11 +99,15 @@ export function renderCompare(data, arg, signal) {
 
   const inPlace = !!$("#cmp-page");
   picking = null;
-  // the providers whose frontier model can fill B: those with one, by name
-  const frontierProviders = [...new Set(frontier.map(([id]) => ix.model.get(id).provider))]
+  // the providers whose models can fill B: those with a frontier model, or a ranked one; by name
+  const byName = (rows) => [...new Set(rows.map(([id]) => ix.model.get(id).provider))]
     .sort((x, y) => providerLabel(x).localeCompare(providerLabel(y)));
+  const providers = { frontier: byName(frontier), below: byName(dense) };
+  // the colour each model is drawn in: its provider's, but B's the neutral one when both are of
+  // one provider (they would look the same)
+  const key = { A: A.provider, B: A.provider === B.provider ? "alt" : B.provider };
   const prev = page && (page.sa ? page : page.prev);
-  page = { prev: inPlace ? prev : null, A, B, auto, from, general, rankOf, nStanding: data.compare.general.length, isFrontier, frontierProviders, sa: null, sb: null, failed: false };
+  page = { prev: inPlace ? prev : null, A, B, how, from, key, general, rankOf, nStanding: data.compare.general.length, isFrontier, providers, dense, sa: null, sb: null, failed: false };
   draw();
 
   // both models' scores load in (cached by the model pages' own visits); the body draws when they are in
@@ -87,6 +116,7 @@ export function renderCompare(data, arg, signal) {
     if (signal.aborted) return;
     at.sa = remember(da.scores);
     at.sb = remember(db.scores);
+    at.prev = null;   // shown only until these are in: let the pairs before it go
     draw();
   }, () => {
     if (signal.aborted) return;
@@ -121,9 +151,18 @@ const pickerItems = () => (models ??= ix.listedModels.map((m) => ({
 // where picking slug for model `which` leads: the other side's model swaps the two; a new A keeps
 // how B is chosen, a new B pins the pair
 function pickHref(which, slug) {
-  const { A, B, auto, from } = page;
+  const { A, B, how, from } = page;
   if (slug === (which === "A" ? B : A).slug) return cmpHref(B.slug, A.slug);
-  return which === "A" ? cmpHref(slug, auto ? null : B.slug, auto ? from : null) : cmpHref(A.slug, slug);
+  return which === "A" ? cmpHref(slug, how === "pick" ? B.slug : null, from, how) : cmpHref(A.slug, slug);
+}
+// the models next above and below m in general performance among its provider's ranked ones,
+// the other model skipped: where m's stepper leads (null at either end; none for no standing)
+function steps(p, m, other) {
+  const at = p.rankOf.get(m.id);
+  if (!at) return [null, null];
+  const own = p.dense.filter(([id]) => id !== m.id && id !== other.id && ix.model.get(id).provider === m.provider);
+  const up = own.findLast(([id]) => p.rankOf.get(id) < at), down = own.find(([id]) => p.rankOf.get(id) > at);
+  return [up, down].map((r) => r && ix.model.get(r[0]));
 }
 function openPicker(which) {
   picking = { which, shown: [], input: null, list: null, lb: null };
@@ -189,10 +228,15 @@ const picker = (which) => html`<div class="search-pop cmp-pop" ${ref(panelIn)} @
     <p class="search-keys"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> pick · <kbd>Esc</kbd> close</p>
   </div>`;
 
-// why B was picked for A (frontierPick)
-function pickReason({ A, B, from, general, isFrontier }) {
+// why B was picked for A (frontierPick, belowPick)
+function pickReason({ A, B, how, from, general, rankOf, isFrontier }) {
   const of = from !== "any" && B.provider === from ? `of ${providerLabel(from)} ` : "";
   const gA = general.get(A.id);
+  if (how === "below") {
+    if (!gA) return `the strongest model ${of}(${A.name} has no standing)`;
+    return rankOf.get(B.id) > rankOf.get(A.id) ? `the model ${of}just below ${A.name}`
+      : `the model ${of}closest above ${A.name}; none ranks below it`;
+  }
   if (!gA) return `the strongest frontier model ${of}(${A.name} has no standing)`;
   if (isFrontier.has(A.id)) return `the frontier model ${of}closest to ${A.name}`;
   const mine = new Set(gA.measured), n = general.get(B.id).measured.filter((b) => mine.has(b)).length;
@@ -203,20 +247,20 @@ function pickReason({ A, B, from, general, isFrontier }) {
 // one model's card: its picker (a face that opens a box to type in) and its standing; B's also
 // says how it was chosen
 function slot(p, which) {
-  const { A, B, auto, from } = p;
+  const { A, B, how, from } = p;
   const m = which === "A" ? A : B;
   const g = p.general.get(m.id);
-  const sub = which === "B" && auto ? `Picked for you: ${pickReason(p)}`
+  const sub = which === "B" && how !== "pick" ? `Picked for you: ${pickReason(p)}`
     : `${providerLabel(m.provider)} · ${m.n_measured} measured · ${m.n_estimated} estimated`;
   return html`<div class="card cmp-slot">
       <div class="cmp-slot-head"><span class="ctl-label">Model ${which}</span>${which === "B"
-        ? seg("How model B is chosen", [["frontier", "Frontier match"], ["pick", "Pick a model"]], auto ? "frontier" : "pick",
-          (k) => go(k === "frontier" ? cmpHref(A.slug, null, "any") : cmpHref(A.slug, B.slug)))
+        ? seg("How model B is chosen", [["frontier", "Frontier match"], ["below", "Just below"], ["pick", "Pick a model"]], how,
+          (k) => go(k === "pick" ? cmpHref(A.slug, B.slug) : cmpHref(A.slug, null, p.providers[k].includes(from) ? from : "any", k)))
         : nothing}</div>
       <div class="cmp-picker">
         <button type="button" class="cmp-face" id="cmp-face-${which}" aria-haspopup="listbox" aria-expanded="${picking?.which === which}"
           aria-label="Model ${which}: ${m.name}. Change" @click=${() => (picking?.which === which ? closePicker(false) : openPicker(which))}>
-          ${dot(m)}
+          ${dot(m, p.key[which])}
           <span class="cmp-picked">${fresh(m.id, html`<span class="cmp-name fresh">${m.name}</span>`)}${fresh(sub, html`<span class="cmp-sub fresh">${sub}</span>`)}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
         </button>
@@ -227,15 +271,26 @@ function slot(p, which) {
         <dd>${fresh(m.id, html`<span class="fresh">${g ? pct(g.g) : "—"}${p.isFrontier.has(m.id) ? html` <span class="flag high">frontier</span>` : nothing}</span>`)}</dd>
         <dt>rank</dt><dd>${fresh(m.id, html`<span class="fresh">${g ? `#${p.rankOf.get(m.id)} of ${p.nStanding}` : "no standing"}</span>`)}</dd>
       </dl>
-      ${which === "B" ? html`<div class="cmp-from-fold${auto ? "" : " closed"}" ?inert=${!auto}><div><div class="cmp-from">
-          <label class="ctl-label" for="cmp-from">Frontier of</label>
-          <select class="select" id="cmp-from" @change=${(e) => go(cmpHref(A.slug, null, e.target.value))}>
+      ${stepper(p, which, m)}
+      ${which === "B" ? html`<div class="cmp-from-fold${how === "pick" ? " closed" : ""}" ?inert=${how === "pick"}><div><div class="cmp-from">
+          <label class="ctl-label" for="cmp-from">${how === "below" ? "Of" : "Frontier of"}</label>
+          <select class="select" id="cmp-from" @change=${(e) => go(cmpHref(A.slug, null, e.target.value, how))}>
             <option value="any" .selected=${from === "any"}>Any provider</option>
-            ${p.frontierProviders.map((pr) => html`<option value="${pr}" .selected=${from === pr}>${providerLabel(pr)}</option>`)}
+            ${p.providers[how === "below" ? "below" : "frontier"].map((pr) => html`<option value="${pr}" .selected=${from === pr}>${providerLabel(pr)}</option>`)}
           </select>
           <span class="muted">follows the field as scores change</span>
         </div></div></div>` : nothing}
     </div>`;
+}
+
+// a card's stepper: its model's provider's next stronger and next weaker model (steps)
+function stepper(p, which, m) {
+  const [up, down] = steps(p, m, which === "A" ? p.B : p.A);
+  const of = providerLabel(m.provider);
+  const step = (to, dir, arrow) => html`<button type="button" class="chip" ?disabled=${!to}
+      aria-label="${to ? `${dir} ${of} model: ${to.name}` : `No ${dir.toLowerCase()} ${of} model`}"
+      @click=${() => go(pickHref(which, to.slug))}><span aria-hidden="true">${arrow}</span>${to ? to.name : "none"}</button>`;
+  return html`<div class="cmp-step"><span class="ctl-label">Next ${of}</span>${fresh(m.id, html`<div class="chips cmp-step-btns fresh">${step(up, "Stronger", "↑")}${step(down, "Weaker", "↓")}</div>`)}</div>`;
 }
 
 // the filter (the leaderboard's Show), the verdict, then every benchmark by capability
@@ -284,7 +339,7 @@ function body(p) {
     <div class="controls cmp-show">${showSeg(draw)}</div>
     <section class="cmp-verdict" aria-label="Verdict">
       ${fresh(`${A.id}:${B.id}:${prefs.show}:${detail}`, html`<div class="fresh"><p class="say">${say}</p><p class="muted">${detail}</p></div>`)}
-      ${n ? split(A, B, tally, n) : nothing}
+      ${n ? split(A, B, p.key, tally, n) : nothing}
     </section>
     <section class="cmp-sec">
       <h2 class="h2">Every benchmark, by capability</h2>
@@ -296,32 +351,32 @@ function body(p) {
 
 // the verdict's bar: A's wins from the left, B's from the right, the even ones between; solid where
 // both were measured, hatched where an estimate is in it (the segments keep their elements: they slide)
-function split(A, B, t, n) {
+function split(A, B, key, t, n) {
   const even = n - t.up - t.down;
   const part = (cls, p, count, what) => html`<span class="${cls}" data-p="${p ?? nothing}" style="width:${(100 * count) / n}%" title="${count} ${what}"></span>`;
   return html`<div class="cmp-split">
       <div class="cmp-split-names">
-        <span>${dot(A)}<span class="nm">${A.name}</span><b class="mono">${t.up}</b></span>
-        <span><b class="mono">${t.down}</b><span class="nm">${B.name}</span>${dot(B)}</span>
+        <span>${dot(A, key.A)}<span class="nm">${A.name}</span><b class="mono">${t.up}</b></span>
+        <span><b class="mono">${t.down}</b><span class="nm">${B.name}</span>${dot(B, key.B)}</span>
       </div>
       <div class="cmp-split-bar" role="img" aria-label="${`${t.up} to ${A.name}, ${t.down} to ${B.name}${even ? `, ${even} even` : ""}`}">
-        ${part("m", A.provider, t.mUp, `won by ${A.name}, measured on both`)}${part("e", A.provider, t.eUp, `won by ${A.name}, with an estimate`)}${part("even", null, even, "even")}${part("e", B.provider, t.eDown, `won by ${B.name}, with an estimate`)}${part("m", B.provider, t.mDown, `won by ${B.name}, measured on both`)}
+        ${part("m", key.A, t.mUp, `won by ${A.name}, measured on both`)}${part("e", key.A, t.eUp, `won by ${A.name}, with an estimate`)}${part("even", null, even, "even")}${part("e", key.B, t.eDown, `won by ${B.name}, with an estimate`)}${part("m", key.B, t.mDown, `won by ${B.name}, measured on both`)}
       </div>
       ${t.eUp + t.eDown ? html`<p class="cmp-split-key"><span class="m"></span>measured on both <span class="e"></span><i>with an estimate</i>${even ? html` <span class="even"></span>even` : nothing}</p>` : nothing}
     </div>`;
 }
 
 // the column heads over the mirrored bars (on phones: which bar is whose)
-const flyHead = (A, B) => html`<div class="fly fly-head">
-    <span class="ha">${fresh(A.id, html`<span class="fresh">${A.name}</span>`)} ${dot(A)}</span>
+const flyHead = (A, B, key) => html`<div class="fly fly-head">
+    <span class="ha">${fresh(A.id, html`<span class="fresh">${A.name}</span>`)} ${dot(A, key.A)}</span>
     <span class="hn">benchmark · gap</span>
-    <span class="hb">${dot(B)} ${fresh(B.id, html`<span class="fresh">${B.name}</span>`)}</span>
+    <span class="hb">${dot(B, key.B)} ${fresh(B.id, html`<span class="fresh">${B.name}</span>`)}</span>
     <span class="hp">Top bar: ${A.name} · bottom bar: ${B.name}</span>
   </div>`;
 
 // one benchmark's two scores as mirrored bars: A grows to the left, B to the right, the name and
 // the gap between them (pointing to the leader)
-function fly(b, x, y, A, B) {
+function fly(b, x, y, A, B, key) {
   const d = x && y ? (x.v - y.v) * 100 : null;
   const est = (x && x.s === "e") || (y && y.s === "e");
   const bar = (s) => (s ? html`<span class="bar ${s.s === "e" ? "e " + s.tier : "m"}" style="width:${Math.min(100, s.v * 100)}%"></span>` : nothing);
@@ -333,20 +388,20 @@ function fly(b, x, y, A, B) {
   else if (!lead(x, y)) delta = html`<span class="fd fresh">even</span>`;
   else {
     const leader = d > 0 ? A : B, num = `${est ? "≈" : ""}${Math.abs(d).toFixed(1)}`;
-    delta = html`<span class="fd fresh${est ? " est" : ""}"><span class="to-a" aria-hidden="true">${d > 0 ? "◀ " : ""}</span>${dot(leader)}${num}<span class="to-b" aria-hidden="true">${d < 0 ? " ▶" : ""}</span><span class="sr"> pp, ${leader.name} ahead</span></span>`;
+    delta = html`<span class="fd fresh${est ? " est" : ""}"><span class="to-a" aria-hidden="true">${d > 0 ? "◀ " : ""}</span>${dot(leader, d > 0 ? key.A : key.B)}${num}<span class="to-b" aria-hidden="true">${d < 0 ? " ▶" : ""}</span><span class="sr"> pp, ${leader.name} ahead</span></span>`;
   }
   return html`<div class="fly">
-      <div class="ftrack l" data-p="${A.provider}">${bar(x)}</div>
+      <div class="ftrack l" data-p="${key.A}">${bar(x)}</div>
       ${val(x, A, "a")}
       <div class="fname"><a href="${benchHref(b)}">${b.label}</a>${fresh(d === null ? "" : `${d.toFixed(1)}${est}${A.id}`, delta)}</div>
       ${val(y, B, "b")}
-      <div class="ftrack r" data-p="${B.provider}">${bar(y)}</div>
+      <div class="ftrack r" data-p="${key.B}">${bar(y)}</div>
     </div>`;
 }
 
 // every capability either model has a score in, folded to a line saying who leads it
 function capabilities(p, pair) {
-  const { A, B } = p;
+  const { A, B, key } = p;
   // a benchmark shows if each score it has passes the filter (the leaderboard's Show)
   const shows = ([, x, y]) => (x || y) && (!x || visible(x)) && (!y || visible(y));
   const caps = ix.benchesByCap.map(({ cap, benches }) => {
@@ -375,7 +430,7 @@ function capabilities(p, pair) {
     }
     const isOpen = open.has(cap.id), hidden = all.length - rows.length;
     const lean = both.length && Math.abs(mean) >= 0.05
-      ? html`<span class="${mean > 0 ? "a" : "b"}" data-p="${(mean > 0 ? A : B).provider}" style="width:${Math.min(50, Math.abs(mean) * 5)}%"></span>`
+      ? html`<span class="${mean > 0 ? "a" : "b"}" data-p="${mean > 0 ? key.A : key.B}" style="width:${Math.min(50, Math.abs(mean) * 5)}%"></span>`
       : nothing;
     return html`<div class="cmp-cap">
         <button type="button" aria-expanded="${isOpen}" @click=${() => toggle(cap.id)}>
@@ -385,8 +440,8 @@ function capabilities(p, pair) {
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </button>
         ${isOpen ? html`<div class="cmp-rows">
-            ${rows.length ? flyHead(A, B) : nothing}
-            ${repeat(rows, ([b]) => b.id, ([b, x, y]) => fly(b, x, y, A, B))}
+            ${rows.length ? flyHead(A, B, key) : nothing}
+            ${repeat(rows, ([b]) => b.id, ([b, x, y]) => fly(b, x, y, A, B, key))}
             ${hidden ? html`<p class="cmp-hidden">${hidden} more hidden by the filter</p>` : nothing}
           </div>` : nothing}
       </div>`;

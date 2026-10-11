@@ -11,7 +11,7 @@
  *   /                       leaderboard (default benchmark)
  *   /b/<benchmark/version>  leaderboard for one benchmark
  *   /matrix                 models x benchmarks score matrix
- *   /compare                two models side by side, or one and the frontier model closest to it
+ *   /compare                two models side by side, or one and the frontier model closest to it or the model just below it
  *   /model/<slug>           one model across all benchmarks
  *   /calibration            predictability matrix + list of mappings
  *   /calibration/<id>       one fitted mapping (scatter + curve)

@@ -262,13 +262,13 @@ $app->get('/b/{key:.+}', fn (Request $rq, Response $rs, array $a) =>
 $app->get('/model/{slug:.+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->model($a['slug']), 'model', data('model', $a['slug'])));
 $app->get('/matrix', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->matrix(), 'matrix', data('matrix')));
-// two models side by side, or one and the frontier model closest to it - of one provider,
-// or of any (the second stays dynamic)
+// two models side by side, or one and the frontier model closest to it (from) or the model just
+// below it (below) - of one provider, or of any (the second stays dynamic; before a pair's second model)
 $app->get('/compare', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->compare(), 'compare', data('compare')));
 $app->get('/compare/{a:[^/]+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->compare($a['a']), 'compare', data('compare')));
-$app->get('/compare/{a:[^/]+}/from/{provider:[^/]+}', fn (Request $rq, Response $rs, array $a) =>
-    page($rq, $rs, fn (Pages $p) => $p->compare($a['a'], null, $a['provider']), 'compare', data('compare')));
+$app->get('/compare/{a:[^/]+}/{how:from|below}[/{provider:[^/]+}]', fn (Request $rq, Response $rs, array $a) =>
+    page($rq, $rs, fn (Pages $p) => $p->compare($a['a'], null, $a['provider'] ?? null, $a['how']), 'compare', data('compare')));
 $app->get('/compare/{a:[^/]+}/{b:[^/]+}', fn (Request $rq, Response $rs, array $a) =>
     page($rq, $rs, fn (Pages $p) => $p->compare($a['a'], $a['b']), 'compare', data('compare')));
 $app->get('/calibration', fn (Request $rq, Response $rs) => page($rq, $rs, fn (Pages $p) => $p->calibration(), 'calibration', data('calibration')));

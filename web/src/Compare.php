@@ -25,7 +25,8 @@ namespace Benchgap;
  * frontier, the closest of the frontier models it shares the most measured
  * benchmarks with (at least two thirds as many as the best-covered one), so
  * the pair can be held side by side on measurements - the closest of all
- * would be the same weakest frontier model for most of them.
+ * would be the same weakest frontier model for most of them. Or a model is
+ * held against the one just below it (below()), of the dense models.
  */
 final class Compare
 {
@@ -108,13 +109,11 @@ final class Compare
      */
     public static function pick(array $frontier, string $slug, ?array $model, ?string $provider = null): ?array
     {
-        $others = array_values(array_filter($frontier, fn ($f) => $f['slug'] !== $slug));
-        $own = array_values(array_filter($others, fn ($f) => $f['provider'] === $provider));
-        $pool = $own ?: $others;
+        $pool = self::pool($frontier, $slug, $provider);
         if (!$pool || $model === null) {
             return $pool[0] ?? null;
         }
-        if (count($others) === count($frontier)) {   // below the frontier: of the best-covered ones
+        if (!in_array($slug, array_column($frontier, 'slug'), true)) {   // below the frontier: of the best-covered ones
             $mine = array_flip($model['measured']);
             $shared = array_map(fn ($f) => count(array_intersect_key(array_flip($f['measured']), $mine)), $pool);
             $floor = self::SHARED_FLOOR * max($shared);
@@ -127,5 +126,34 @@ final class Compare
             }
         }
         return $best;
+    }
+
+    /**
+     * The model just below model $slug in general performance, itself excepted: of $provider's
+     * dense models with a standing, or of all of them when it has none (or $provider is null);
+     * none below: the closest above; a model with no standing the strongest. Null if there is
+     * none. $general is the rows Api::compare() shapes (with 'slug', 'provider' and 'dense'),
+     * strongest first. (As belowPick, assets/js/pages/compare.js)
+     */
+    public static function below(array $general, string $slug, ?string $provider = null): ?array
+    {
+        $rank = array_flip(array_column($general, 'slug'));
+        $pool = self::pool(array_filter($general, fn ($g) => $g['dense']), $slug, $provider);
+        if (!$pool || !isset($rank[$slug])) {
+            return $pool[0] ?? null;
+        }
+        foreach ($pool as $g) {
+            if ($rank[$g['slug']] > $rank[$slug]) {
+                return $g;
+            }
+        }
+        return $pool[count($pool) - 1];
+    }
+
+    /** The rows $slug can be held against: $provider's, or all when it has none; never $slug itself. */
+    private static function pool(array $rows, string $slug, ?string $provider): array
+    {
+        $others = array_values(array_filter($rows, fn ($r) => $r['slug'] !== $slug));
+        return array_values(array_filter($others, fn ($r) => $r['provider'] === $provider)) ?: $others;
     }
 }
