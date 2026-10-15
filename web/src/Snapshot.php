@@ -37,7 +37,7 @@ final class Snapshot
     // keeps its page and its API entry.
     public const LISTED = ['min_estimated' => 1, 'min_models' => 10];
     // the leaderboard on the home page; see home()
-    public const DEFAULT_BENCH = 'terminal-bench-4/current';
+    public const DEFAULT_BENCH = 'aa-terminal-bench4/current';
 
     private const RELIABILITY = [
         'high_max_pp' => 5.0, 'medium_max_pp' => 10.0, 'min_reliable_n' => 8, 'min_informative_r2' => 0.5,
