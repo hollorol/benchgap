@@ -10,8 +10,8 @@ from benchgap import multivariate
 from benchgap.cache import FitCache
 from benchgap.db import connect, init_db
 from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2, fit_cross_mappings
-from benchgap.fitting import MAX_LOO_FOLDS
-from benchgap.gapfill import gapfill
+from benchgap.fitting import MAX_LOO_FOLDS, is_increasing
+from benchgap.gapfill import extrapolation, gapfill
 from benchgap.ingest import ingest_csv
 from benchgap.report import mapping_summary, render_matrix, score_matrix
 
@@ -219,6 +219,41 @@ def test_gapfill_keeps_capability_gaps(gapfilled_db, writable_db):
 
     # gapfill is idempotent
     assert len(gapfill(writable_db)) == n_filled
+
+
+def test_only_rising_calibrations_within_reach(gapfilled_db):
+    """Every stored calibration rises, and every univariate estimate's input lies within the
+    reach of the range its calibration was fitted on, flagged when outside the range itself."""
+    for m in gapfilled_db.execute("SELECT method, params_json FROM mappings"):
+        assert is_increasing(m["method"], json.loads(m["params_json"])), m["method"]
+    rows = gapfilled_db.execute(
+        "SELECT s.prediction_json, m.train_range_json FROM scores s"
+        " JOIN mappings m ON m.id = s.mapping_id WHERE s.source = 'gapfilled'"
+    ).fetchall()
+    assert rows
+    for r in rows:
+        meta = json.loads(r["prediction_json"])
+        lo, hi = json.loads(r["train_range_json"]).values()
+        assert extrapolation(meta["input_score"], lo, hi) is meta["extrapolated"]
+
+
+def test_gapfill_drops_estimates_out_of_reach(writable_db):
+    """Narrowing a calibration's training range takes away the estimates that fall beyond
+    its reach on a re-run, also where no other predictor replaces them."""
+    conn = writable_db
+    mp = conn.execute(
+        "SELECT m.id, m.to_version_id, m.train_range_json FROM mappings m"
+        " WHERE EXISTS (SELECT 1 FROM scores s WHERE s.mapping_id = m.id"
+        "   AND s.source = 'gapfilled') ORDER BY m.id LIMIT 1"
+    ).fetchone()
+    # a range far above every input: nothing is in reach
+    conn.execute("UPDATE mappings SET train_range_json = ? WHERE id = ?",
+                 (json.dumps({"x_min": 0.98, "x_max": 0.99}), mp["id"]))
+    conn.commit()
+    gapfill(conn)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM scores WHERE mapping_id = ?", (mp["id"],)
+    ).fetchone()[0] == 0
 
 
 def test_report(gapfilled_db):

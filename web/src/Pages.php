@@ -614,10 +614,10 @@ final class Pages
         $rules = [
             'Measured scores come from public evaluation leaderboards and are never altered; each benchmark is calibrated only against benchmarks of the same capability.',
             "For every ordered pair of benchmarks with at least {$g['min_pairs']} models measured on both, {$g['n_candidates']} monotone curves are fitted "
-                . 'and the one with the lowest leave-one-out cross-validated error is kept. That error, in percentage points, is the ± shown with every estimate.',
+                . 'and the rising one with the lowest leave-one-out cross-validated error is kept (a falling fit is an overfit to too few models, never a calibration). That error, in percentage points, is the ± shown with every estimate.',
             "A pair keeps no calibration unless its best curve reaches R² ≥ {$g['min_r2']} and an error of at most {$g['max_loo_pp']} pp; such gaps stay empty.",
-            'A missing score is estimated from the best calibration out of a benchmark the model was measured on. Estimates are never used to make further estimates.',
-            'Several same-capability benchmarks may be combined into a multivariate mapping: an elastic net whose lasso zeroes the useless sources or a greedy forward search finds the features, '
+            'A missing score is estimated from the best calibration out of a benchmark the model was measured on, if its score there lies within one training-range width of the scores the calibration was fitted on; further out the gap stays empty. Estimates are never used to make further estimates.',
+            'Several same-capability benchmarks may be combined into a multivariate mapping: an elastic net with non-negative coefficients whose lasso zeroes the useless sources or a greedy forward search finds the features, '
                 . 'and then a linear fit and a multivariate Michaelis–Menten curve compete. It is stored only if it passes the gate and beats the target\'s best single calibration, '
                 . 'and preferred for a model measured on all of its sources - a model missing one source falls back to the univariate path.',
             'Cross-domain predictability and the multivariate view are analyses only: no estimate crosses a capability.',

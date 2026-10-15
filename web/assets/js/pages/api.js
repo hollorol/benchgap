@@ -30,7 +30,7 @@ const API_FIELDS = {
     ["confidence", '"high" | "medium" | "low"', html`Confidence level; see <a href="/method">Method</a> for the rules.`],
     ["error_pp", "number", "Cross-validated error of the fit that made it, in percentage points (the ± on the site)."],
     ["reasons", "string[]", "Why the confidence is not high; empty when it is."],
-    ["extrapolated", "boolean", "An input score lies outside the range the fit was trained on."],
+    ["extrapolated", "boolean", "An input score lies outside the range the fit was trained on (at most that range's width beyond it: further out no estimate is made)."],
     ["method, method_name", "string", html`Curve family, e.g. <code>mm_offset</code> / Michaelis–Menten + offset; multivariate fits end in <code>_mv</code>, e.g. <code>enet_mv</code> / elastic net.`],
     ["kind", '"univariate" | "multivariate"', "One source benchmark, or several combined."],
     ["mapping_id", "integer | null", html`The calibration used; resolve with <code>mappings/{id}.json</code>. Null for multivariate estimates, whose fits v1 does not serve.`],

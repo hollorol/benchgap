@@ -10,7 +10,7 @@ import pytest
 
 from benchgap.db import connect, init_db
 from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2, fit_mappings
-from benchgap.gapfill import gapfill
+from benchgap.gapfill import extrapolation, gapfill
 from benchgap.ingest import ingest_csv
 from benchgap.multivariate import fit_multimappings, fit_mv, mv_metrics, predict_mv
 from benchgap.report import mapping_summary, multi_mapping_summary
@@ -35,6 +35,18 @@ def test_enet_mv_lasso_selects_the_real_features():
     assert np.corrcoef(pred, y)[0, 1] > 0.8
     m = mv_metrics("enet_mv", params, X[:, keep], y)
     assert np.isfinite(m["LOO_RMSE"])
+
+
+def test_enet_mv_coefficients_are_non_negative():
+    """A source that falls as the target rises is left out, not given a negative weight."""
+    rng = np.random.default_rng(7)
+    n = 30
+    X = rng.uniform(0.05, 0.95, (n, 3))
+    y = 0.2 + 0.5 * X[:, 0] - 0.4 * X[:, 1] + rng.normal(0, 0.03, n)
+    params = fit_mv("enet_mv", X, y)
+    keep = params.pop("keep")
+    assert 1 not in keep
+    assert all(c > 0 for c in params["coef"])
 
 
 def test_enet_mv_min_features_keeps_enough_sources():
@@ -128,6 +140,22 @@ def test_gapfill_uses_multi_when_features_available(gapfilled_db):
         "   JOIN benchmarks b ON b.id = v.benchmark_id WHERE b.name = 'aa-gdp-pdf')"
     ).fetchone()[0]
     assert fallback > 0, "expected univariate fallback predictions for GDP.pdf"
+
+
+def test_multi_estimates_within_reach(gapfilled_db):
+    """Every multivariate estimate's inputs lie within the reach of their feature's range, and
+    one outside the range itself flags the estimate as extrapolated."""
+    rows = gapfilled_db.execute(
+        "SELECT s.prediction_json, mm.train_ranges_json FROM scores s"
+        " JOIN multi_mappings mm ON mm.id = s.multi_mapping_id WHERE s.source = 'gapfilled'"
+    ).fetchall()
+    assert rows
+    for r in rows:
+        meta = json.loads(r["prediction_json"])
+        ranges = json.loads(r["train_ranges_json"])
+        flags = [extrapolation(x, *ranges[fid]) for fid, x in meta["input_scores"].items()]
+        assert None not in flags
+        assert meta["extrapolated"] == any(flags)
 
 
 def test_multifit_rerun_after_gapfill(writable_db):

@@ -78,7 +78,8 @@ export function renderMethod() {
         </table>
         <p>Each of these warnings demotes an estimate by one level:</p>
         <ul>
-          <li><b>Extrapolated</b>: the model's source score lies outside the range the mapping was fitted on.</li>
+          <li><b>Extrapolated</b>: the model's source score lies outside the range the mapping was fitted on. Extrapolation reaches at most
+          that range's own width beyond either end; further out the curve says nothing, so the score stays missing.</li>
           <li><b>Small sample</b>: the mapping was fitted on fewer than ${r.min_reliable_n} models, so its error estimate is itself noisy.</li>
           <li><b>Uninformative fit</b>: R² below ${r.min_informative_r2}; the curve explains little of how models differ on the target.</li>
         </ul>
@@ -108,6 +109,7 @@ export function renderMethod() {
           <li>Estimates are predictions, not measurements. A model can genuinely over- or under-perform what its other scores imply.</li>
           <li>Coefficients are harness-specific: these calibrations hold for the source leaderboard's evaluation setup, not for other harnesses.</li>
           <li>Saturating curves have a ceiling. Several models above a mapping's fitted range can receive the same estimate; those are flagged as extrapolated.</li>
+          <li>Only rising curves calibrate: a fit in which a higher source score predicts a lower target score is a sign of too few models in part of the range, so it is never selected.</li>
           <li>The error bars are point estimates of typical error, not credible intervals. A probabilistic version is on the roadmap.</li>
         </ul>
       </article></div>`);

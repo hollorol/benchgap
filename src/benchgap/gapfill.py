@@ -7,6 +7,10 @@ import sqlite3
 from .fitting import predict
 from .multivariate import predict_mv
 
+# How far a fit may extrapolate, in widths of its training range beyond either end: further
+# out the curve says nothing, so the gap stays (mirrored by web/src/Snapshot.php REACH).
+REACH = 1.0
+
 
 def _mappings_by_target(conn: sqlite3.Connection) -> dict[int, list[sqlite3.Row]]:
     """Best mapping per (source version -> target version), keyed by target.
@@ -43,6 +47,15 @@ def _multi_by_target(conn: sqlite3.Connection) -> dict[int, sqlite3.Row]:
     return by_target
 
 
+def extrapolation(x: float, lo: float, hi: float) -> bool | None:
+    """Whether a fit trained on inputs in [lo, hi] extrapolates at ``x``; None if ``x`` is
+    beyond its REACH, where it is not used at all."""
+    width = REACH * (hi - lo)
+    if not lo - width <= x <= hi + width:
+        return None
+    return not lo <= x <= hi
+
+
 def _measured(conn: sqlite3.Connection, model_id: int, version_id: int):
     return conn.execute(
         "SELECT value FROM scores"
@@ -60,7 +73,8 @@ def _loo_key(metrics: dict) -> tuple:
 
 
 def _multi_prediction(conn, model, mm) -> dict | None:
-    """Multivariate candidate for a model, or None if a feature is missing."""
+    """Multivariate candidate for a model, or None if a feature is missing or out of the
+    reach of its training range."""
     fids = json.loads(mm["feature_version_ids_json"])
     xs = []
     for fid in fids:
@@ -68,13 +82,13 @@ def _multi_prediction(conn, model, mm) -> dict | None:
         if row is None:
             return None
         xs.append(row["value"])
+    ranges = json.loads(mm["train_ranges_json"])  # keyed by the feature id as a string
+    flags = [extrapolation(x, *ranges[str(fid)]) for fid, x in zip(fids, xs)]
+    if None in flags:
+        return None
     params = json.loads(mm["params_json"])
     value = float(predict_mv(mm["method"], params, [xs])[0])
-    ranges = json.loads(mm["train_ranges_json"]) if mm["train_ranges_json"] else {}
-    extrapolated = any(
-        fid in ranges and not (ranges[fid][0] <= x <= ranges[fid][1])
-        for fid, x in zip(fids, xs)
-    )
+    extrapolated = any(flags)
     metrics = json.loads(mm["metrics_json"])
     return {
         "value": value,
@@ -93,16 +107,18 @@ def _multi_prediction(conn, model, mm) -> dict | None:
 
 
 def _uni_prediction(conn, model, mp) -> dict | None:
+    """Univariate candidate for a model, or None if it is not measured on the source or
+    its score is out of the reach of the training range."""
     row = _measured(conn, model["id"], mp["from_version_id"])
     if row is None:
+        return None
+    train_range = json.loads(mp["train_range_json"])
+    extrapolated = extrapolation(row["value"], train_range["x_min"], train_range["x_max"])
+    if extrapolated is None:
         return None
     params = json.loads(mp["params_json"])
     metrics = json.loads(mp["metrics_json"])
     value = float(predict(mp["method"], params, [row["value"]])[0])
-    train_range = json.loads(mp["train_range_json"]) if mp["train_range_json"] else None
-    extrapolated = train_range is not None and not (
-        train_range["x_min"] <= row["value"] <= train_range["x_max"]
-    )
     return {
         "value": value,
         "metrics": metrics,
@@ -126,9 +142,9 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
     For every model lacking a measured score on a target version, the best
     available predictor wins: multivariate mappings (which need the model
     to be measured on every feature version) compete with univariate
-    mappings by LOO-CV RMSE. Prior gapfilled rows for the same
-    (model, version) are replaced, so re-running after a refit refreshes
-    predictions. Returns a summary of the filled rows.
+    mappings by LOO-CV RMSE. A predictor is usable only on inputs within its
+    REACH. All prior gapfilled rows are replaced, so re-running after a
+    refit refreshes predictions. Returns a summary of the filled rows.
     """
     by_target = _mappings_by_target(conn)
     multi_by_target = _multi_by_target(conn)
@@ -141,6 +157,8 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
     }
     filled = []
     targets = sorted(set(by_target) | set(multi_by_target))
+    # every prior estimate goes, also on a target that has no predictor left
+    conn.execute("DELETE FROM scores WHERE source = 'gapfilled'")
     for target_id in targets:
         missing = conn.execute(
             "SELECT m.id, m.slug FROM models m"
@@ -162,11 +180,6 @@ def gapfill(conn: sqlite3.Connection) -> list[dict]:
             if not candidates:
                 continue
             best = min(candidates, key=lambda c: _loo_key(c["metrics"]))
-            conn.execute(
-                "DELETE FROM scores WHERE model_id = ? AND version_id = ?"
-                " AND source = 'gapfilled'",
-                (model["id"], target_id),
-            )
             conn.execute(
                 "INSERT INTO scores (model_id, version_id, value, source, mapping_id,"
                 " multi_mapping_id, prediction_json)"

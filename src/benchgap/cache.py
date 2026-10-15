@@ -18,7 +18,7 @@ import numpy as np
 import scipy
 
 # bump when a change to the fitting gives different results (a refactoring keeps the cache)
-VERSION = 4
+VERSION = 5
 _SEED = hashlib.sha256(f"v{VERSION} numpy {np.__version__} scipy {scipy.__version__}".encode())
 # new fits between two checkpoints, so a run cut off midway keeps most of its fits
 CHECKPOINT = 500

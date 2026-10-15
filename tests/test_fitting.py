@@ -16,6 +16,7 @@ from benchgap.fitting import (
     fit_all,
     fit_candidate,
     fit_metrics,
+    is_increasing,
     predict,
     select_best,
 )
@@ -72,6 +73,32 @@ def test_hill_and_logistic_are_monotone_and_bounded(pairs):
         out = predict(method, r.params, grid)
         assert np.all(np.diff(out) >= -1e-9), f"{method} must be monotone"
         assert np.all(out <= 1.05)
+
+
+def test_falling_fits_are_left_out():
+    """A few models where a higher source score goes with a lower target score: the forms
+    that can fall (linear, Hill, logistic) do, and fit_all keeps only rising fits."""
+    rng = np.random.default_rng(3)
+    xs = np.linspace(0.8, 0.93, 8)
+    ys = 0.9 - 2.5 * (xs - 0.8) + rng.normal(0, 0.02, len(xs))
+    falling = {m for m in ("linear", "hill", "logistic")
+               if not is_increasing(m, fit_candidate(m, xs, ys).params)}
+    assert falling
+    results = fit_all(xs, ys)
+    assert not falling & {r.method for r in results}
+    for r in results:
+        out = predict(r.method, r.params, np.linspace(0, 1, 300))
+        assert np.all(np.diff(out) >= -1e-9), f"{r.method} must rise"
+
+
+def test_is_increasing_by_parameters():
+    assert is_increasing("linear", {"slope": 0.5, "intercept": 0.1})
+    assert not is_increasing("linear", {"slope": -0.5, "intercept": 0.9})
+    # the TB 2.1 -> 4.0 fit that estimated ~100% for a 9% model
+    assert not is_increasing("hill", {"y0": 1.0, "a": 0.016, "k": 0.76494, "n": 6.0})
+    assert is_increasing("hill", {"y0": 0.016, "a": 1.0, "k": 0.76494, "n": 6.0})
+    assert not is_increasing("logistic", {"y0": 0.8, "a": 0.2, "k": 10.0, "xmid": 0.5})
+    assert not is_increasing("mm_offset", {"y0": 0.3, "vmax": 0.0, "k": 0.1})
 
 
 def test_all_candidates_fit(pairs):

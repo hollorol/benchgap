@@ -15,8 +15,11 @@ Candidates:
 
 mm_offset is monotone with a ceiling, so its inverse exists in closed form;
 for the reverse direction of a fitted pair we use that inverse instead of an
-independently fitted (non-monotone) polynomial. All candidates here are
-monotone non-decreasing.
+independently fitted (non-monotone) polynomial. Every form is monotone, but
+the linear, Hill and logistic bounds also admit a decreasing fit (a negative
+slope, an asymptote below the baseline); fit_all leaves those out
+(is_increasing), since a higher score on one benchmark predicting a lower one
+on another is an overfit to too few points, not a calibration.
 
 Leave-one-out CV is capped at MAX_LOO_FOLDS folds (deterministic subsample)
 so that large benchmark pairs stay tractable.
@@ -265,6 +268,17 @@ def fit_metrics(
     }
 
 
+def is_increasing(method: str, params: dict[str, float]) -> bool:
+    """Whether the fitted curve rises with x (the bounds fix the sign of every other
+    parameter: the Hill exponent, the logistic steepness and the MM half-saturations
+    are positive)."""
+    if method == "linear":
+        return params["slope"] > 0.0
+    if method in ("hill", "logistic"):
+        return params["a"] > params["y0"]
+    return params["vmax"] > 0.0  # mm, mm_offset, mm_offset_inv
+
+
 def fit_candidate(method: str, x, y) -> FitResult:
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -278,14 +292,20 @@ def fit_all(x, y) -> list[FitResult]:
     """Fit every registered candidate on the same paired data.
 
     A candidate whose least-squares fit does not converge on this data is
-    left out (it would have no parameters to predict with).
+    left out (it would have no parameters to predict with), and so is one
+    whose fit falls (is_increasing): it is never a calibration, so it is not
+    cross-validated either.
     """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
     results = []
     for m in CANDIDATES:
         try:
-            results.append(fit_candidate(m, x, y))
+            params = CANDIDATES[m].fit(x, y)
         except RuntimeError:
             continue
+        if is_increasing(m, params):
+            results.append(FitResult(method=m, params=params, metrics=fit_metrics(m, params, x, y)))
     return results
 
 

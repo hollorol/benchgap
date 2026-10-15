@@ -30,7 +30,8 @@ final class Curves
         return sprintf($template, ...array_map(fn ($n) => $params[$n], $names));
     }
 
-    /** [[x, y], ...] over [0, 1] plus the training-range ends; non-finite points are left out. */
+    /** [[x, y], ...] over [0, 1] plus the x values in $range (the training range's and the reach's
+     * ends); non-finite points are left out. */
     public static function sample(string $method, array $params, ?array $range): array
     {
         $xs = array_map(fn ($i) => $i * (1 / (self::SAMPLES - 1)), range(0, self::SAMPLES - 1));

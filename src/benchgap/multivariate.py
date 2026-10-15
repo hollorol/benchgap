@@ -11,6 +11,9 @@ lower leave-one-out error wins:
   training size - a sparse candidate is skipped, not a cutoff hiding the
   candidates ranked below it. The penalty drives useless sources'
   coefficients to exactly zero; the survivors are the mapping's features.
+  The coefficients are kept non-negative (a positive lasso): a higher score
+  on a source never lowers the estimate, the same rule as the univariate
+  fits' (only increasing curves).
 - greedy forward selection, the previous technique: each step tries every
   remaining candidate on its own training set, both families competing per
   candidate set, the best leave-one-out error advancing.
@@ -97,14 +100,15 @@ def _standardize(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, 
 
 
 def _lmax(X: np.ndarray, y: np.ndarray) -> float:
-    """The smallest L1 penalty (on standardized features) that zeroes every coefficient."""
+    """The smallest L1 penalty (on standardized features) that zeroes every (non-negative)
+    coefficient; not positive when no source rises with the target."""
     Xs, yc, _, _ = _standardize(X, y)
-    return float(np.max(np.abs(Xs.T @ yc)) / len(y))
+    return float(np.max(Xs.T @ yc) / len(y))
 
 
 def _enet_solve(Xs: np.ndarray, yc: np.ndarray, l1: float, l2: float) -> np.ndarray:
     """Coordinate descent on the standardized elastic net (the Gram matrix way):
-    minimize 1/(2n)||yc - Xs w||^2 + l1||w||_1 + (l2/2)||w||^2."""
+    minimize 1/(2n)||yc - Xs w||^2 + l1||w||_1 + (l2/2)||w||^2 subject to w >= 0."""
     n, k = Xs.shape
     G = (Xs.T @ Xs) / n
     c = (Xs.T @ yc) / n
@@ -117,12 +121,7 @@ def _enet_solve(Xs: np.ndarray, yc: np.ndarray, l1: float, l2: float) -> np.ndar
             if colsq[j] <= 0.0:
                 continue
             rho = c[j] - G[j] @ w + colsq[j] * w[j]
-            if rho > l1:
-                new = (rho - l1) / denom[j]
-            elif rho < -l1:
-                new = (rho + l1) / denom[j]
-            else:
-                new = 0.0
+            new = (rho - l1) / denom[j] if rho > l1 else 0.0
             if new != w[j]:
                 delta = max(delta, abs(new - w[j]))
                 w[j] = new
@@ -172,7 +171,7 @@ def _fit_enet_mv(X: np.ndarray, y: np.ndarray, min_features: int = 1) -> dict:
     y = np.asarray(y, dtype=float)
     lmax = _lmax(X, y)
     if not lmax > 0.0:
-        raise RuntimeError("no source correlates with the target")
+        raise RuntimeError("no source rises with the target")
     best = None
     for l1_ratio in ENET_L1_RATIOS:
         for frac in ENET_FRACS:

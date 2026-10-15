@@ -10,7 +10,7 @@ from pathlib import Path
 from . import __version__
 from .db import connect, init_db, parse_version_spec
 from .fit import fit_mappings
-from .gapfill import gapfill
+from .gapfill import extrapolation, gapfill
 from .families import load_families
 from .harness_tax import MIN_OVERLAP
 from .ingest import ingest_csv
@@ -286,11 +286,13 @@ def cmd_predict(args: argparse.Namespace) -> None:
     # Accept percent (e.g. 59.6) or fraction (e.g. 0.596); scores are stored
     # as fractions.
     x = args.value / 100.0 if args.value > 1.5 else args.value
+    train_range = json.loads(row["train_range_json"])
+    extrapolated = extrapolation(x, train_range["x_min"], train_range["x_max"])
+    if extrapolated is None:
+        sys.exit(f"error: {x * 100:.1f}% is beyond the reach of the training range"
+                 f" ({train_range['x_min'] * 100:.1f}-{train_range['x_max'] * 100:.1f}%)")
     y = float(predict_with(row["method"], params, [x])[0])
-    train_range = json.loads(row["train_range_json"]) if row["train_range_json"] else None
-    note = ""
-    if train_range and not (train_range["x_min"] <= x <= train_range["x_max"]):
-        note = "  [outside training range - extrapolated]"
+    note = "  [outside training range - extrapolated]" if extrapolated else ""
     print(f"{x * 100:.1f}% on {args.from_version} -> {y * 100:.1f}% on {args.to_version}"
           f" ({row['method']}){note}")
 

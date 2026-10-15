@@ -15,11 +15,12 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
 
-from benchgap import fit, report
+from benchgap import fit, gapfill, report
 from benchgap.fitting import CANDIDATES
 
 WEB = Path(__file__).resolve().parent.parent / "web"
@@ -28,6 +29,12 @@ pytestmark = pytest.mark.skipif(
     PHP is None or not (WEB / "vendor" / "autoload.php").exists(),
     reason="needs php and web/vendor (composer install in web/)",
 )
+
+
+def _php_round(x: float, places: int) -> float:
+    """PHP's round(): a tie (as the shortest decimal shows it, e.g. 0.04375) goes away from zero,
+    where Python's would follow the binary value below it."""
+    return float(Decimal(repr(x)).quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP))
 
 
 @pytest.fixture(scope="module")
@@ -121,10 +128,11 @@ def test_provider():
 
 def test_settings_match_the_method():
     meta = json.loads(php(
-        "echo json_encode(['gate' => Benchgap\\Snapshot::QUALITY_GATE, 'dense' => Benchgap\\Snapshot::DENSE,"
+        "echo json_encode(['gate' => Benchgap\\Snapshot::QUALITY_GATE, 'reach' => Benchgap\\Snapshot::REACH, 'dense' => Benchgap\\Snapshot::DENSE,"
         " 'caps' => array_keys(Benchgap\\Snapshot::CAPABILITY_LABELS), 'curves' => array_keys(Benchgap\\Curves::EQUATIONS)]);"
     ))
     assert meta["gate"] == {"min_pairs": fit.MIN_PAIRS, "min_r2": fit.MIN_R2, "max_loo_pp": pytest.approx(fit.MAX_LOO_RMSE * 100)}
+    assert meta["reach"] == gapfill.REACH
     assert meta["dense"] == {"min_models": report.DEFAULT_MIN_MODELS, "min_benchmarks": report.DEFAULT_MIN_BENCHMARKS}
     assert meta["caps"] == report.CAPABILITY_ORDER
     assert meta["curves"] == list(CANDIDATES)
@@ -219,7 +227,7 @@ def test_page_data_slices_the_site_data(server):
     kinds = {"high": 1, "medium": 2, "low": 3}
     matrix = get_json(server, "/data/matrix.json")
     cells = matrix["cells"]
-    assert cells == [[s["m"], s["b"], round(s["v"], 4), 0 if s["s"] == "m" else kinds[s["tier"]]] for s in scores if s["b"] in listed]
+    assert cells == [[s["m"], s["b"], _php_round(s["v"], 4), 0 if s["s"] == "m" else kinds[s["tier"]]] for s in scores if s["b"] in listed]
     # each column's measured range, and the rows most measured first
     for b in listed:
         vals = [c[2] for c in cells if c[1] == b and c[3] == 0]
@@ -288,7 +296,7 @@ def test_page_data_slices_the_site_data(server):
         if s["s"] == "m":
             on.setdefault(s["m"], []).append(s["b"])
     general = sorted(
-        ([m, round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns), key=lambda r: (-r[1], -r[2], r[0])
+        ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns), key=lambda r: (-r[1], -r[2], r[0])
     )
     dense = {m["id"] for m in whole["models"] if m["dense"]}
     frontier = [g for g in general if g[0] in dense][: max(1, math.ceil(len([g for g in general if g[0] in dense]) / 10))]

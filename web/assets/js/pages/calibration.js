@@ -139,6 +139,7 @@ export function renderMapping(data) {
     ...yAxis.ticks.map((v) => svg`<line class="gl" x1="${L}" x2="${W - R}" y1="${py(v)}" y2="${py(v)}"/><text x="${L - 8}" y="${py(v) + 4}" text-anchor="end">${Math.round(v * 100)}</text>`),
   ];
   const [r0, r1] = m.range || [0, xMax];
+  const [e0, e1] = m.reach || [0, xMax];   // the inputs the estimates may come from
   // polyline through the exported curve samples with a <= x <= b
   const path = (a, b) => {
     const pts = m.curve
@@ -158,7 +159,7 @@ export function renderMapping(data) {
       <rect class="band" x="${px(r0)}" y="${T}" width="${px(r1) - px(r0)}" height="${H - T - B}"/>
       ${grid}
       <line class="ax" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/><line class="ax" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
-      <path class="curve-out" d="${path(0, r0)}"/><path class="curve-out" d="${path(r1, xMax)}"/>
+      <path class="curve-out" d="${path(e0, r0)}"/><path class="curve-out" d="${path(r1, e1)}"/>
       <path class="curve" d="${path(r0, r1)}"/>
       ${pts}${epts}
       <text class="lbl" x="${(L + W - R) / 2}" y="${H - 10}" text-anchor="middle">${f.label} score (%)</text>
@@ -174,7 +175,7 @@ export function renderMapping(data) {
       ${pageHead(html`<a href="/calibration">Calibration</a> · ${capLabel(f.capability)}`, html`${f.label} <span class="muted">→</span> ${t.label}`,
         html`Each dot is a model measured on both benchmarks. The curve is the selected
         ${methodLabel(m.method)} fit; the shaded band is the range of ${f.label} scores it was fitted on,
-        and the dashed parts are extrapolation. Hollow rings are the estimates it produced, coloured by confidence.`)}
+        and the dashed parts are extrapolation, which reaches at most the band's own width beyond it. Hollow rings are the estimates it produced, coloured by confidence.`)}
       <div class="grid-2 section">
         <div class="card">${plot}
           <div class="legend" style="border:0;padding-bottom:0">

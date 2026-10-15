@@ -31,6 +31,8 @@ final class Snapshot
     // match src/benchgap (fit.py quality gate, report.py display filter and the
     // capability order, which is the order of CAPABILITY_LABELS).
     public const QUALITY_GATE = ['min_pairs' => 5, 'min_r2' => 0.3, 'max_loo_pp' => 15.0];
+    // how far a calibration extrapolates, in widths of its training range beyond either end (gapfill.py REACH)
+    public const REACH = 1.0;
     public const DENSE = ['min_models' => 8, 'min_benchmarks' => 3];
     // the benchmarks the site lists: at least one estimate and this many models, measured or estimated.
     // The counts, the dense core and the models listed are all of listed benchmarks; an unlisted one
@@ -235,18 +237,24 @@ final class Snapshot
             $params = json_decode($m['params_json'], true);
             $range = $m['train_range_json'] ? json_decode($m['train_range_json'], true) : null;
             $xRange = $range ? [self::num($range['x_min']), self::num($range['x_max'])] : null;
+            // the inputs the estimates may come from, within [0, 1]; sampled like the curve's x
+            $reach = $range ? [
+                round(max(0.0, $range['x_min'] - self::REACH * ($range['x_max'] - $range['x_min'])), 4),
+                round(min(1.0, $range['x_max'] + self::REACH * ($range['x_max'] - $range['x_min'])), 4),
+            ] : null;
             $mappingDocs[] = [
                 'id' => (int) $m['id'],
                 'from' => (int) $m['from_version_id'],
                 'to' => (int) $m['to_version_id'],
                 'method' => $m['method'],
                 'equation' => Curves::equation($m['method'], $params),
-                'curve' => Curves::sample($m['method'], $params, $xRange),
+                'curve' => Curves::sample($m['method'], $params, [...$xRange ?? [], ...$reach ?? []]),
                 'n' => (int) $m['n_points'],
                 'r2' => self::num($m['metrics']['R2'] ?? null),
                 'rmse' => self::num($m['metrics']['RMSE'] ?? null),
                 'loo' => self::num($m['metrics']['LOO_RMSE'] ?? null),
                 'range' => $xRange,
+                'reach' => $reach,
                 'points' => $points[$m['id']] ?? [],
                 'n_used' => $used[$m['id']] ?? 0,
             ];
