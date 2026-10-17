@@ -162,8 +162,14 @@ def fit_mappings(
     ``keep`` controls what is stored: 'best' keeps only the LOO-CV-selected
     mapping per pair, 'all' keeps every candidate fit. The pairs are fitted on
     ``jobs`` processes (default: every core); a pair whose paired scores are
-    in ``cache`` reuses its earlier fits. Returns a summary list.
+    in ``cache`` reuses its earlier fits. Replaces earlier mappings. Returns a
+    summary list.
     """
+    # a refit replaces every earlier mapping, so none it no longer selects (a pair now
+    # rejected or no longer eligible, a fit that fell, a method that lost) lingers for
+    # gapfill; the estimates made through them go too (gapfill re-fills)
+    conn.execute("DELETE FROM scores WHERE source = 'gapfilled' AND mapping_id IS NOT NULL")
+    conn.execute("DELETE FROM mappings")
     summary = []
     for src, dst, pairs, results, best, rejected in _selected(
         _pair_tasks(conn, min_pairs, cross=False), jobs, cache or FitCache(None, "fit")

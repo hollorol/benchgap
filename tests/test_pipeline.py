@@ -9,7 +9,7 @@ import pytest
 from benchgap import multivariate
 from benchgap.cache import FitCache
 from benchgap.db import connect, init_db
-from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2, fit_cross_mappings
+from benchgap.fit import MAX_LOO_RMSE, MIN_PAIRS, MIN_R2, fit_cross_mappings, fit_mappings
 from benchgap.fitting import MAX_LOO_FOLDS, is_increasing
 from benchgap.gapfill import extrapolation, gapfill
 from benchgap.ingest import ingest_csv
@@ -254,6 +254,39 @@ def test_gapfill_drops_estimates_out_of_reach(writable_db):
     assert conn.execute(
         "SELECT COUNT(*) FROM scores WHERE mapping_id = ?", (mp["id"],)
     ).fetchone()[0] == 0
+
+
+def test_refit_replaces_earlier_mappings(writable_db):
+    """A refit on a fitted database stores what a fit of a fresh one does: a mapping it no
+    longer selects (here a falling one) goes, and so do the estimates made through it."""
+    conn = writable_db
+    def stored():
+        return [tuple(r) for r in conn.execute(
+            "SELECT id, from_version_id, to_version_id, method, params_json FROM mappings"
+            " ORDER BY id")]
+
+    fitted = stored()
+    mp = conn.execute("SELECT * FROM mappings ORDER BY id LIMIT 1").fetchone()
+    method = "linear" if mp["method"] != "linear" else "mm"
+    stale = conn.execute(
+        "INSERT INTO mappings (from_version_id, to_version_id, method, params_json,"
+        " metrics_json, n_points, train_range_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (mp["from_version_id"], mp["to_version_id"], method,
+         json.dumps({"slope": -1.0, "intercept": 1.0} if method == "linear"
+                    else {"vmax": -0.5, "k": 0.2}),
+         json.dumps({"R2": 0.99, "LOO_RMSE": 0.001}), mp["n_points"], mp["train_range_json"]),
+    ).lastrowid
+    model = conn.execute("SELECT id FROM models ORDER BY id LIMIT 1").fetchone()["id"]
+    conn.execute(
+        "INSERT INTO scores (model_id, version_id, value, source, mapping_id) VALUES (?, ?, 0.5,"
+        " 'gapfilled', ?)", (model, mp["to_version_id"], stale))
+    conn.commit()
+
+    fit_mappings(conn)
+    assert stored() == fitted
+    assert conn.execute(
+        "SELECT COUNT(*) FROM scores WHERE source = 'gapfilled' AND mapping_id IS NOT NULL"
+    ).fetchone()[0] == 0, "estimates through replaced mappings remain"
 
 
 def test_report(gapfilled_db):
