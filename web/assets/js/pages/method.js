@@ -10,6 +10,7 @@ function validated() {
   if (!h) return html`<p>The pipeline's end-to-end validation (masking measured scores, refitting everything and
       scoring the masked cells against their truth) has not been stored in this database yet.</p>`;
   const lv = h.by_level_mae_pp;
+  const inflation = Object.values(h.label_inflation_rmse);
   return html`<p>The whole pipeline was tested by masking a share of the measured scores, wiping every fitted
       table, refitting everything on what's left and scoring the masked cells against their held-out truth.
       On ${h.n_runs} runs (${h.random_mae_pp[0].toFixed(1)} ± ${h.random_mae_pp[1].toFixed(1)} pp MAE on the random-mask seeds),
@@ -18,7 +19,7 @@ function validated() {
       matrix-completion baseline on the same cells, whose error on the cells the pipeline refuses is nearly double its own.
       The confidence levels above are correctly ordered — realized error ${lv.high.toFixed(1)} / ${lv.medium.toFixed(1)} /
       ${lv.low.toFixed(1)} pp (high/medium/low) — but the ± labels are selected minima and understate the realized RMSE
-      by roughly 40–70% (×${h.label_inflation_rmse.high.toFixed(1)}–${h.label_inflation_rmse.medium.toFixed(1)}).
+      by roughly 40–70% (×${Math.min(...inflation).toFixed(1)}–${Math.max(...inflation).toFixed(1)}).
       Reweighted to the confidence mix of the published matrix, a published estimate should be expected to carry about
       <b>${h.reweighted.mae_pp.toFixed(1)} pp MAE</b> (${h.reweighted.rmse_pp.toFixed(1)} pp RMSE), and a model with a single
       measured score gets estimates for only ${pct(h.sparse_coverage.k1, 0)}% of its remaining benchmarks

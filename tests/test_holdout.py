@@ -67,4 +67,4 @@ def test_cli_stores_and_reports(tmp_path, capsys, monkeypatch):
     out = capsys.readouterr().out
     assert "stored 5 holdout runs" in out
     assert "sparse-k1" in out and "headline:" in out
-    assert "6.3 pp MAE" in out
+    assert f"{holdout.load_results()['headline']['reweighted']['mae_pp']:.1f} pp MAE" in out
