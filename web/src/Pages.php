@@ -137,7 +137,8 @@ final class Pages
     {
         $pages = [
             ...array_map(fn ($path) => Api::SITE_URL . $path, array_keys(self::PAGES)),
-            ...array_column($this->listed, 'page'),
+            // the home benchmark's page is the home page's (its canonical URL is /)
+            ...array_column(array_diff_key($this->listed, [$this->home => true]), 'page'),
             ...array_column($this->listedModels, 'page'),
             ...array_column($this->api->mappings()['mappings'], 'page'),
         ];
@@ -362,11 +363,14 @@ final class Pages
         $rows = array_map(fn ($s) => [
             $this->link($this->models[$s['model']]), self::pct($s['estimate']['inputs'][0]['score']) . '%', self::pct($s['score']) . '%', self::source($s),
         ], $doc['estimates']);
+        // the models it was fitted on, so that no two calibration pages read alike (one without estimates included)
+        $points = array_map(fn ($p) => [$this->link($this->models[$p['model']]), self::pct($p['x']) . '%', self::pct($p['y']) . '%'], $m['points']);
         return $this->result("$f → $t calibration",
             "How $f scores predict $t: the fitted {$m['method_name']} curve, the models it was fitted on and its cross-validated error.",
             "/calibration/$id",
             $this->header('Calibration', "$f → $t", '<p class="lede">' . self::esc($lead) . '</p>')
-            . ($rows ? $this->table(['Estimated model', $f, $t, 'Source'], $rows) : ''));
+            . ($rows ? $this->table(['Estimated model', $f, $t, 'Source'], $rows) : '')
+            . '<section class="section"><h2 class="h2">Fitted on</h2>' . $this->table(['Model', $f, $t], $points) . '</section>');
     }
 
     public function multivariate(): array

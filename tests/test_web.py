@@ -471,8 +471,14 @@ def test_pages_and_sitemap(server):
     assert headers["Content-Type"].startswith("application/xml")
     index = get_json(server, "/api/v1/")
     n = index["counts"]
-    assert sitemap.count("<loc>") == 9 + n["benchmarks"] + n["models"] + n["mappings"]
+    # the home benchmark's own page is not listed: its canonical URL is the home page's
+    assert sitemap.count("<loc>") == 9 + n["benchmarks"] - 1 + n["models"] + n["mappings"]
     assert f"<loc>{model['page']}</loc>" in sitemap and "<lastmod>" in sitemap
+    home = get_json(server, "/data/site.json")["meta"]["home"]
+    assert f"<loc>https://benchgap.net/b/{home}</loc>" not in sitemap
+    # every calibration page lists the models it was fitted on, estimates or not
+    page = get(server, f"/calibration/{mapping['id']}")[1]
+    assert "<h2 class=\"h2\">Fitted on</h2>" in page and page.count("<tr>") >= mapping["n_models"] + 1
 
 
 def test_llms_txt(server):
