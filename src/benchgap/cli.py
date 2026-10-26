@@ -206,6 +206,40 @@ def cmd_crossmultifit(args: argparse.Namespace) -> None:
     _print_kept(f"fitted {len(summary)} targets from several benchmarks", "passing the quality gate", summary, cache)
 
 
+def cmd_nnfit(args: argparse.Namespace) -> None:
+    try:
+        import keras  # noqa: F401
+    except ImportError:
+        sys.exit('error: nnfit needs Keras: pip install -e ".[nn]"')
+    from .nn import nnfit
+
+    conn = _conn(args)
+    cap = args.cap if args.cap in ("median", "none") or args.cap.startswith("p") else int(args.cap)
+    m = nnfit(
+        conn, args.out, min_models=args.min_models, min_benchmarks=args.min_benchmarks,
+        hidden=args.hidden, depth=args.depth, cap=cap,
+        hide_rate=args.hide_rate, val_frac=args.val_frac, epochs=args.epochs, seed=args.seed,
+        verbose=2 if args.verbose else 0,
+    )
+    s = m["shape"]
+    print(
+        f"core: {s['models']} models x {s['versions']} versions, {s['measured']} measured;"
+        f" {m['train_models']} train / {m['val_models']} val models, cap {m['cap']}"
+    )
+    print(f"best epoch {m['best_epoch']} of {m['epochs_run']}")
+    print(
+        f"val RMSE on {m['val_hidden_cells']} hidden cells: {m['val_rmse_pp']:.2f} pp"
+        f" (uncapped inputs {m['val_rmse_uncapped_pp']:.2f} pp;"
+        f" per-version mean {m['baseline_rmse_pp']:.2f} pp; untrained {m['val_rmse_init_pp']:.2f} pp)"
+    )
+    rows = m["per_version"]
+    shown = rows if len(rows) <= 10 else rows[:5] + rows[-5:]
+    for r in shown:
+        loo = f", pipeline LOO {r['pipeline_loo_pp']:.2f}" if r["pipeline_loo_pp"] is not None else ""
+        print(f"  {r['version']}: {r['rmse_pp']:.2f} pp (n={r['n']}, mean {r['baseline_pp']:.2f}{loo})")
+    print(f"wrote {args.out}/model.keras, metrics.json, predictions.csv")
+
+
 def cmd_report(args: argparse.Namespace) -> None:
     from .report import display_filter
 
@@ -387,6 +421,27 @@ def build_parser() -> argparse.ArgumentParser:
     cmfit.add_argument("-j", "--jobs", type=int, default=0, help=JOBS_HELP)
     cmfit.add_argument("--cache", metavar="DIR", help=CACHE_HELP)
     cmfit.set_defaults(func=cmd_crossmultifit)
+
+    nn = sub.add_parser(
+        "nnfit",
+        help="train the masked-imputation network (experimental; writes files, not estimates)",
+    )
+    nn.add_argument("--min-models", type=int, default=10,
+                    help="use benchmark versions with at least this many measured models")
+    nn.add_argument("--min-benchmarks", type=int, default=3,
+                    help="use models measured on at least this many benchmarks")
+    nn.add_argument("--hidden", type=int, default=128, help="units per hidden layer")
+    nn.add_argument("--depth", type=int, default=3, help="hidden layers")
+    nn.add_argument("--cap", default="median",
+                    help="measured cells a row keeps per epoch: median, p<q>, N or none")
+    nn.add_argument("--hide-rate", type=float, default=0.25,
+                    help="fraction of a row's cells hidden from the input")
+    nn.add_argument("--val-frac", type=float, default=0.2, help="models held out for validation")
+    nn.add_argument("--epochs", type=int, default=2000, help="maximum epochs (early stopping)")
+    nn.add_argument("--seed", type=int, default=0)
+    nn.add_argument("--out", default="data/nn", help="output directory")
+    nn.add_argument("-v", "--verbose", action="store_true", help="show every epoch")
+    nn.set_defaults(func=cmd_nnfit)
 
     rep = sub.add_parser("report", help="show mappings and the score matrix")
     rep.add_argument("--min-models", type=int, default=DEFAULT_MIN_MODELS,

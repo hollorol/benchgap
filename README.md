@@ -63,6 +63,7 @@ benchgap/
 │   ├── parallel.py              # independent fits on every core
 │   ├── cache.py                 # fit results reused between runs (--cache)
 │   ├── gapfill.py               # predict + store missing scores (source='gapfilled')
+│   ├── nn.py                    # experimental masked-imputation network (benchgap nnfit; files only)
 │   ├── report.py                # mapping summaries, score matrix
 │   ├── html_report.py           # self-contained HTML report (matplotlib, base64 PNGs)
 │   └── cli.py                   # command-line interface
@@ -101,6 +102,7 @@ benchgap gapfill                       # fill missing scores (prefers multi wher
 benchgap report                        # dense-core score matrix (terminal)
 benchgap html                          # self-contained HTML report -> data/report.html
 benchgap predict terminal-bench-4/current aa-terminal-bench4/current 59.6
+benchgap nnfit                         # experimental neural gapfill -> data/nn/ (needs the nn extra)
 benchgap report --min-models 12 --min-benchmarks 5   # denser view (0 disables filtering)
 pytest                                 # run the tests (~20 s; tests/data/seed.csv)
 docker compose up                      # the website locally on http://localhost:8080 (see "Website")
@@ -352,6 +354,35 @@ featured, capability, unit, harness, score, source_url, retrieved_at`. Then
 rerun `fit`, `multifit` and `gapfill` (and `crossfit`, `crossmultifit` for the
 website's views): mappings are fitted automatically for every same-capability
 version pair with at least 5 paired models.
+
+## Neural gapfill (experimental)
+
+`benchgap nnfit` (`nn.py`, needs the `nn` extra: `pip install -e ".[nn]"`,
+Keras 3 on TensorFlow) trains one small dense network on the whole score
+matrix to predict masked cells: each model's score vector goes in with
+what it was measured on plus a random quarter of it hidden, and every
+benchmark comes out. Only the masking idea comes from masked autoencoders
+(MAE); the network has no latent bottleneck. The loss counts every measured cell (hidden and
+visible), never an unmeasured one; the reported error counts the hidden
+cells of the 20% of models held out for validation.
+
+- The matrix is the dense core (`--min-models 10 --min-benchmarks 3`, as in
+  the report's display filter). Unlike the curve fits it ignores
+  capability: the network learns from every benchmark at once.
+- Models with many scores would dominate the loss, so each epoch every
+  model keeps a random `--cap` of its measured scores (default: the median
+  count of the training models), resampled every epoch.
+- Inputs are standardized per benchmark on the training models; a missing
+  cell is 0 (the benchmark's mean) with a mask indicator. Each hidden layer
+  (`--depth`, three by default) is a weight-normalized Dense (He init) ->
+  LayerNorm -> GELU, without dropout; the output layer starts at each
+  benchmark's mean, so the untrained network is the per-benchmark-mean
+  baseline the run reports.
+
+It writes `data/nn/`: `model.keras`, `metrics.json` (settings, errors per
+benchmark next to the baseline and the stored mappings' LOO RMSE, training
+history) and `predictions.csv` (every unmeasured cell of the core). Nothing
+goes into the database: no estimate comes from it.
 
 ## Probabilistic roadmap
 
