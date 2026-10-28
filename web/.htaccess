@@ -28,8 +28,8 @@ DirectorySlash Off
   </Files>
   # gzip appends -gzip to the ETag; strip it from revalidations so serve.php can answer 304
   RequestHeader edit* If-None-Match "-gzip\"" "\""
-  # the raw data and API responses are for programs, not search results
-  <If "%{THE_REQUEST} =~ m#^\S+ /(data/|api/v1)#">
+  # the raw data, the API responses and the pages' Markdown (for AI readers) are not search results
+  <If "%{THE_REQUEST} =~ m#^\S+ /(data/|api/v1|\S*\.md[? ])#">
     Header set X-Robots-Tag "noindex"
   </If>
   Header always set Strict-Transport-Security "max-age=31536000"
@@ -45,7 +45,7 @@ RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]
 RewriteRule ^(src|vendor)(/|$) - [F]
 # pages have no trailing slash (the API index aside)
 RewriteRule ^((?!api/v1/$).+)/$ /$1 [R=301,L]
-# serve.php answers everything that is not a static file: the pages, the data, the API, the sitemap, llms.txt
+# serve.php answers everything that is not a static file: the pages (and their .md), the data, the API, the sitemap, llms.txt
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ serve.php [L]
 

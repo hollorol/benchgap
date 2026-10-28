@@ -8,8 +8,9 @@ namespace Benchgap;
  * The site's pages for readers that do not run JavaScript (search and AI
  * crawlers): each page is index.html with its own title, description and
  * canonical URL, and a plain-HTML summary in <main> that app.js replaces with
- * the interactive page. llms.txt and llms-full.txt give the same content as
- * Markdown. Everything is read from the public API documents.
+ * the interactive page. Each page is also Markdown, at its URL with .md appended
+ * (markdown()), for AI readers; llms.txt points to them, and llms-full.txt gives
+ * every leaderboard in one document. Everything is read from the public API documents.
  *
  * The titles, descriptions and ledes follow the front-end's pages (assets/js/pages/:
  * setMeta and the page headers); keep the two in step.
@@ -64,14 +65,15 @@ final class Pages
         $this->date = $this->index['data_retrieved_at'] ?? '';
     }
 
-    /** index.html filled in with a page (one of the page methods below) served at $path. */
-    public function html(string $template, array $page, string $path): string
+    /** index.html filled in with a page (one of the page methods below) served at $path; $markdown: it has a Markdown one too */
+    public function html(string $template, array $page, string $path, bool $markdown = false): string
     {
         $doc = \Dom\HTMLDocument::createFromString($template, LIBXML_NOERROR);
         $title = $page['title'] . ' · benchgap';
         $url = Api::SITE_URL . ($page['canonical'] ?? $path);
         $doc->title = $title;
         $set = fn (string $selector, string $attribute, string $value) => $doc->querySelector($selector)?->setAttribute($attribute, $value);
+        $markdown ? $set('link[rel="alternate"]', 'href', self::markdownUrl(Api::SITE_URL . $path)) : $doc->querySelector('link[rel="alternate"]')?->remove();
         $set('meta[name="description"]', 'content', $page['description']);
         $set('meta[name="robots"]', 'content', $page['canonical'] === null ? 'noindex' : 'index, follow');
         $set('link[rel="canonical"]', 'href', $url);
@@ -88,18 +90,29 @@ final class Pages
         return $doc->saveHtml();
     }
 
-    /** llms.txt: what the site is and where everything is (https://llmstxt.org). */
+    /** llms.txt: what the site is and where everything is (https://llmstxt.org), linking each page's Markdown. */
     public function llms(): string
     {
         $site = Api::SITE_URL;
+        $md = self::markdownUrl(...);
         $lines = [
             '# benchgap', '', '> ' . self::ABOUT, '', $this->facts(), '',
-            '## Pages', '',
-            ...array_map(fn ($path, $page) => "- [{$page[0]}]($site$path): {$page[1]}", array_keys(self::PAGES), self::PAGES),
+            'Every page of the site is also Markdown, at its URL with .md appended (' . $md("$site/") . ' for the home page), '
+                . 'as linked below; a model\'s page is ' . $md("$site/model/{slug}") . ", its slug from the [model list]($site/api/v1/models.json).",
+            '', '## Pages', '',
+            ...array_map(fn ($path, $page) => '- [' . $page[0] . '](' . $md($site . $path) . "): {$page[1]}", array_keys(self::PAGES), self::PAGES),
+            '', '## Compare models', '',
+            'Any two models side by side: their scores on every benchmark both have one on (measured or estimated), '
+                . 'each one\'s general performance and rank, and on how many benchmarks each leads where both are measured.',
+            '',
+            '- ' . $md("$site/compare/{a}/{b}") . ': model a against model b',
+            '- ' . $md("$site/compare/{a}/from") . ': model a against the frontier model closest to it in general performance',
+            '- ' . $md("$site/compare/{a}/below") . ': model a against the model just below it in general performance',
+            '- ' . $md("$site/compare/{a}/from/{provider}") . ' and ' . $md("$site/compare/{a}/below/{provider}") . ': the same, among one provider\'s models (as in the model list)',
             '', '## Leaderboards', '',
         ];
         foreach ($this->listed as $b) {
-            $lines[] = "- [{$b['label']}]({$b['page']}): {$b['n_measured']} measured and {$b['n_estimated']} estimated scores";
+            $lines[] = "- [{$b['label']}](" . $md($b['page']) . "): {$b['n_measured']} measured and {$b['n_estimated']} estimated scores";
         }
         array_push(
             $lines, '', '## Data', '',
@@ -125,7 +138,7 @@ final class Pages
             array_push($lines, '', "## {$b['label']}", '', $this->benchmarkLead($b, $scores), '', "Page: {$b['page']}", '',
                 '| # | Model | Score | Source |', '|---:|---|---:|---|');
             foreach ($scores as $i => $s) {
-                $name = str_replace('|', '\|', $this->models[$s['model']]['name']);
+                $name = self::cell($this->models[$s['model']]['name']);
                 $lines[] = '| ' . ($i + 1) . " | $name | " . self::pct($s['score']) . '% | ' . self::source($s) . ' |';
             }
         }
@@ -247,7 +260,11 @@ final class Pages
                 $this->header('Model compare', 'Two models, head to head', '<p class="lede">' . self::esc(self::COMPARE_INTRO) . '</p>')
                 . $this->table(['Frontier model', 'General performance', 'Benchmarks'], $rows)
                 . '<p class="muted">Pick two models on the <a href="/compare">interactive page</a>, or one and '
-                    . 'a frontier model is picked for it - of one provider, or of any.</p>');
+                    . 'a frontier model is picked for it - of one provider, or of any.</p>'
+                . '<p class="muted">Each pick has its own address, by the models\' slugs (as on their pages, <code>/model/{slug}</code>): '
+                    . '<code>/compare/{a}/{b}</code>, <code>/compare/{a}/from</code> (the closest frontier model) or '
+                    . '<code>/compare/{a}/below</code> (the model just below it), the last two optionally followed by '
+                    . '<code>/{provider}</code>; with <code>.md</code> appended, as Markdown.</p>');
         }
         $ma = $this->models[$a];
         $auto = $b === null;
@@ -647,6 +664,110 @@ final class Pages
             );
         }
         return $rules;
+    }
+
+    // -- markdown ----------------------------------------------------------------------
+
+    /** where a page's Markdown is: its URL with .md appended, index.md for the home page */
+    public static function markdownUrl(string $url): string
+    {
+        return (str_ends_with($url, '/') ? "{$url}index" : $url) . '.md';
+    }
+
+    /** whether a path is one of the site's pages (each has its Markdown), not the data, the API or a file */
+    public static function isPage(string $path): bool
+    {
+        return !preg_match('#^/(api|data|assets)/|^/[^/]+\.\w+$#', $path);
+    }
+
+    /** a page (one of the page methods above) served at $path, as Markdown: its <main> with a title line */
+    public function markdown(array $page, string $path): string
+    {
+        $doc = \Dom\HTMLDocument::createFromString("<!DOCTYPE html><body>{$page['main']}", LIBXML_NOERROR);
+        $h1 = $doc->querySelector('h1');
+        $eyebrow = $doc->querySelector('.eyebrow');
+        $h1->remove();
+        $eyebrow->remove();
+        return '# ' . trim($h1->textContent) . "\n\n" . implode(' · ', [$eyebrow->textContent, Api::SITE_URL . $path, "data retrieved {$this->date}"])
+            . "\n\n" . self::blocks($doc->body) . "\n";
+    }
+
+    // the elements the pages put in a line of text
+    private const INLINE = ['a', 'b', 'code', 'span', 'br'];
+
+    /** an element's children as Markdown blocks: headings, paragraphs, lists and tables */
+    private static function blocks(\Dom\Node $parent): string
+    {
+        $blocks = [];
+        $run = '';   // text and inline elements, up to the next block
+        foreach ($parent->childNodes as $node) {
+            if (!$node instanceof \Dom\Element || in_array($node->localName, self::INLINE, true)) {
+                $run .= self::inline($node);
+                continue;
+            }
+            $blocks[] = self::squash($run);
+            $run = '';
+            $blocks[] = match ($tag = $node->localName) {
+                'h1', 'h2', 'h3', 'h4', 'h5', 'h6' => str_repeat('#', (int) $tag[1]) . ' ' . self::squash(self::inline($node)),
+                'p' => self::squash(self::inline($node)),
+                'ul' => implode("\n", array_map(fn ($li) => '- ' . self::squash(self::inline($li)), [...$node->querySelectorAll('li')])),
+                'table' => self::markdownTable($node),
+                default => self::blocks($node),
+            };
+        }
+        $blocks[] = self::squash($run);
+        return implode("\n\n", array_filter($blocks, fn ($b) => $b !== ''));
+    }
+
+    private static function inline(\Dom\Node $node): string
+    {
+        if (!$node instanceof \Dom\Element) {
+            return $node instanceof \Dom\Text ? preg_replace('/\s+/', ' ', $node->textContent) : '';
+        }
+        if ($node->localName === 'br' || $node->localName === 'code') {
+            return $node->localName === 'br' ? "\n" : '`' . $node->textContent . '`';
+        }
+        $text = implode('', array_map(self::inline(...), [...$node->childNodes]));
+        return match ($node->localName) {
+            'a' => '[' . trim($text) . '](' . self::markdownHref($node->getAttribute('href') ?? '') . ')',
+            'b' => '**' . trim($text) . '**',
+            default => $text,
+        };
+    }
+
+    /** a <table> as a Markdown table, its first row the head */
+    private static function markdownTable(\Dom\Element $table): string
+    {
+        $lines = [];
+        foreach ($table->querySelectorAll('tr') as $i => $tr) {
+            $cells = array_map(fn ($c) => self::cell(self::squash(self::inline($c))), [...$tr->querySelectorAll('th, td')]);
+            $lines[] = '| ' . implode(' | ', $cells) . ' |';
+            if ($i === 0) {
+                $lines[] = '|' . str_repeat('---|', count($cells));
+            }
+        }
+        return implode("\n", $lines);
+    }
+
+    /** text for a Markdown table cell: on one line, its pipes escaped */
+    private static function cell(string $text): string
+    {
+        return str_replace(['|', "\n"], ['\|', ' '], $text);
+    }
+
+    /** a link in the Markdown pages: absolute, and to the Markdown of the site's own pages */
+    private static function markdownHref(string $href): string
+    {
+        if (!str_starts_with($href, '/') || str_starts_with($href, '//')) {
+            return $href;
+        }
+        return self::isPage($href) ? self::markdownUrl(Api::SITE_URL . $href) : Api::SITE_URL . $href;
+    }
+
+    /** inline text (its white space already collapsed, a <br> a line break) trimmed, line by line */
+    private static function squash(string $text): string
+    {
+        return trim(preg_replace(['/ *\n */', '/  +/'], ["\n", ' '], $text));
     }
 
     // -- html ------------------------------------------------------------------------

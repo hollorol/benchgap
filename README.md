@@ -68,7 +68,7 @@ benchgap/
 │   └── cli.py                   # command-line interface
 ├── web/                         # benchgap.net (see "Website")
 │   ├── index.html, assets/      # front-end: app.js (router), js/ (a module per page, lit-html), style.css, fonts
-│   ├── serve.php                # Slim 4 backend: pages, site data, public API, llms.txt
+│   ├── serve.php                # Slim 4 backend: pages (and their .md), site data, public API, llms.txt
 │   ├── .htaccess                # Apache: routing to serve.php, cache headers
 │   ├── src/
 │   │   ├── Snapshot.php         # the site data, built once per data update; confidence levels
@@ -191,8 +191,11 @@ page has its own URL
 (`/matrix`, `/model/<slug>`, `/b/<name>/<version>`, ...) and is listed in the
 generated `sitemap.xml`. The backend serves each page with its own title,
 description and a plain-HTML summary of its content (`web/src/Pages.php`) for
-readers without JavaScript, such as search and AI crawlers, and the same content
-as Markdown in `llms.txt` and `llms-full.txt`.
+readers without JavaScript, such as search and AI crawlers. For AI readers every
+page is also Markdown at its URL with `.md` appended (`/index.md` for the home
+page; `/compare/<a>/<b>.md` for a pair of models), linked from each page's
+`<link rel="alternate">` and from `llms.txt`, which also spells out the compare
+URLs; `llms-full.txt` gives every leaderboard in one document.
 
 Every estimate carries a **confidence level** computed in `web/src/Snapshot.php`:
 high (LOO RMSE <= 5 pp), medium (<= 10 pp) or low (above), demoted

@@ -1,7 +1,8 @@
 <?php
 // benchgap.net backend (Slim 4): the site's pages (index.html filled in for
 // each path), the site data (data/: all of it, and each page's slice), the
-// public API (api/v1/...) and llms.txt, computed from the score database.
+// public API (api/v1/...), llms.txt and each page as Markdown (its path with .md appended),
+// computed from the score database.
 // .htaccess sends every request that is not a static file here.
 //
 // The database is set in config.php (see config.example.php). Local preview:
@@ -174,7 +175,8 @@ function found(?array $document, Request $request): array
 // index.html filled in with one of the site's pages (see Pages), and with what to preload: the
 // page's own data document (data/...), which app.js loads alongside data/site.json, and on the
 // bundled site (deploy.yml) the chunks app.js imports and the page's own, $code (js/pages/$code.js)
-function html(Pages $pages, array $page, Request $request, ?string $code = null, ?string $data = null): string
+// $markdown: the page has a Markdown version (page()), which the head links to
+function html(Pages $pages, array $page, Request $request, ?string $code = null, ?string $data = null, bool $markdown = false): string
 {
     $template = file_get_contents(__DIR__ . '/index.html');
     // the local dev stack (compose.yaml) counts no visits: BENCHGAP_ANALYTICS=off leaves the analytics script out
@@ -195,14 +197,30 @@ function html(Pages $pages, array $page, Request $request, ?string $code = null,
         $preload[] = '<link rel="modulepreload" href="/assets/chunks/' . basename($chunk) . '">';
     }
     $template = str_replace($site, implode("\n", $preload), $template);
-    return $pages->html($template, $page, $request->getUri()->getPath());
+    return $pages->html($template, $page, $request->getUri()->getPath(), $markdown);
 }
 
 // the page $build makes with Pages, the module app.js renders it with (js/pages/$code.js) and the
-// data document it renders it from (as app.js PAGES)
+// data document it renders it from (as app.js PAGES); or the page as Markdown (markdown())
 function page(Request $request, Response $response, Closure $build, string $code, ?string $data = null): Response
 {
-    return send($response, html(pages(), found($build(pages()), $request), $request, $code, $data), 'text/html');
+    $page = found($build(pages()), $request);
+    if ($request->getAttribute('markdown')) {
+        return send($response, pages()->markdown($page, $request->getUri()->getPath()), 'text/markdown');
+    }
+    return send($response, html(pages(), $page, $request, $code, $data, markdown: true), 'text/html');
+}
+
+// a page's Markdown, at its path with .md appended (/index.md for the home page): the page's own
+// route answers it (page()). Inside cached(), so it keeps the Markdown under the .md path
+function markdown(Request $request, Handler $handler): Response
+{
+    $path = $request->getUri()->getPath();
+    $page = $path === '/index.md' ? '/' : substr($path, 0, -3);
+    if (!str_ends_with($path, '.md') || !Pages::isPage($page)) {
+        return $handler->handle($request);
+    }
+    return $handler->handle($request->withUri($request->getUri()->withPath($page))->withAttribute('markdown', true));
 }
 
 // a data/ path, its parts URL-encoded (as boardUrl and modelUrl, assets/js/core.js)
@@ -212,6 +230,7 @@ function data(string ...$parts): string
 }
 
 $app = AppFactory::create();
+$app->add(markdown(...));
 $app->add(cached(...));
 // the API is readable from any origin (a kept response too)
 $app->add(function (Request $request, Handler $handler): Response {

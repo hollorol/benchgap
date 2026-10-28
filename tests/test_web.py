@@ -393,6 +393,12 @@ def test_pages_and_sitemap(server):
         assert re.search(rf"<title>[^<]*{re.escape(title)} · benchgap</title>", body), path
         assert f'<link rel="canonical" href="https://benchgap.net{path}">' in body, path
         assert '<main id="main" class="wrap" tabindex="-1"><div class="page">' in body, path
+        # and each is Markdown too, at its path with .md appended
+        md_path = "/index.md" if path == "/" else f"{path}.md"
+        assert f'<link rel="alternate" type="text/markdown" href="https://benchgap.net{md_path}">' in body, path
+        headers, md = get(server, md_path)
+        assert headers["Content-Type"].startswith("text/markdown") and md.startswith("# "), path
+        assert not re.search(r"<(p|div|table|a|section)\b", md), path
         # the data app.js renders the page from loads alongside app.js; app.js and style.css by their content
         data = re.findall(r'<link rel="preload" href="(/data/[^"]+)" as="fetch"', body)
         assert data[0] == "/data/site.json" and len(data) == (1 if path in ("/method", "/publications") else 2), path
@@ -465,7 +471,8 @@ def test_pages_and_sitemap(server):
                  f"/compare/{model['slug']}/from/no-such-provider"]:
         with pytest.raises(urllib.error.HTTPError) as err:
             get(server, path)
-        assert err.value.code == 404 and '<meta name="robots" content="noindex">' in err.value.read().decode()
+        body = err.value.read().decode()
+        assert err.value.code == 404 and '<meta name="robots" content="noindex">' in body and 'rel="alternate"' not in body
 
     headers, sitemap = get(server, "/sitemap.xml")
     assert headers["Content-Type"].startswith("application/xml")
@@ -485,9 +492,26 @@ def test_llms_txt(server):
     headers, llms = get(server, "/llms.txt")
     assert headers["Content-Type"].startswith("text/markdown") and llms.startswith("# benchgap\n\n> benchgap is")
     benchmarks = [b for b in get_json(server, "/api/v1/benchmarks.json")["benchmarks"] if b["listed"]]
-    assert all(f"]({b['page']})" in llms for b in benchmarks)
+    assert all(f"]({b['page']}.md)" in llms for b in benchmarks)
+    assert "## Compare models" in llms and "/compare/{a}/{b}.md" in llms
     _, full = get(server, "/llms-full.txt")
     assert all(f"\n## {b['label']}\n" in full for b in benchmarks)
     keys = {b["key"] for b in benchmarks}
     scores = [s for s in get_json(server, "/api/v1/scores.json")["scores"] if s["benchmark"] in keys]
     assert full.count("\n| ") - full.count("\n| # |") == len(scores)
+
+
+def test_markdown_pages(server):
+    """A page's Markdown: its tables as Markdown tables, its links to the other pages' Markdown."""
+    model, other = get_json(server, "/api/v1/models.json")["models"][:2]
+    _, md = get(server, f"/model/{model['slug']}.md")
+    assert f"# {model['name']} benchmark scores\n" in md and "| Benchmark | Score | Source |\n|---|---|---|\n" in md
+    assert re.search(r"\]\(https://benchgap\.net/b/[^)]+\.md\)", md)
+    _, md = get(server, f"/compare/{model['slug']}/{other['slug']}.md")
+    assert f"# {model['name']} vs {other['name']}\n" in md and "| Δ (pp) |" in md
+    assert get(server, f"/compare/{model['slug']}/from.md")[1].startswith(f"# {model['name']} vs ")
+    # an unknown page's Markdown is a 404, and only pages have one
+    for path in ["/model/no-such-model.md", "/llms.txt.md"]:
+        with pytest.raises(urllib.error.HTTPError) as e:
+            get(server, path)
+        assert e.value.code == 404, path
