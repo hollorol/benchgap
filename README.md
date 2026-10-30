@@ -185,8 +185,8 @@ frontier model to hold it against: its closest rival, or the closest of the
 frontier models it shares the most benchmarks with), the harness-tax page
 (`/harness-tax`: how much harnesses disagree about the same models, measured
 scores only), the methodology, and the
-publications page (`/publications`: the papers on predicting benchmark
-scores, and how benchgap relates to them). Each
+publications page (`/publications`: benchgap's own paper, the papers on
+predicting benchmark scores, and how benchgap relates to them). Each
 page has its own URL
 (`/matrix`, `/model/<slug>`, `/b/<name>/<version>`, ...) and is listed in the
 generated `sitemap.xml`. The backend serves each page with its own title,
@@ -381,6 +381,23 @@ the deterministic one without migration:
   the measured scores of every model on every benchmark it tracks, including
   the runs of Artificial Analysis and Vals AI and published results; each
   benchmark's `source_url` points to its origin.
+
+## Citation
+
+Süli, P. P., Eigner, G., & Hollós, R. (2026). *Mind the Gap: Explicit
+Cross-Benchmark Calibrations for Estimating Missing LLM Evaluation Scores*.
+Research Square preprint. https://doi.org/10.21203/rs.3.rs-11552635/v1
+
+```bibtex
+@misc{suli2026mindthegap,
+  title        = {Mind the Gap: Explicit Cross-Benchmark Calibrations for Estimating Missing {LLM} Evaluation Scores},
+  author       = {S{\"u}li, Patrik P. and Eigner, Gy{\"o}rgy and Holl{\'o}s, Roland},
+  year         = {2026},
+  howpublished = {Research Square preprint},
+  doi          = {10.21203/rs.3.rs-11552635/v1},
+  url          = {https://doi.org/10.21203/rs.3.rs-11552635/v1}
+}
+```
 
 ## License
 

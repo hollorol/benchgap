@@ -101,6 +101,9 @@ final class Pages
                 . 'as linked below; a model\'s page is ' . $md("$site/model/{slug}") . ", its slug from the [model list]($site/api/v1/models.json).",
             '', '## Pages', '',
             ...array_map(fn ($path, $page) => '- [' . $page[0] . '](' . $md($site . $path) . "): {$page[1]}", array_keys(self::PAGES), self::PAGES),
+            '', '## Paper', '',
+            '- [' . self::PREPRINT['title'] . '](https://doi.org/' . self::PREPRINT['doi'] . '): the method and its holdout evaluation ('
+                . self::PREPRINT['venue'] . ', ' . self::PREPRINT['year'] . ')',
             '', '## Compare models', '',
             'Any two models side by side: their scores on every benchmark both have one on (measured or estimated), '
                 . 'each one\'s general performance and rank, and on how many benchmarks each leads where both are measured.',
@@ -470,19 +473,28 @@ final class Pages
     }
 
     public function publications(): array
-    {        $rows = array_map(fn ($p) => [
+    {
+        $paper = self::PREPRINT;
+        $doi = 'https://doi.org/' . $paper['doi'];
+        $rows = array_map(fn ($p) => [
             '<a href="https://arxiv.org/abs/' . self::esc($p['id']) . '" rel="noopener" target="_blank">' . self::esc($p['title']) . '</a>'
                 . '<br><span class="muted">' . self::esc("{$p['authors']}, {$p['year']}") . '</span>',
             $p['from'] === null ? '—' : self::esc($p['from']),
             self::esc($p['approach']),
             self::esc($p['relation']),
         ], self::PAPERS);
-        $lede = 'benchgap is one entry in an active research line: predicting a model\'s benchmark scores without running '
-            . 'every evaluation. These are the papers closest to what this site does, and how they relate to it.';
+        $lede = 'benchgap and its method are described in the paper below. It is one entry in an active research line: '
+            . 'predicting a model\'s benchmark scores without running every evaluation. The table lists the papers closest to it, '
+            . 'and how they relate.';
         return $this->result('Publications: the research behind benchgap',
             'Papers on predicting LLM benchmark scores from other benchmarks - matrix completion, scaling laws, latent factors - and how benchgap relates to each.',
             '/publications',
             $this->header('Publications', 'The research behind the gapfilling', '<p class="lede">' . self::esc($lede) . '</p>')
+            . '<section class="section"><h2 class="h2">The benchgap paper</h2>'
+            . '<p class="paper-ref"><a href="' . self::esc($doi) . '" rel="noopener" target="_blank">' . self::esc($paper['title']) . '</a><br>'
+            . '<span class="muted">' . self::esc("{$paper['authors']} · {$paper['venue']}, {$paper['year']}") . ' · '
+            . '<a href="' . self::esc($paper['pdf']) . '" rel="noopener" target="_blank">PDF</a></span></p>'
+            . '<pre class="code">' . self::esc($paper['bibtex']) . '</pre></section>'
             . $this->table(['Paper', 'Predicts from', 'Approach', 'How benchgap relates'], $rows)
             . '<section class="section"><h2 class="h2">The multivariate predictions</h2><article class="prose">'
             . implode('', array_map(fn ($p) => "<p>$p</p>", self::MULTIVARIATE_WORK))
@@ -491,6 +503,23 @@ final class Pages
             . implode('', array_map(fn ($item) => "<li>$item</li>", self::RELATED_WORK))
             . '</ul></section>');
     }
+
+    /** benchgap's own paper (publications page and llms.txt) */
+    public const PREPRINT = [
+        'title' => 'Mind the Gap: Explicit Cross-Benchmark Calibrations for Estimating Missing LLM Evaluation Scores',
+        'authors' => 'Patrik P. Süli, György Eigner, Roland Hollós', 'venue' => 'Research Square preprint', 'year' => 2026,
+        'doi' => '10.21203/rs.3.rs-11552635/v1', 'pdf' => 'https://www.researchsquare.com/article/rs-11552635/latest.pdf',
+        'bibtex' => <<<'BIB'
+            @misc{suli2026mindthegap,
+              title        = {Mind the Gap: Explicit Cross-Benchmark Calibrations for Estimating Missing {LLM} Evaluation Scores},
+              author       = {S{\"u}li, Patrik P. and Eigner, Gy{\"o}rgy and Holl{\'o}s, Roland},
+              year         = {2026},
+              howpublished = {Research Square preprint},
+              doi          = {10.21203/rs.3.rs-11552635/v1},
+              url          = {https://doi.org/10.21203/rs.3.rs-11552635/v1}
+            }
+            BIB,
+    ];
 
     /** the papers closest to what benchgap does (publications): what a score is predicted from and how they relate */
     private const PAPERS = [
@@ -712,6 +741,7 @@ final class Pages
                 'p' => self::squash(self::inline($node)),
                 'ul' => implode("\n", array_map(fn ($li) => '- ' . self::squash(self::inline($li)), [...$node->querySelectorAll('li')])),
                 'table' => self::markdownTable($node),
+                'pre' => "```\n" . rtrim($node->textContent) . "\n```",
                 default => self::blocks($node),
             };
         }

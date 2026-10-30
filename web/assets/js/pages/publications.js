@@ -2,7 +2,22 @@
  * is the static page in src/Pages.php. */
 import { html } from "../vendor/lit-html.js";
 import { setMeta, show } from "../core.js";
-import { pageHead } from "../ui.js";
+import { pageHead, codeBox } from "../ui.js";
+
+// benchgap's own paper
+const PREPRINT = {
+  title: "Mind the Gap: Explicit Cross-Benchmark Calibrations for Estimating Missing LLM Evaluation Scores",
+  authors: "Patrik P. Süli, György Eigner, Roland Hollós", venue: "Research Square preprint", year: 2026,
+  doi: "10.21203/rs.3.rs-11552635/v1", pdf: "https://www.researchsquare.com/article/rs-11552635/latest.pdf",
+  bibtex: String.raw`@misc{suli2026mindthegap,
+  title        = {Mind the Gap: Explicit Cross-Benchmark Calibrations for Estimating Missing {LLM} Evaluation Scores},
+  author       = {S{\"u}li, Patrik P. and Eigner, Gy{\"o}rgy and Holl{\'o}s, Roland},
+  year         = {2026},
+  howpublished = {Research Square preprint},
+  doi          = {10.21203/rs.3.rs-11552635/v1},
+  url          = {https://doi.org/10.21203/rs.3.rs-11552635/v1}
+}`,
+};
 
 const PAPERS = [
   ["You Don't Need to Run Every Eval", "Zeng & Papailiopoulos", 2026, "2606.24020", "a model's other benchmark scores",
@@ -59,7 +74,12 @@ export function renderPublications() {
         <td data-label="Approach">${approach}</td>
         <td data-label="How benchgap relates">${relation}</td></tr>`);
   show(html`<div class="page">
-      ${pageHead("Publications", "The research behind the gapfilling", "benchgap is one entry in an active research line: predicting a model's benchmark scores without running every evaluation. These are the papers closest to what this site does, and how they relate to it.")}
+      ${pageHead("Publications", "The research behind the gapfilling", "benchgap and its method are described in the paper below. It is one entry in an active research line: predicting a model's benchmark scores without running every evaluation. The table lists the papers closest to it, and how they relate.")}
+      <section class="section"><h2 class="h2">The benchgap paper</h2>
+        <p class="paper-ref"><a href="https://doi.org/${PREPRINT.doi}" rel="noopener" target="_blank">${PREPRINT.title}</a><br>
+          <span class="muted">${`${PREPRINT.authors} · ${PREPRINT.venue}, ${PREPRINT.year}`} · <a href="${PREPRINT.pdf}" rel="noopener" target="_blank">PDF</a></span></p>
+        ${codeBox("paper-bibtex", "", PREPRINT.bibtex)}
+      </section>
       <section class="section"><div class="list-wrap"><table class="list papers">
         <thead><tr><th>Paper</th><th>Predicts from</th><th>Approach</th><th>How benchgap relates</th></tr></thead>
         <tbody>${rows}</tbody></table></div></section>

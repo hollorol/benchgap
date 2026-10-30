@@ -237,6 +237,8 @@ h1, h2, h3 { font-weight: 400; margin: 0; }
 .h3 { font-family: var(--sans); font-size: 1rem; font-weight: 600; }
 .lede { color: var(--ink-2); font-size: 1.05rem; max-width: 62ch; }
 .muted { color: var(--muted); }
+.paper-ref { margin: 0 0 .9rem; font-size: 1.05rem; font-weight: 500; line-height: 1.45; }
+.paper-ref .muted { font-size: .9rem; font-weight: 400; }
 .mono { font-family: var(--mono); font-feature-settings: "tnum", "zero"; }
 
 .hero { padding: 3.2rem 0 1.6rem; display: grid; gap: 2rem; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: end; border-bottom: 1px solid var(--ink); }

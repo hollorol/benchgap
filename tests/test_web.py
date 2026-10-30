@@ -494,6 +494,7 @@ def test_llms_txt(server):
     benchmarks = [b for b in get_json(server, "/api/v1/benchmarks.json")["benchmarks"] if b["listed"]]
     assert all(f"]({b['page']}.md)" in llms for b in benchmarks)
     assert "## Compare models" in llms and "/compare/{a}/{b}.md" in llms
+    assert "## Paper" in llms and "https://doi.org/10.21203/rs.3.rs-11552635/v1" in llms
     _, full = get(server, "/llms-full.txt")
     assert all(f"\n## {b['label']}\n" in full for b in benchmarks)
     keys = {b["key"] for b in benchmarks}
@@ -510,6 +511,10 @@ def test_markdown_pages(server):
     _, md = get(server, f"/compare/{model['slug']}/{other['slug']}.md")
     assert f"# {model['name']} vs {other['name']}\n" in md and "| Δ (pp) |" in md
     assert get(server, f"/compare/{model['slug']}/from.md")[1].startswith(f"# {model['name']} vs ")
+    # benchgap's own paper heads the publications page, its BibTeX a code block
+    _, md = get(server, "/publications.md")
+    assert "## The benchgap paper\n\n[Mind the Gap:" in md and "(https://doi.org/10.21203/rs.3.rs-11552635/v1)" in md
+    assert "```\n@misc{suli2026mindthegap," in md and 'S{\\"u}li' in md
     # an unknown page's Markdown is a 404, and only pages have one
     for path in ["/model/no-such-model.md", "/llms.txt.md"]:
         with pytest.raises(urllib.error.HTTPError) as e:
