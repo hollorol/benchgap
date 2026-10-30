@@ -22,7 +22,8 @@ namespace Benchgap;
  * one field. The main field is the largest set of listed benchmarks linked by
  * the dense models measured on them (two benchmarks are linked when at least
  * LINK of them are measured on both); a model measured on benchmarks apart
- * from it and on none of its own, such as the routing models of a family of
+ * from it and on none of its own (or, measured on no listed benchmark, estimated
+ * only on benchmarks apart from it), such as the routing models of a family of
  * decision benchmarks only they are run on, stands high among a field no
  * general model is in, and its standing would put it on the frontier.
  *
@@ -83,12 +84,14 @@ final class Compare
         $sum = [];
         $n = [];
         $measured = [];   // model id => the benchmarks it stands on measured
+        $scored = [];   // model id => the benchmarks it stands on, measured or estimated
         foreach ($data['scores'] as $s) {
             if (!isset($listed[$s['b']])) {
                 continue;
             }
             $sum[$s['m']] = ($sum[$s['m']] ?? 0) + $percentile($s['b'], $s['v']);
             $n[$s['m']] = ($n[$s['m']] ?? 0) + 1;
+            $scored[$s['m']][$s['b']] = true;
             if ($s['s'] === 'm') {
                 $measured[$s['m']][] = $s['b'];
             }
@@ -98,7 +101,8 @@ final class Compare
         $general = [];
         foreach ($n as $m => $count) {
             $on = $measured[$m] ?? [];
-            if ($on && !array_diff_key(array_flip($on), $offField)) {   // measured off the main field only: no standing
+            // measured (or, measured nowhere listed, estimated) off the main field only: no standing
+            if (!array_diff_key($on ? array_flip($on) : $scored[$m], $offField)) {
                 continue;
             }
             sort($on);

@@ -280,20 +280,22 @@ def test_page_data_slices_the_site_data(server):
     # the compare view: every model's general performance - the mean percentile of its scores,
     # measured and estimated, across the listed benchmarks (and the benchmarks it stands on
     # measured) - and the frontier, the strongest tenth of dense models. A model measured only off
-    # the main field (the largest set of benchmarks linked by 5+ dense models measured on both) has none
+    # the main field (the largest set of benchmarks linked by 5+ dense models measured on both) has none,
+    # as has one measured on no listed benchmark and estimated only off it
     per_bench = {}
     for s in scores:
         if s["b"] in listed:
             per_bench.setdefault(s["b"], []).append(s["v"])
     for vs in per_bench.values():
         vs.sort()
-    sums, ns, on = {}, {}, {}
+    sums, ns, on, scored = {}, {}, {}, {}
     for s in scores:
         if s["b"] not in listed:
             continue
         p = bisect.bisect_left(per_bench[s["b"]], s["v"]) / (len(per_bench[s["b"]]) - 1)
         sums[s["m"]] = sums.get(s["m"], 0.0) + p
         ns[s["m"]] = ns.get(s["m"], 0) + 1
+        scored.setdefault(s["m"], set()).add(s["b"])
         if s["s"] == "m":
             on.setdefault(s["m"], []).append(s["b"])
     dense = {m["id"] for m in whole["models"] if m["dense"]}
@@ -319,7 +321,7 @@ def test_page_data_slices_the_site_data(server):
         main = max(main, field, key=len)
     off_field = every - main
     general = sorted(
-        ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns if not (m in on and set(on[m]) <= off_field)),
+        ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns if not set(on.get(m) or scored[m]) <= off_field),
         key=lambda r: (-r[1], -r[2], r[0]),
     )
     frontier = [g for g in general if g[0] in dense][: max(1, math.ceil(len([g for g in general if g[0] in dense]) / 10))]
