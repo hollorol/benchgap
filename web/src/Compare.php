@@ -80,7 +80,6 @@ final class Compare
             return $lo / ($n - 1);
         };
 
-        $offField = self::offField($data, $listed);
         $sum = [];
         $n = [];
         $measured = [];   // model id => the benchmarks it stands on measured
@@ -94,10 +93,12 @@ final class Compare
                 $measured[$s['m']][] = $s['b'];
             }
         }
+        $dense = array_fill_keys(array_column(array_filter($data['models'], fn ($m) => $m['dense']), 'id'), true);
+        $offField = self::offField(array_intersect_key($measured, $dense));
         $general = [];
         foreach ($n as $m => $count) {
             $on = $measured[$m] ?? [];
-            if ($on && !array_diff($on, $offField)) {   // measured off the main field only: no standing
+            if ($on && !array_diff_key(array_flip($on), $offField)) {   // measured off the main field only: no standing
                 continue;
             }
             sort($on);
@@ -105,25 +106,18 @@ final class Compare
         }
         usort($general, fn ($x, $y) => $y[1] <=> $x[1] ?: $y[2] <=> $x[2] ?: $x[0] <=> $y[0]);
 
-        $dense = array_fill_keys(array_column(array_filter($data['models'], fn ($m) => $m['dense']), 'id'), true);
         $frontier = array_values(array_filter($general, fn ($g) => isset($dense[$g[0]])));
         $frontier = array_slice($frontier, 0, max(1, (int) ceil(count($frontier) / 10)));
         return ['general' => $general, 'frontier' => $frontier];
     }
 
     /**
-     * The listed benchmarks apart from the main field: of those the dense models are measured on,
-     * the ones outside the largest set linked by LINK or more dense models measured on both.
+     * The listed benchmarks apart from the main field (as keys): of those the dense models are
+     * measured on ($on: dense model id => those benchmarks), the ones outside the largest set
+     * linked by LINK or more dense models measured on both.
      */
-    private static function offField(array $data, array $listed): array
+    private static function offField(array $on): array
     {
-        $dense = array_fill_keys(array_column(array_filter($data['models'], fn ($m) => $m['dense']), 'id'), true);
-        $on = [];   // dense model id => the listed benchmarks it is measured on
-        foreach ($data['scores'] as $s) {
-            if ($s['s'] === 'm' && isset($listed[$s['b']], $dense[$s['m']])) {
-                $on[$s['m']][] = $s['b'];
-            }
-        }
         $both = [];   // benchmark id => benchmark id => the dense models measured on both
         foreach ($on as $bs) {
             foreach ($bs as $x) {
@@ -134,9 +128,11 @@ final class Compare
                 }
             }
         }
-        $fields = [];   // benchmark sets linked by LINK or more dense models measured on both
+        $all = array_fill_keys(array_merge([], ...array_values($on)), true);
+        ksort($all);   // (a tie keeps the set of the lowest benchmark id)
+        $main = [];   // the largest linked set so far
         $seen = [];
-        foreach (array_unique(array_merge([], ...array_values($on))) as $b) {
+        foreach (array_keys($all) as $b) {
             if (isset($seen[$b])) {
                 continue;
             }
@@ -146,14 +142,19 @@ final class Compare
                 $x = array_pop($stack);
                 if (!isset($field[$x])) {
                     $field[$x] = true;
-                    $stack = [...$stack, ...array_keys(array_filter($both[$x] ?? [], fn ($n) => $n >= self::LINK))];
+                    foreach ($both[$x] ?? [] as $y => $count) {
+                        if ($count >= self::LINK) {
+                            $stack[] = $y;
+                        }
+                    }
                 }
             }
             $seen += $field;
-            $fields[] = array_keys($field);
+            if (count($field) > count($main)) {
+                $main = $field;
+            }
         }
-        usort($fields, fn ($x, $y) => count($y) <=> count($x));
-        return array_merge([], ...array_slice($fields, 1));
+        return array_diff_key($all, $main);
     }
 
     /**

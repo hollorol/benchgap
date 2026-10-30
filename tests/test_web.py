@@ -281,30 +281,6 @@ def test_page_data_slices_the_site_data(server):
     # measured and estimated, across the listed benchmarks (and the benchmarks it stands on
     # measured) - and the frontier, the strongest tenth of dense models. A model measured only off
     # the main field (the largest set of benchmarks linked by 5+ dense models measured on both) has none
-    dense = {m["id"] for m in whole["models"] if m["dense"]}
-    on_dense = {}
-    for s in scores:
-        if s["s"] == "m" and s["b"] in listed and s["m"] in dense:
-            on_dense.setdefault(s["m"], set()).add(s["b"])
-    links = {}
-    for bs in on_dense.values():
-        for x in bs:
-            for y in bs - {x}:
-                links.setdefault(x, {}).setdefault(y, 0)
-                links[x][y] += 1
-    fields, seen = [], set()
-    for b in sorted(set().union(*on_dense.values())):
-        if b in seen:
-            continue
-        field, stack = set(), [b]
-        while stack:
-            x = stack.pop()
-            if x not in field:
-                field.add(x)
-                stack += [y for y, n in links.get(x, {}).items() if n >= 5]
-        seen |= field
-        fields.append(field)
-    off_field = set().union(*sorted(fields, key=len, reverse=True)[1:])
     per_bench = {}
     for s in scores:
         if s["b"] in listed:
@@ -320,6 +296,28 @@ def test_page_data_slices_the_site_data(server):
         ns[s["m"]] = ns.get(s["m"], 0) + 1
         if s["s"] == "m":
             on.setdefault(s["m"], []).append(s["b"])
+    dense = {m["id"] for m in whole["models"] if m["dense"]}
+    on_dense = {m: set(bs) for m, bs in on.items() if m in dense}
+    links = {}
+    for bs in on_dense.values():
+        for x in bs:
+            for y in bs - {x}:
+                links.setdefault(x, {}).setdefault(y, 0)
+                links[x][y] += 1
+    every = set().union(*on_dense.values())
+    main, seen = set(), set()
+    for b in sorted(every):
+        if b in seen:
+            continue
+        field, stack = set(), [b]
+        while stack:
+            x = stack.pop()
+            if x not in field:
+                field.add(x)
+                stack += [y for y, n in links.get(x, {}).items() if n >= 5]
+        seen |= field
+        main = max(main, field, key=len)
+    off_field = every - main
     general = sorted(
         ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns if not (m in on and set(on[m]) <= off_field)),
         key=lambda r: (-r[1], -r[2], r[0]),
