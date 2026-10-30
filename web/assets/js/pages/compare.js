@@ -5,16 +5,17 @@ import { hideTip } from "../tip.js";
 import { fold, ranked, mark, listbox } from "../search.js";
 import { dot, pageHead, legend, seg, showSeg, fresh, renderNotFound } from "../ui.js";
 
-// a model below the frontier is held against the frontier models sharing at least this share of the
-// most measured benchmarks any of them shares with it (Compare::SHARED_FLOOR)
+// a model is held against the frontier models sharing at least this share of the most measured
+// benchmarks any of them shares with it (Compare::SHARED_FLOOR)
 const SHARED_FLOOR = 2 / 3;
 // the page's lede (Pages::COMPARE_INTRO)
 const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. "
-  + "Pick two models, or one and a model to hold it against: the frontier model closest to it (for a model below the frontier, "
-  + "of those it shares the most benchmarks with), or the model just below it - of one provider, or of any. "
+  + "Pick two models, or one and a model to hold it against: the frontier model closest to it "
+  + "of those it shares the most benchmarks with, or the model just below it - of one provider, or of any. "
   + "Step either model up or down through its provider's models.";
 const GENERAL_TIP = "General performance: the mean percentile of a model's scores, measured and estimated, across the listed benchmarks, "
-  + "not only those it happened to be run on. The frontier is its strongest tenth.";
+  + "not only those it happened to be run on. A model measured only on benchmarks apart from the main field has no standing. "
+  + "The frontier is the strongest tenth.";
 // a pair (/compare/<a>/<b>), or A and a B picked for it ("how"): the closest frontier model
 // (/compare/<a>[/from/<p>]) or the model just below A (/compare/<a>/below[/<p>]), of one provider or of any
 const cmpHref = (a, b, from, how = "frontier") => {   // (b given: a pair, whatever how is)
@@ -35,7 +36,7 @@ const poolOf = (rows, m, provider) => {
 
 let page = null;   // the open pair: its models, how B was chosen, the standings and both models' scores
                   // (and .prev, the pair shown, dimmed, until they are in)
-let open = null;   // the capabilities opened (ids); null: the one with the most benchmarks in common
+let open = new Set();   // the capabilities opened (ids); all closed until the reader opens one
 
 // data: every model's general performance and the frontier (data/compare.json, Compare.php):
 // general is the mean percentile of a model's scores, measured and estimated, across the listed
@@ -51,19 +52,16 @@ export function renderCompare(data, arg, signal) {
   const frontier = data.compare.frontier.filter(([id]) => ix.model.has(id));          // strongest first
   const isFrontier = new Set(frontier.map(([id]) => id));
   // the frontier model to hold m against (never m itself), of one provider or of any (a provider
-  // with no frontier model of its own: any): a frontier model's closest rival in general
-  // performance; for a model below the frontier, the closest of those it shares at least
-  // SHARED_FLOOR of the most measured benchmarks with (none shared: the closest of all); for a
-  // model with no standing, the strongest (as Compare::pick)
+  // with no frontier model of its own: any): the closest in general performance of those it
+  // shares at least SHARED_FLOOR of the most measured benchmarks with (none shared: the closest
+  // of all); for a model with no standing, the strongest (as Compare::pick)
   const frontierPick = (m, provider) => {
     let pool = poolOf(frontier, m, provider);
     const t = general.get(m.id);
     if (!pool.length || !t) return pool.length ? ix.model.get(pool[0][0]) : null;
-    if (!isFrontier.has(m.id)) {
-      const mine = new Set(t.measured), shared = pool.map(([, , , measured]) => measured.filter((b) => mine.has(b)).length);
-      const floor = SHARED_FLOOR * Math.max(...shared);
-      pool = pool.filter((f, i) => shared[i] >= floor);
-    }
+    const mine = new Set(t.measured), shared = pool.map(([, , , measured]) => measured.filter((b) => mine.has(b)).length);
+    const floor = SHARED_FLOOR * Math.max(...shared);
+    pool = pool.filter((f, i) => shared[i] >= floor);
     let best = pool[0];
     for (const f of pool) if (Math.abs(f[1] - t.g) < Math.abs(best[1] - t.g)) best = f;
     return ix.model.get(best[0]);
@@ -229,7 +227,7 @@ const picker = (which) => html`<div class="search-pop cmp-pop" ${ref(panelIn)} @
   </div>`;
 
 // why B was picked for A (frontierPick, belowPick)
-function pickReason({ A, B, how, from, general, rankOf, isFrontier }) {
+function pickReason({ A, B, how, from, general, rankOf }) {
   const of = from !== "any" && B.provider === from ? `of ${providerLabel(from)} ` : "";
   const gA = general.get(A.id);
   if (how === "below") {
@@ -238,7 +236,6 @@ function pickReason({ A, B, how, from, general, rankOf, isFrontier }) {
       : `the model ${of}closest above ${A.name}; none ranks below it`;
   }
   if (!gA) return `the strongest frontier model ${of}(${A.name} has no standing)`;
-  if (isFrontier.has(A.id)) return `the frontier model ${of}closest to ${A.name}`;
   const mine = new Set(gA.measured), n = general.get(B.id).measured.filter((b) => mine.has(b)).length;
   return n ? `the frontier model ${of}closest to ${A.name} of those measured on the most benchmarks with it (${n} shared)`
     : `the frontier model ${of}closest to ${A.name}; none shares a measured benchmark with it`;
@@ -410,7 +407,6 @@ function capabilities(p, pair) {
     const both = rows.filter(([, x, y]) => x && y);
     return { cap, all, rows, both };
   }).filter((c) => c.all.length);
-  open ??= new Set(caps.length ? [caps.reduce((best, c) => (c.both.length > best.both.length ? c : best)).cap.id] : []);
   const toggle = (id) => { open.has(id) ? open.delete(id) : open.add(id); hideTip(); draw(); };
 
   return repeat(caps, ({ cap }) => cap.id, ({ cap, all, rows, both }) => {

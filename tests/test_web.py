@@ -279,7 +279,32 @@ def test_page_data_slices_the_site_data(server):
 
     # the compare view: every model's general performance - the mean percentile of its scores,
     # measured and estimated, across the listed benchmarks (and the benchmarks it stands on
-    # measured) - and the frontier, the strongest tenth of dense models
+    # measured) - and the frontier, the strongest tenth of dense models. A model measured only off
+    # the main field (the largest set of benchmarks linked by 5+ dense models measured on both) has none
+    dense = {m["id"] for m in whole["models"] if m["dense"]}
+    on_dense = {}
+    for s in scores:
+        if s["s"] == "m" and s["b"] in listed and s["m"] in dense:
+            on_dense.setdefault(s["m"], set()).add(s["b"])
+    links = {}
+    for bs in on_dense.values():
+        for x in bs:
+            for y in bs - {x}:
+                links.setdefault(x, {}).setdefault(y, 0)
+                links[x][y] += 1
+    fields, seen = [], set()
+    for b in sorted(set().union(*on_dense.values())):
+        if b in seen:
+            continue
+        field, stack = set(), [b]
+        while stack:
+            x = stack.pop()
+            if x not in field:
+                field.add(x)
+                stack += [y for y, n in links.get(x, {}).items() if n >= 5]
+        seen |= field
+        fields.append(field)
+    off_field = set().union(*sorted(fields, key=len, reverse=True)[1:])
     per_bench = {}
     for s in scores:
         if s["b"] in listed:
@@ -296,9 +321,9 @@ def test_page_data_slices_the_site_data(server):
         if s["s"] == "m":
             on.setdefault(s["m"], []).append(s["b"])
     general = sorted(
-        ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns), key=lambda r: (-r[1], -r[2], r[0])
+        ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns if not (m in on and set(on[m]) <= off_field)),
+        key=lambda r: (-r[1], -r[2], r[0]),
     )
-    dense = {m["id"] for m in whole["models"] if m["dense"]}
     frontier = [g for g in general if g[0] in dense][: max(1, math.ceil(len([g for g in general if g[0] in dense]) / 10))]
     assert get_json(server, "/data/compare.json") == {"compare": {"general": general, "frontier": frontier}}
 
@@ -412,9 +437,8 @@ def test_pages_and_sitemap(server):
     assert "the highest measured score on AA Terminal-Bench 2.1 is" in board and f'href="/model/{model["slug"]}"' in get(server, "/matrix")[1]
     assert model["page"] == f"https://benchgap.net/model/{model['slug']}"
     # the compare pages: a pair, and one model with the frontier model to hold it against picked for it
-    # (Compare::pick): a frontier model's closest rival; for one below the frontier, the closest of the
-    # frontier models sharing at least 2/3 of the most benchmarks any shares with it; the strongest for
-    # one with no standing
+    # (Compare::pick): the closest of the frontier models sharing at least 2/3 of the most measured
+    # benchmarks any shares with it; the strongest for one with no standing
     compare = get_json(server, "/data/compare.json")["compare"]
     site = get_json(server, "/data/site.json")
     by_id = {m["id"]: m for m in site["models"]}
@@ -427,9 +451,8 @@ def test_pages_and_sitemap(server):
         pool = [f for f in others if by_id[f[0]]["provider"] == provider] or others
         if a not in standing:
             return by_id[pool[0][0]]
-        if len(others) == len(compare["frontier"]):
-            shared = [len(set(standing[a][3]) & set(f[3])) for f in pool]
-            pool = [f for f, n in zip(pool, shared) if n >= 2 / 3 * max(shared)]
+        shared = [len(set(standing[a][3]) & set(f[3])) for f in pool]
+        pool = [f for f, n in zip(pool, shared) if n >= 2 / 3 * max(shared)]
         return by_id[min(pool, key=lambda f: abs(f[1] - standing[a][1]))[0]]
 
     assert compare["frontier"]

@@ -18,21 +18,31 @@ namespace Benchgap;
  * that beats it on every benchmark they share but was also run on
  * frontier-only ones. A model with no listed score gets no standing.
  *
+ * Nor does a model off the main field: percentiles only compare models within
+ * one field. The main field is the largest set of listed benchmarks linked by
+ * the dense models measured on them (two benchmarks are linked when at least
+ * LINK of them are measured on both); a model measured on benchmarks apart
+ * from it and on none of its own, such as the routing models of a family of
+ * decision benchmarks only they are run on, stands high among a field no
+ * general model is in, and its standing would put it on the frontier.
+ *
  * The frontier is the top tenth of the dense models (Snapshot::DENSE) by
  * general performance - the strongest field a model can reasonably be held
- * against. The frontier model one is held against (pick()) is, for a frontier
- * model, its closest rival in general performance; for a model below the
- * frontier, the closest of the frontier models it shares the most measured
+ * against. The frontier model one is held against (pick()) is the closest in
+ * general performance of the frontier models it shares the most measured
  * benchmarks with (at least two thirds as many as the best-covered one), so
- * the pair can be held side by side on measurements - the closest of all
- * would be the same weakest frontier model for most of them. Or a model is
+ * the pair can be held side by side on measurements - for a model below the
+ * frontier, the closest of all would be the same weakest frontier model for
+ * most of them. Or a model is
  * held against the one just below it (below()), of the dense models.
  */
 final class Compare
 {
-    // a model below the frontier is held against the frontier models sharing at least this share
-    // of the most measured benchmarks any of them shares with it (as SHARED_FLOOR, compare.js)
+    // a model is held against the frontier models sharing at least this share of the most
+    // measured benchmarks any of them shares with it (as SHARED_FLOOR, compare.js)
     public const SHARED_FLOOR = 2 / 3;
+    // two listed benchmarks are linked (one field) when at least this many dense models are measured on both
+    public const LINK = 5;
 
     /**
      * The compare document of a snapshot: general performance per model, as [model, general,
@@ -70,6 +80,7 @@ final class Compare
             return $lo / ($n - 1);
         };
 
+        $offField = self::offField($data, $listed);
         $sum = [];
         $n = [];
         $measured = [];   // model id => the benchmarks it stands on measured
@@ -86,6 +97,9 @@ final class Compare
         $general = [];
         foreach ($n as $m => $count) {
             $on = $measured[$m] ?? [];
+            if ($on && !array_diff($on, $offField)) {   // measured off the main field only: no standing
+                continue;
+            }
             sort($on);
             $general[] = [(int) $m, round($sum[$m] / $count, 4), $count, $on];
         }
@@ -98,11 +112,55 @@ final class Compare
     }
 
     /**
+     * The listed benchmarks apart from the main field: of those the dense models are measured on,
+     * the ones outside the largest set linked by LINK or more dense models measured on both.
+     */
+    private static function offField(array $data, array $listed): array
+    {
+        $dense = array_fill_keys(array_column(array_filter($data['models'], fn ($m) => $m['dense']), 'id'), true);
+        $on = [];   // dense model id => the listed benchmarks it is measured on
+        foreach ($data['scores'] as $s) {
+            if ($s['s'] === 'm' && isset($listed[$s['b']], $dense[$s['m']])) {
+                $on[$s['m']][] = $s['b'];
+            }
+        }
+        $both = [];   // benchmark id => benchmark id => the dense models measured on both
+        foreach ($on as $bs) {
+            foreach ($bs as $x) {
+                foreach ($bs as $y) {
+                    if ($x !== $y) {
+                        $both[$x][$y] = ($both[$x][$y] ?? 0) + 1;
+                    }
+                }
+            }
+        }
+        $fields = [];   // benchmark sets linked by LINK or more dense models measured on both
+        $seen = [];
+        foreach (array_unique(array_merge([], ...array_values($on))) as $b) {
+            if (isset($seen[$b])) {
+                continue;
+            }
+            $field = [];
+            $stack = [$b];
+            while ($stack) {
+                $x = array_pop($stack);
+                if (!isset($field[$x])) {
+                    $field[$x] = true;
+                    $stack = [...$stack, ...array_keys(array_filter($both[$x] ?? [], fn ($n) => $n >= self::LINK))];
+                }
+            }
+            $seen += $field;
+            $fields[] = array_keys($field);
+        }
+        usort($fields, fn ($x, $y) => count($y) <=> count($x));
+        return array_merge([], ...array_slice($fields, 1));
+    }
+
+    /**
      * The frontier model model $slug is held against, itself excepted: of $provider's frontier
-     * models, or of the whole frontier when it has none (or $provider is null). A frontier
-     * model gets its closest rival in general performance; a model below the frontier the
-     * closest of those it shares at least two thirds as many measured benchmarks with as the
-     * best-covered one (SHARED_FLOOR; none shared: the closest of all); $model null (a model
+     * models, or of the whole frontier when it has none (or $provider is null): the closest in
+     * general performance of those it shares at least two thirds as many measured benchmarks with
+     * as the best-covered one (SHARED_FLOOR; none shared: the closest of all); $model null (a model
      * with no standing) the strongest. Null if there is none. $frontier and $model are rows Api::compare() shapes (with 'slug', 'provider',
      * 'general' and 'measured'), the frontier strongest first; ties keep the stronger row.
      * (As frontierPick, assets/js/pages/compare.js)
@@ -113,12 +171,10 @@ final class Compare
         if (!$pool || $model === null) {
             return $pool[0] ?? null;
         }
-        if (!in_array($slug, array_column($frontier, 'slug'), true)) {   // below the frontier: of the best-covered ones
-            $mine = array_flip($model['measured']);
-            $shared = array_map(fn ($f) => count(array_intersect_key(array_flip($f['measured']), $mine)), $pool);
-            $floor = self::SHARED_FLOOR * max($shared);
-            $pool = array_values(array_filter($pool, fn ($f, $i) => $shared[$i] >= $floor, ARRAY_FILTER_USE_BOTH));
-        }
+        $mine = array_flip($model['measured']);   // of the best-covered ones
+        $shared = array_map(fn ($f) => count(array_intersect_key(array_flip($f['measured']), $mine)), $pool);
+        $floor = self::SHARED_FLOOR * max($shared);
+        $pool = array_values(array_filter($pool, fn ($f, $i) => $shared[$i] >= $floor, ARRAY_FILTER_USE_BOTH));
         $best = $pool[0];
         foreach ($pool as $f) {
             if (abs($f['general'] - $model['general']) < abs($best['general'] - $model['general'])) {

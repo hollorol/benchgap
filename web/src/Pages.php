@@ -25,11 +25,12 @@ final class Pages
     private const HOME_DESCRIPTION = "LLM benchmark scores: measured where available, estimated where missing, with every estimate's error and confidence.";
     // what general performance means (the compare page; the same definition as Compare.php)
     private const COMPARE_LEDE = 'General performance is the mean percentile of a model\'s scores, measured and estimated, '
-        . 'across the listed benchmarks, not only those it happened to be run on; the frontier is its strongest tenth.';
+        . 'across the listed benchmarks, not only those it happened to be run on; a model measured only on benchmarks apart from '
+        . 'the main field has no standing. The frontier is the strongest tenth.';
     // the compare page's lede (js/pages/compare.js LEDE); the definition above rides along on the pair pages
     private const COMPARE_INTRO = 'Measured scores decide who leads; estimates fill in the rest, hatched, with their confidence. '
-        . 'Pick two models, or one and a model to hold it against: the frontier model closest to it (for a model below the frontier, '
-        . 'of those it shares the most benchmarks with), or the model just below it - of one provider, or of any. '
+        . 'Pick two models, or one and a model to hold it against: the frontier model closest to it '
+        . 'of those it shares the most benchmarks with, or the model just below it - of one provider, or of any. '
         . 'Step either model up or down through its provider\'s models.';
     // the pages besides those of each benchmark, model and calibration: title and summary for llms.txt
     private const PAGES = [
@@ -318,7 +319,6 @@ final class Pages
                 $below && $rank[$b] > $rank[$a] => "the model {$of}just below $nameA in general performance",
                 $below => "the model {$of}closest above $nameA in general performance - none ranks below it",
                 !isset($general[$a]) => "the strongest frontier model $of($nameA has no standing)",
-                isset($frontier[$a]) => "the frontier model {$of}closest to $nameA in general performance",
                 $shared > 0 => "the frontier model {$of}closest to $nameA in general performance of those measured on the most benchmarks with it ($shared shared)",
                 default => "the frontier model {$of}closest to $nameA in general performance",
             };
@@ -326,7 +326,7 @@ final class Pages
                 $gap = ($general[$b]['general'] - $general[$a]['general']) * 100;
                 $pick .= $gap === 0.0 ? ' (even with it)' : sprintf(' (%.1f points %s)', abs($gap), $gap > 0 ? 'ahead of it' : 'behind it');
             }
-            if (!$below && isset($general[$a]) && !isset($frontier[$a]) && $shared === 0) {
+            if (!$below && isset($general[$a]) && $shared === 0) {
                 $pick .= ' - no frontier model shares a measured benchmark with it';
             }
             $pick .= '; the interactive page follows it as the field moves.';
