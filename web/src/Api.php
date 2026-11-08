@@ -153,8 +153,8 @@ final class Api
 
     /**
      * The model-compare view's numbers (for its page; not part of the API): every model's
-     * general performance (Compare::compute()) and the frontier, its top tenth among dense models, strongest
-     * first.
+     * general performance (Compare::compute()) and the frontier, its top tenth among dense
+     * models, strongest first.
      */
     public function compare(): array
     {

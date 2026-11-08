@@ -89,7 +89,7 @@ final class Compare
         // the duels: on each listed benchmark, every two models with a standing and a score there
         $n = count($standing);
         $wins = array_fill(0, $n, 0.0);   // index => duels won (a tie is half a win)
-        $played = [];   // i * n + j (i < j) => the duels the two played
+        $met = [];   // index => index => the duels the two played (the benchmarks both have a score on)
         foreach ($byBench as $scores) {
             $field = [];   // index => score
             foreach ($scores as $m => $v) {
@@ -97,7 +97,6 @@ final class Compare
                     $field[$at[$m]] = $v;
                 }
             }
-            ksort($field);
             $players = array_keys($field);
             $count = count($players);
             for ($k = 0; $k < $count; $k++) {
@@ -112,14 +111,10 @@ final class Compare
                         $wins[$i] += 0.5;
                         $wins[$j] += 0.5;
                     }
-                    $played[$i * $n + $j] = ($played[$i * $n + $j] ?? 0) + 1;
+                    $met[$i][$j] = ($met[$i][$j] ?? 0) + 1;
+                    $met[$j][$i] = ($met[$j][$i] ?? 0) + 1;
                 }
             }
-        }
-        $met = [];   // index => index => the duels the two played
-        foreach ($played as $key => $duels) {
-            $met[intdiv($key, $n)][$key % $n] = $duels;
-            $met[$key % $n][intdiv($key, $n)] = $duels;
         }
         $p = self::strengths($wins, $met);
 

@@ -160,9 +160,8 @@ final class Site
     }
 
     /**
-     * The model-compare view's numbers: every model's general performance
-     * (Compare::compute()) as
-     * [model, general, n, the benchmarks it stands on measured], strongest first, and the
+     * The model-compare view's numbers: every model's general performance (Compare::compute())
+     * as [model, general, n, the benchmarks it stands on measured], strongest first, and the
      * frontier (its top tenth among dense models). Never used for estimates.
      */
     public function compare(): array
