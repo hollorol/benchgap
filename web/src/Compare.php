@@ -8,17 +8,20 @@ namespace Benchgap;
  * The model-compare view's numbers (the /compare page): every model's general
  * performance, and the frontier set.
  *
- * General performance is the mean percentile of a model's scores, measured
- * and estimated, across the listed benchmarks: on each benchmark, the share of
- * the other models with a score there that it scores above (a listed
- * benchmark has at least Snapshot::LISTED['min_models'] of them). The estimates
- * keep a model from being judged only where it happened to be run: measured
- * alone, every model stands on the benchmarks it was run on, against whoever
- * else was, and a model run only on broad, mixed-field benchmarks outranks one
- * that beats it on every benchmark they share but was also run on
- * frontier-only ones. A model with no listed score gets no standing.
+ * General performance is the share of benchmark duels a model is expected to
+ * win against every other model with a standing. On each listed benchmark,
+ * every two models with a score there, measured or estimated, play a duel:
+ * the higher score wins, a tie is half a win each. A Bradley-Terry fit over
+ * all the duels gives each model a strength p, and model i is expected to win
+ * p_i / (p_i + p_j) of its duels against model j; general performance is the
+ * mean of that over every other model with a standing. Each pair is held
+ * against each other only on the benchmarks both have a score on, so a model
+ * is not lifted by the benchmarks it was run on and others were not, and the
+ * fit weighs a win by the strength of the one beaten. The estimates keep a
+ * model from being judged only where it happened to be run. A model with no
+ * listed score gets no standing.
  *
- * Nor does a model off the main field: percentiles only compare models within
+ * Nor does a model off the main field: its duels are only with models within
  * one field. The main field is the largest set of listed benchmarks linked by
  * the dense models measured on them (two benchmarks are linked when at least
  * LINK of them are measured on both); a model measured on benchmarks apart
@@ -44,6 +47,11 @@ final class Compare
     public const SHARED_FLOOR = 2 / 3;
     // two listed benchmarks are linked (one field) when at least this many dense models are measured on both
     public const LINK = 5;
+    // the Bradley-Terry fit (strengths()): virtual tied duels per model, the largest change in a
+    // log strength that ends it, and the most rounds
+    public const PRIOR = 1;
+    public const TOLERANCE = 1e-8;
+    public const MAX_ROUNDS = 5000;
 
     /**
      * The compare document of a snapshot: general performance per model, as [model, general,
@@ -53,44 +61,14 @@ final class Compare
     public static function compute(array $data): array
     {
         $listed = array_fill_keys(array_column(array_filter($data['benchmarks'], fn ($b) => $b['listed']), 'id'), true);
-        $byBench = [];   // benchmark id => its scores, measured and estimated, sorted
-        foreach ($data['scores'] as $s) {
-            if (isset($listed[$s['b']])) {
-                $byBench[$s['b']][] = $s['v'];
-            }
-        }
-        foreach ($byBench as &$scores) {
-            sort($scores);
-        }
-        unset($scores);
-
-        // percentile: the share of the benchmark's other scored models strictly below v
-        $percentile = function (int $b, float $v) use ($byBench): float {
-            $scores = $byBench[$b];
-            $n = count($scores);
-            $lo = 0;
-            $hi = $n;
-            while ($lo < $hi) {
-                $mid = intdiv($lo + $hi, 2);
-                if ($scores[$mid] < $v) {
-                    $lo = $mid + 1;
-                } else {
-                    $hi = $mid;
-                }
-            }
-            return $lo / ($n - 1);
-        };
-
-        $sum = [];
-        $n = [];
+        $byBench = [];   // benchmark id => model id => its score there, measured or estimated
         $measured = [];   // model id => the benchmarks it stands on measured
         $scored = [];   // model id => the benchmarks it stands on, measured or estimated
         foreach ($data['scores'] as $s) {
             if (!isset($listed[$s['b']])) {
                 continue;
             }
-            $sum[$s['m']] = ($sum[$s['m']] ?? 0) + $percentile($s['b'], $s['v']);
-            $n[$s['m']] = ($n[$s['m']] ?? 0) + 1;
+            $byBench[$s['b']][$s['m']] = $s['v'];
             $scored[$s['m']][$s['b']] = true;
             if ($s['s'] === 'm') {
                 $measured[$s['m']][] = $s['b'];
@@ -98,21 +76,113 @@ final class Compare
         }
         $dense = array_fill_keys(array_column(array_filter($data['models'], fn ($m) => $m['dense']), 'id'), true);
         $offField = self::offField(array_intersect_key($measured, $dense));
-        $general = [];
-        foreach ($n as $m => $count) {
-            $on = $measured[$m] ?? [];
+        $standing = [];   // the models with a standing, by id
+        foreach ($scored as $m => $on) {
             // measured (or, measured nowhere listed, estimated) off the main field only: no standing
-            if (!array_diff_key($on ? array_flip($on) : $scored[$m], $offField)) {
-                continue;
+            if (array_diff_key(isset($measured[$m]) ? array_flip($measured[$m]) : $on, $offField)) {
+                $standing[] = $m;
             }
+        }
+        sort($standing);
+        $at = array_flip($standing);   // model id => its index in $standing
+
+        // the duels: on each listed benchmark, every two models with a standing and a score there
+        $wins = array_fill(0, count($standing), 0.0);   // index => duels won (a tie is half a win)
+        $met = [];   // index => index => the duels the two played (the benchmarks both have a score on)
+        foreach ($byBench as $scores) {
+            $field = [];   // index => score
+            foreach ($scores as $m => $v) {
+                if (isset($at[$m])) {
+                    $field[$at[$m]] = $v;
+                }
+            }
+            $sorted = array_values($field);
+            sort($sorted);
+            $players = array_keys($field);
+            foreach ($players as $k => $i) {
+                [$below, $upTo] = self::bounds($sorted, $field[$i]);
+                $wins[$i] += $below + ($upTo - $below - 1) / 2;
+                for ($l = $k + 1, $count = count($players); $l < $count; $l++) {
+                    $j = $players[$l];
+                    $met[$i][$j] = ($met[$i][$j] ?? 0) + 1;
+                    $met[$j][$i] = ($met[$j][$i] ?? 0) + 1;
+                }
+            }
+        }
+        $p = self::strengths($wins, $met);
+
+        $general = [];
+        $others = count($p) - 1;
+        foreach ($standing as $i => $m) {
+            $share = 0.0;   // the expected share of duels won against every other model with a standing
+            foreach ($p as $j => $pj) {
+                if ($j !== $i) {
+                    $share += $p[$i] / ($p[$i] + $pj);
+                }
+            }
+            $on = $measured[$m] ?? [];
             sort($on);
-            $general[] = [(int) $m, round($sum[$m] / $count, 4), $count, $on];
+            $general[] = [(int) $m, round($others ? $share / $others : 0.5, 4), count($scored[$m]), $on];
         }
         usort($general, fn ($x, $y) => $y[1] <=> $x[1] ?: $y[2] <=> $x[2] ?: $x[0] <=> $y[0]);
 
         $frontier = array_values(array_filter($general, fn ($g) => isset($dense[$g[0]])));
         $frontier = array_slice($frontier, 0, max(1, (int) ceil(count($frontier) / 10)));
         return ['general' => $general, 'frontier' => $frontier];
+    }
+
+    /** Of the ascending $sorted, how many are below $v and how many are at most $v. */
+    private static function bounds(array $sorted, float $v): array
+    {
+        $bound = function (bool $orEqual) use ($sorted, $v): int {
+            $lo = 0;
+            $hi = count($sorted);
+            while ($lo < $hi) {
+                $mid = intdiv($lo + $hi, 2);
+                if ($sorted[$mid] < $v || ($orEqual && $sorted[$mid] == $v)) {
+                    $lo = $mid + 1;
+                } else {
+                    $hi = $mid;
+                }
+            }
+            return $lo;
+        };
+        return [$bound(false), $bound(true)];
+    }
+
+    /**
+     * Bradley-Terry strengths from the duels ($wins: index => duels won; $met: index => index =>
+     * duels played), by the MM iteration: p_i = (wins_i + PRIOR/2) / (sum_j met_ij / (p_i + p_j)
+     * + PRIOR / (p_i + 1)), every round from the last, scaled to a geometric mean of 1. PRIOR is
+     * that many virtual duels, tied, against a model of strength 1, so a model that won (or lost)
+     * every duel still gets a finite strength.
+     */
+    private static function strengths(array $wins, array $met): array
+    {
+        $p = array_fill(0, count($wins), 1.0);
+        for ($round = 0; $p && $round < self::MAX_ROUNDS; $round++) {
+            $next = [];
+            $logs = 0.0;
+            foreach ($p as $i => $pi) {
+                $d = self::PRIOR / ($pi + 1.0);
+                foreach ($met[$i] ?? [] as $j => $count) {
+                    $d += $count / ($pi + $p[$j]);
+                }
+                $next[$i] = ($wins[$i] + self::PRIOR / 2) / $d;
+                $logs += log($next[$i]);
+            }
+            $scale = exp($logs / count($next));
+            $change = 0.0;
+            foreach ($next as $i => $q) {
+                $next[$i] = $q / $scale;
+                $change = max($change, abs(log($next[$i] / $p[$i])));
+            }
+            $p = $next;
+            if ($change < self::TOLERANCE) {
+                break;
+            }
+        }
+        return $p;
     }
 
     /**

@@ -153,8 +153,8 @@ final class Api
 
     /**
      * The model-compare view's numbers (for its page; not part of the API): every model's
-     * general performance (the mean percentile of its measured and estimated scores across
-     * the listed benchmarks) and the frontier, its top tenth among dense models, strongest
+     * general performance (the share of benchmark duels it is expected to win against every
+     * other ranked model, measured and estimated scores, Compare::compute()) and the frontier, its top tenth among dense models, strongest
      * first.
      */
     public function compare(): array

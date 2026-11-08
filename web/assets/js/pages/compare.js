@@ -13,9 +13,9 @@ const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatc
   + "Pick two models, or one and a model to hold it against: the frontier model closest to it "
   + "of those it shares the most benchmarks with, or the model just below it - of one provider, or of any. "
   + "Step either model up or down through its provider's models.";
-const GENERAL_TIP = "General performance: the mean percentile of a model's scores, measured and estimated, across the listed benchmarks, "
-  + "not only those it happened to be run on. A model measured only on benchmarks apart from the main field has no standing. "
-  + "The frontier is the strongest tenth.";
+const GENERAL_TIP = "General performance: the share of benchmark duels a model is expected to win against every other ranked model, "
+  + "from a Bradley-Terry fit over every head-to-head result on the listed benchmarks, measured and estimated. "
+  + "A model measured only on benchmarks apart from the main field has no standing. The frontier is the strongest tenth.";
 // a pair (/compare/<a>/<b>), or A and a B picked for it ("how"): the closest frontier model
 // (/compare/<a>[/from/<p>]) or the model just below A (/compare/<a>/below[/<p>]), of one provider or of any
 const cmpHref = (a, b, from, how = "frontier") => {   // (b given: a pair, whatever how is)
@@ -39,8 +39,8 @@ let page = null;   // the open pair: its models, how B was chosen, the standings
 let open = new Set();   // the capabilities opened (ids); all closed until the reader opens one
 
 // data: every model's general performance and the frontier (data/compare.json, Compare.php):
-// general is the mean percentile of a model's scores, measured and estimated, across the listed
-// benchmarks (and the benchmarks it stands on measured), the frontier is its strongest tenth. Two models (/compare/<a>/<b>),
+// general is the share of benchmark duels a model is expected to win against every other ranked model
+// (a Bradley-Terry fit over the listed benchmarks, measured and estimated; and the benchmarks it stands on measured), the frontier is its strongest tenth. Two models (/compare/<a>/<b>),
 // or one model and a model to hold it against: the closest frontier model (/compare/<a>[/from/<p>]) or the
 // model just below it (/compare/<a>/below[/<p>]) - of one provider, or of any - a pick that follows the field.
 // Returns true when the page was already open (only the pair changed).

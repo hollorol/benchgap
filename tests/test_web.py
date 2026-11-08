@@ -5,7 +5,6 @@ without them they are skipped.
 """
 from __future__ import annotations
 
-import bisect
 import json
 import math
 import re
@@ -18,6 +17,7 @@ import urllib.request
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from benchgap import fit, gapfill, report
@@ -277,24 +277,18 @@ def test_page_data_slices_the_site_data(server):
     means = [-1.0 if p["mean_abs_pp"] is None else p["mean_abs_pp"] for p in whole["harness_tax"]["pairs"]]
     assert means == sorted(means, reverse=True)
 
-    # the compare view: every model's general performance - the mean percentile of its scores,
-    # measured and estimated, across the listed benchmarks (and the benchmarks it stands on
-    # measured) - and the frontier, the strongest tenth of dense models. A model measured only off
-    # the main field (the largest set of benchmarks linked by 5+ dense models measured on both) has none,
-    # as has one measured on no listed benchmark and estimated only off it
-    per_bench = {}
-    for s in scores:
-        if s["b"] in listed:
-            per_bench.setdefault(s["b"], []).append(s["v"])
-    for vs in per_bench.values():
-        vs.sort()
-    sums, ns, on, scored = {}, {}, {}, {}
+    # the compare view: every model's general performance - the share of benchmark duels it is
+    # expected to win against every other model with a standing, from a Bradley-Terry fit over the
+    # duels on the listed benchmarks (every two models with a score there, measured or estimated;
+    # a tie is half a win each) - and the benchmarks it stands on measured, and the frontier, the
+    # strongest tenth of dense models. A model measured only off the main field (the largest set of
+    # benchmarks linked by 5+ dense models measured on both) has none, as has one measured on no
+    # listed benchmark and estimated only off it
+    by_bench, on, scored = {}, {}, {}
     for s in scores:
         if s["b"] not in listed:
             continue
-        p = bisect.bisect_left(per_bench[s["b"]], s["v"]) / (len(per_bench[s["b"]]) - 1)
-        sums[s["m"]] = sums.get(s["m"], 0.0) + p
-        ns[s["m"]] = ns.get(s["m"], 0) + 1
+        by_bench.setdefault(s["b"], {})[s["m"]] = s["v"]
         scored.setdefault(s["m"], set()).add(s["b"])
         if s["s"] == "m":
             on.setdefault(s["m"], []).append(s["b"])
@@ -320,12 +314,32 @@ def test_page_data_slices_the_site_data(server):
         seen |= field
         main = max(main, field, key=len)
     off_field = every - main
-    general = sorted(
-        ([m, _php_round(sums[m] / ns[m], 4), ns[m], sorted(on.get(m, []))] for m in ns if not set(on.get(m) or scored[m]) <= off_field),
-        key=lambda r: (-r[1], -r[2], r[0]),
-    )
-    frontier = [g for g in general if g[0] in dense][: max(1, math.ceil(len([g for g in general if g[0] in dense]) / 10))]
-    assert get_json(server, "/data/compare.json") == {"compare": {"general": general, "frontier": frontier}}
+    standing = sorted(m for m in scored if not set(on.get(m) or scored[m]) <= off_field)
+    at = {m: i for i, m in enumerate(standing)}
+    wins = np.zeros((len(standing), len(standing)))   # [i, j]: the duels i won against j
+    for field in by_bench.values():
+        idx = np.array([at[m] for m in field if m in at])
+        v = np.array([field[m] for m in field if m in at])
+        wins[np.ix_(idx, idx)] += (v[:, None] > v[None, :]) + 0.5 * (v[:, None] == v[None, :])
+    np.fill_diagonal(wins, 0)
+    met, p = wins + wins.T, np.ones(len(standing))
+    for _ in range(5000):   # the MM iteration, with one virtual tied duel against strength 1
+        nxt = (wins.sum(1) + 0.5) / ((met / (p[:, None] + p[None, :])).sum(1) + 1 / (p + 1))
+        nxt /= np.exp(np.log(nxt).mean())
+        done = np.abs(np.log(nxt / p)).max() < 1e-8
+        p = nxt
+        if done:
+            break
+    share = (p[:, None] / (p[:, None] + p[None, :])).sum(1) - 0.5   # less the duel against itself
+    expected = {m: (share[i] / (len(standing) - 1), len(scored[m]), sorted(on.get(m, []))) for m, i in at.items()}
+    compare = get_json(server, "/data/compare.json")["compare"]
+    general = compare["general"]
+    assert sorted(g[0] for g in general) == standing
+    for m, g, n, measured in general:
+        assert abs(g - expected[m][0]) <= 1e-4 and (n, measured) == expected[m][1:]
+    assert [g[0] for g in general] == [g[0] for g in sorted(general, key=lambda r: (-r[1], -r[2], r[0]))]
+    ranked_dense = [g for g in general if g[0] in dense]
+    assert compare["frontier"] == ranked_dense[: max(1, math.ceil(len(ranked_dense) / 10))]
 
     for path in ["/data/b/no-such/bench.json", "/data/model/no-such-model.json", "/data/calibration/999999.json", "/data/score/0/0.json"]:
         with pytest.raises(urllib.error.HTTPError) as err:
@@ -464,7 +478,7 @@ def test_pages_and_sitemap(server):
     pair_model = get_json(server, "/api/v1/models.json")["models"][1]
     _, pair = get(server, f"/compare/{model['slug']}/{pair_model['slug']}")
     assert f"<title>{model['name']} vs {pair_model['name']} benchmark scores · benchgap</title>" in pair
-    assert '<meta name="robots" content="noindex">' in pair and "mean percentile of a model" in pair
+    assert '<meta name="robots" content="noindex">' in pair and "expected to win against every" in pair
     assert '<link rel="canonical" href="https://benchgap.net/compare">' in get(server, "/compare")[1]
     # or the model just below it (Compare::below): of the dense models with a standing, the first
     # ranked below it; none below, the closest above; with no standing, the strongest
