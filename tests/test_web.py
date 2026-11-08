@@ -318,8 +318,8 @@ def test_page_data_slices_the_site_data(server):
     at = {m: i for i, m in enumerate(standing)}
     wins = np.zeros((len(standing), len(standing)))   # [i, j]: the duels i won against j
     for field in by_bench.values():
-        idx = np.array([at[m] for m in field if m in at])
-        v = np.array([field[m] for m in field if m in at])
+        ms = [m for m in field if m in at]
+        idx, v = np.array([at[m] for m in ms]), np.array([field[m] for m in ms])
         wins[np.ix_(idx, idx)] += (v[:, None] > v[None, :]) + 0.5 * (v[:, None] == v[None, :])
     np.fill_diagonal(wins, 0)
     met, p = wins + wins.T, np.ones(len(standing))
@@ -337,7 +337,7 @@ def test_page_data_slices_the_site_data(server):
     assert sorted(g[0] for g in general) == standing
     for m, g, n, measured in general:
         assert abs(g - expected[m][0]) <= 1e-4 and (n, measured) == expected[m][1:]
-    assert [g[0] for g in general] == [g[0] for g in sorted(general, key=lambda r: (-r[1], -r[2], r[0]))]
+    assert general == sorted(general, key=lambda r: (-r[1], -r[2], r[0]))
     ranked_dense = [g for g in general if g[0] in dense]
     assert compare["frontier"] == ranked_dense[: max(1, math.ceil(len(ranked_dense) / 10))]
 

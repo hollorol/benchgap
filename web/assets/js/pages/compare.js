@@ -14,7 +14,8 @@ const LEDE = "Measured scores decide who leads; estimates fill in the rest, hatc
   + "of those it shares the most benchmarks with, or the model just below it - of one provider, or of any. "
   + "Step either model up or down through its provider's models.";
 const GENERAL_TIP = "General performance: the share of benchmark duels a model is expected to win against every other ranked model, "
-  + "from a Bradley-Terry fit over every head-to-head result on the listed benchmarks, measured and estimated. "
+  + "from a Bradley-Terry fit over every head-to-head result on the listed benchmarks, measured and estimated, "
+  + "each pair held against each other on the benchmarks both have a score on. "
   + "A model measured only on benchmarks apart from the main field has no standing. The frontier is the strongest tenth.";
 // a pair (/compare/<a>/<b>), or A and a B picked for it ("how"): the closest frontier model
 // (/compare/<a>[/from/<p>]) or the model just below A (/compare/<a>/below[/<p>]), of one provider or of any

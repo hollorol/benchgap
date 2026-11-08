@@ -49,9 +49,9 @@ final class Compare
     public const LINK = 5;
     // the Bradley-Terry fit (strengths()): virtual tied duels per model, the largest change in a
     // log strength that ends it, and the most rounds
-    public const PRIOR = 1;
-    public const TOLERANCE = 1e-8;
-    public const MAX_ROUNDS = 5000;
+    private const PRIOR = 1;
+    private const TOLERANCE = 1e-8;
+    private const MAX_ROUNDS = 5000;
 
     /**
      * The compare document of a snapshot: general performance per model, as [model, general,
@@ -87,8 +87,9 @@ final class Compare
         $at = array_flip($standing);   // model id => its index in $standing
 
         // the duels: on each listed benchmark, every two models with a standing and a score there
-        $wins = array_fill(0, count($standing), 0.0);   // index => duels won (a tie is half a win)
-        $met = [];   // index => index => the duels the two played (the benchmarks both have a score on)
+        $n = count($standing);
+        $wins = array_fill(0, $n, 0.0);   // index => duels won (a tie is half a win)
+        $played = [];   // i * n + j (i < j) => the duels the two played
         foreach ($byBench as $scores) {
             $field = [];   // index => score
             foreach ($scores as $m => $v) {
@@ -96,28 +97,40 @@ final class Compare
                     $field[$at[$m]] = $v;
                 }
             }
-            $sorted = array_values($field);
-            sort($sorted);
+            ksort($field);
             $players = array_keys($field);
-            foreach ($players as $k => $i) {
-                [$below, $upTo] = self::bounds($sorted, $field[$i]);
-                $wins[$i] += $below + ($upTo - $below - 1) / 2;
-                for ($l = $k + 1, $count = count($players); $l < $count; $l++) {
+            $count = count($players);
+            for ($k = 0; $k < $count; $k++) {
+                $i = $players[$k];
+                for ($l = $k + 1; $l < $count; $l++) {
                     $j = $players[$l];
-                    $met[$i][$j] = ($met[$i][$j] ?? 0) + 1;
-                    $met[$j][$i] = ($met[$j][$i] ?? 0) + 1;
+                    if ($field[$i] > $field[$j]) {
+                        $wins[$i]++;
+                    } elseif ($field[$i] < $field[$j]) {
+                        $wins[$j]++;
+                    } else {
+                        $wins[$i] += 0.5;
+                        $wins[$j] += 0.5;
+                    }
+                    $played[$i * $n + $j] = ($played[$i * $n + $j] ?? 0) + 1;
                 }
             }
+        }
+        $met = [];   // index => index => the duels the two played
+        foreach ($played as $key => $duels) {
+            $met[intdiv($key, $n)][$key % $n] = $duels;
+            $met[$key % $n][intdiv($key, $n)] = $duels;
         }
         $p = self::strengths($wins, $met);
 
         $general = [];
-        $others = count($p) - 1;
+        $others = $n - 1;
         foreach ($standing as $i => $m) {
             $share = 0.0;   // the expected share of duels won against every other model with a standing
+            $pi = $p[$i];
             foreach ($p as $j => $pj) {
                 if ($j !== $i) {
-                    $share += $p[$i] / ($p[$i] + $pj);
+                    $share += $pi / ($pi + $pj);
                 }
             }
             $on = $measured[$m] ?? [];
@@ -129,25 +142,6 @@ final class Compare
         $frontier = array_values(array_filter($general, fn ($g) => isset($dense[$g[0]])));
         $frontier = array_slice($frontier, 0, max(1, (int) ceil(count($frontier) / 10)));
         return ['general' => $general, 'frontier' => $frontier];
-    }
-
-    /** Of the ascending $sorted, how many are below $v and how many are at most $v. */
-    private static function bounds(array $sorted, float $v): array
-    {
-        $bound = function (bool $orEqual) use ($sorted, $v): int {
-            $lo = 0;
-            $hi = count($sorted);
-            while ($lo < $hi) {
-                $mid = intdiv($lo + $hi, 2);
-                if ($sorted[$mid] < $v || ($orEqual && $sorted[$mid] == $v)) {
-                    $lo = $mid + 1;
-                } else {
-                    $hi = $mid;
-                }
-            }
-            return $lo;
-        };
-        return [$bound(false), $bound(true)];
     }
 
     /**
