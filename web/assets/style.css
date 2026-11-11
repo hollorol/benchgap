@@ -941,8 +941,15 @@ table.list { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .foot-in p { margin: 0; }
 .foot-in .brand-word { margin-right: .4rem; }
 .site-foot a { color: var(--ink-2); }
+/* the logos are masks, so they take the footer's ink instead of their own brand colours */
+.foot-logos { display: flex; align-items: center; justify-content: center; gap: 1.6rem; align-self: center; }
+.foot-logo { display: block; height: 2.6rem; background: currentColor; transition: color .15s;
+  -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
+.foot-logo:hover { color: var(--accent); }
+.foot-logo.ou { --logo: url("img/obuda-university.svg"); aspect-ratio: 434.5 / 158; }
+.foot-logo.hunren { --logo: url("img/hunren-ai4science.png"); aspect-ratio: 629 / 296; }
 .foot-meta { font-family: var(--mono); font-size: .72rem; text-align: right; }
-@media (max-width: 860px) { .foot-in { grid-template-columns: 1fr; } .foot-meta { text-align: left; } }
+@media (max-width: 860px) { .foot-in { grid-template-columns: 1fr; } .foot-meta { text-align: left; } .foot-logos { justify-content: flex-start; } }
 
 .reveal > * { animation: rise .5s var(--ease) both; }
 .reveal > *:nth-child(2) { animation-delay: .06s; }
