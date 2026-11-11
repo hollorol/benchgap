@@ -11,6 +11,8 @@ data/*.db
 data/benchlm/
 data/seed/
 data/report.html
+# benchgap nnfit outputs (model, metrics, predictions)
+data/nn/
 # fit results reused between runs (benchgap fit/multifit --cache .fit-cache)
 .fit-cache/
 dist/
